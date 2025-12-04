@@ -1,0 +1,687 @@
+        /* --- CORE SETTINGS --- */
+        canvas {
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        :root {
+            --primary: #44ff44;
+            --accent: #ffd700;
+            --glass: rgba(20, 20, 20, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            --font-main: 'Fredoka', sans-serif;
+        }
+
+        body { 
+            margin: 0; padding: 0; 
+            width: 100%; height: 100%; 
+            overflow: hidden; 
+            background-color: #1a1a1a;
+            font-family: var(--font-main); 
+            user-select: none; -webkit-user-select: none; 
+        }
+
+        /* --- GAME & UI LAYERS --- */
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+
+        /* --- UNIFIED GLASS UI STYLE --- */
+        /* Applies to Stats, Room Info, Bait, Instructions, Log, Chat, Toasts, and Overlays */
+        .stat-box, #room-info-ui, #bait-ui, .overlay-screen, .toast, #instructions, #fish-log, #chat-messages, #npc-prompt {
+            background: var(--glass) !important;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--glass-border) !important;
+            border-radius: 12px !important;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        button {
+            font-family: var(--font-main);
+            border: none;
+            outline: none;
+            transition: transform 0.1s, filter 0.1s;
+        }
+        button:active { transform: scale(0.95); }
+
+        /* --- HUD: TOP LEFT (STATS & BUTTONS) --- */
+        #stats-ui { 
+            position: absolute; top: 10px; left: 10px; 
+            pointer-events: auto; 
+            transform-origin: top left;
+            z-index: 50;
+        }
+
+        .stat-row {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-box {
+            padding: 0 16px;
+            height: 40px;
+            display: flex; align-items: center; gap: 8px;
+            font-weight: 600;
+            font-size: clamp(14px, 2vmin, 18px); 
+        }
+
+        /* --- UNIFIED TOP BUTTONS --- */
+        #btn-settings, #btn-host-panel, #btn-journal, #btn-players, #btn-props-ui, #btn-admin-login, #btn-inventory-mobile {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            padding: 0 12px;
+            height: 40px; /* Matches the stat box height */
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            color: white;
+            font-weight: bold;
+            font-size: 13px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s;
+        }
+
+        /* Hover Effect for Standard Buttons */
+        #btn-settings:hover, #btn-host-panel:hover, #btn-journal:hover, #btn-players:hover, #btn-props-ui:hover, #btn-inventory-mobile:hover { 
+            background: rgba(255, 255, 255, 0.3); 
+            transform: translateY(-2px);
+        }
+		
+		/* Special Style for Admin Button (Red Tint) */
+        #btn-admin-login {
+            background: rgba(220, 20, 60, 0.2) !important;
+            border-color: rgba(220, 20, 60, 0.5) !important;
+            color: #ffcccc !important;
+            margin-left: 5px;
+        }
+        #btn-admin-login:hover {
+            background: rgba(220, 20, 60, 0.5) !important;
+            transform: translateY(-2px);
+        }
+
+        /* HIDE DEDICATED INVENTORY BUTTON ON DESKTOP */
+        #btn-inventory-mobile {
+            display: flex !important; /* WAS: display: none; */
+        }
+		
+        /* --- NOTIFICATION AREA --- */
+        #notification-area {
+            position: absolute; 
+            top: 20%; 
+            left: 50%; 
+            transform: translateX(-50%);
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            gap: 10px; 
+            z-index: 100; 
+            pointer-events: none;
+            width: auto;
+        }
+
+        /* --- INVENTORY (FISH LOG) --- */
+        #fish-log {
+            position: absolute; 
+            top: 60px !important; 
+            left: 10px !important;
+            right: auto !important;
+            padding: 10px;
+            width: 160px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+            pointer-events: auto;
+            z-index: 40;
+            scrollbar-width: thin;
+            text-shadow: 1px 1px 2px black;
+            font-weight: bold;
+            display: block; /* Default to visible on desktop */
+        }
+        #log-content, #log-content div { color: white !important; }
+
+        /* --- HUD: TOP CENTER (ROOM INFO) --- */
+        #room-info-ui {
+            position: absolute; top: 10px; left: 50%; 
+            transform: translateX(-50%);
+            padding: 6px 16px;
+            text-align: center;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+        #room-id-text { color: var(--primary); font-family: monospace; font-size: 1.2em; font-weight: bold; }
+
+        /* --- HUD: TOP RIGHT (CONTROLS) --- */
+        #instructions {
+            position: absolute; top: 10px; right: 10px;
+            padding: 15px;
+            font-size: 13px;
+            line-height: 1.4;
+            color: #eee;
+            pointer-events: none; 
+            z-index: 20;
+            display: grid;
+            grid-template-columns: max-content max-content;
+            gap: 4px 15px; 
+            align-items: center;
+        }
+
+        /* STRICTLY HIDE ON MOBILE */
+        @media (max-width: 900px) {
+            #instructions { display: none !important; }
+        }
+
+        .close-controls {
+            position: absolute; top: 8px; right: 12px;
+            color: #ff4444; font-weight: bold; font-size: 16px;
+            cursor: pointer; pointer-events: auto;
+            font-family: sans-serif; transition: transform 0.2s, color 0.2s;
+        }
+        .close-controls:hover { color: #fff; transform: scale(1.2); }
+
+        #instructions .title {
+            grid-column: 1 / -1; 
+            text-align: center;
+            font-size: 1.2em;
+            color: var(--accent);
+            font-weight: bold;
+            margin-bottom: 5px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            margin-right: 15px; 
+        }
+        #instructions b { color: var(--accent); font-size: 1.1em; text-align: right; }
+        #instructions span { text-align: left; color: #ddd; }
+
+        /* --- HUD: BOTTOM LEFT (BAIT & CHAT) --- */
+        #bait-ui {
+            position: absolute; bottom: 20px; left: 20px;
+            padding: 10px 15px;
+            pointer-events: auto;
+            display: flex; flex-direction: column; gap: 5px;
+            z-index: 50;
+        }
+
+        /* --- CHAT UI --- */
+        #chat-ui {
+            position: absolute; 
+            bottom: 100px; 
+            left: 20px;
+            width: 30vw; max-width: 350px; min-width: 250px;
+            /* NEW GLOBAL CHAT HEIGHT */
+            height: 450px; 
+            display: flex; flex-direction: column;
+            pointer-events: none;
+            transition: opacity 0.5s ease-in-out;
+            opacity: 0; 
+        }
+
+        @media (max-width: 900px) {
+            /* SHOW DEDICATED INVENTORY BUTTON ON MOBILE */
+            #btn-inventory-mobile {
+                display: flex !important;
+            }
+
+            /* 1. CHAT HEIGHT (Overrides bottom positioning for top positioning on mobile) */
+            #chat-ui {
+                bottom: auto !important; 
+                top: 50px !important;       
+                left: 10px !important;
+                width: 45vw; 
+                /* Height maintained at 450px from global rule */
+            }
+            #chat-messages { font-size: 11px; }
+            
+            /* 2. INVENTORY (Hidden and positioned below chat) */
+            #fish-log { 
+                /* Recalculated position: 50px (top) + 450px (chat height) + 10px (gap) = 510px */
+                top: 510px !important; 
+                right: 10px !important; 
+                left: auto !important; 
+                width: 120px; 
+                font-size: 10px; 
+                display: none; /* Crucial: Hidden by default on mobile */
+            }
+			
+			#room-info-ui {
+			top: 60px !important;       /* Move it down below the top bar */
+			right: 10px !important;     /* Anchor to the right side */
+			left: auto !important;      /* Unset the left centering */
+			transform: none !important; /* Remove the center transform */
+			font-size: 10px !important; /* Make text smaller */
+			padding: 4px 8px !important;
+			z-index: 90 !important;     /* Ensure it sits above game elements */
+		}
+            
+            #lobby-container input[type="text"], #lobby-container .btn-lg { width: 100% !important; box-sizing: border-box; margin: 5px 0; font-size: 16px; }
+            
+            #shop-wrapper { flex-direction: column; align-items: center; overflow-y: auto; }
+            #wardrobe-sidebar { width: 90%; height: auto; max-height: 200px; order: -1; }
+            #shop-main-panel { width: 100%; }
+        }
+        
+        #chat-messages {
+            flex: 1; overflow-y: auto;
+            padding: 10px;
+            pointer-events: auto;
+            scrollbar-width: thin;
+            text-shadow: 1px 1px 0 #000;
+            margin-bottom: 5px;
+        }
+        .chat-msg { margin-bottom: 4px; font-size: 13px; line-height: 1.4; }
+        .chat-name { color: var(--accent); font-weight: bold; margin-right: 5px; }
+
+        /* --- UNIFIED INPUTS --- */
+        #chat-input, #bait-select {
+            background: rgba(0, 0, 0, 0.3) !important;
+            border: 1px solid rgba(255,255,255,0.2) !important;
+            color: white; 
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-family: var(--font-main);
+            outline: none;
+            transition: border-color 0.2s;
+            pointer-events: auto;
+        }
+        #chat-input:focus, #bait-select:focus {
+            border-color: var(--primary) !important;
+        }
+
+        /* --- OVERLAYS --- */
+        .overlay-screen {
+            position: absolute; top: 0; left: 0; 
+            width: 100%; height: 100%;
+            background: rgba(10, 15, 20, 0.95);
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            color: white; z-index: 2000; 
+        }
+
+        #options-container, #host-panel-container {
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 90%;
+            max-width: 500px;
+            background: rgba(20, 20, 20, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            box-sizing: border-box;
+            -webkit-overflow-scrolling: touch; 
+        }
+
+        .grid-container {
+            background: rgba(0,0,0,0.3);
+            border: 2px solid var(--accent);
+            border-radius: 12px; padding: 15px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            width: 90%; max-width: 600px; 
+            max-height: 65vh;       
+            height: auto !important;
+            overflow-y: auto;
+            align-content: start;
+            -webkit-overflow-scrolling: touch; 
+            padding-bottom: 20px;
+        }
+    
+        .grid-entry {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px; padding: 8px;
+            display: flex; flex-direction: column; align-items: center; text-align: center;
+            cursor: pointer; transition: 0.2s;
+        }
+        .grid-entry:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px); }
+        .grid-entry.selected { border-color: var(--accent); background: rgba(255, 215, 0, 0.1); }
+
+        /* --- CLOSE BUTTON --- */
+        .close-x-btn {
+            position: absolute;
+            top: 20px; right: 20px;
+            width: 50px; height: 50px;
+            background-color: #ff4444; color: white;
+            border: 3px solid white; border-radius: 50%;
+            font-size: 30px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; z-index: 100;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: transform 0.2s, background-color 0.2s;
+            font-family: sans-serif; padding-bottom: 4px;
+        }
+        .close-x-btn:hover { background-color: #cc0000; transform: scale(1.1) rotate(90deg); }
+        .close-x-btn:active { transform: scale(0.9); }
+
+        /* --- BUTTONS & CONTROLS --- */
+        .control-row {
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255, 255, 255, 0.05); padding: 8px 12px;
+            margin-bottom: 5px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .control-label { font-size: 14px; font-weight: bold; color: #ddd; text-transform: capitalize; }
+        .key-btn {
+            background: #222; border: 1px solid #555; color: #fff;
+            padding: 5px 15px; border-radius: 4px; min-width: 80px;
+            cursor: pointer; font-family: monospace; font-weight: bold;
+            text-align: center; transition: all 0.2s;
+        }
+        .key-btn:hover { background: #444; border-color: white; }
+        .key-btn.listening {
+            background: #ffaa00; color: black; border-color: #ffaa00;
+            animation: pulse 0.5s infinite alternate;
+        }
+
+        .btn-lg {
+            padding: 12px 24px; background: #2b2b2b;
+            border: 2px solid #555; color: white; border-radius: 8px;
+            cursor: pointer; font-weight: bold; font-size: 16px; margin: 5px;
+        }
+        .btn-lg:hover { background: #444; border-color: white; }
+        .btn-green { background: #2e7d32; border-color: #4caf50; }
+        .btn-danger { background: #c62828; border-color: #ef5350; }
+        .btn-sm {
+            padding: 6px 12px; background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2); color: white;
+            border-radius: 6px; cursor: pointer; font-size: 12px;
+            font-weight: bold; transition: 0.2s; font-family: var(--font-main);
+        }
+        .btn-sm:hover { background: rgba(255, 255, 255, 0.25); }
+
+        /* --- LOBBY --- */
+        #lobby-screen {
+            position: absolute; top: 0; left: 0; 
+            width: 100%; height: 100%; 
+            background: rgba(10, 15, 20, 0.95);
+            z-index: 3000; pointer-events: auto; 
+            display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; 
+            color: white;
+        }
+        #lobby-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 30px; border-radius: 16px; 
+            width: 90%; max-width: 400px; 
+            display: flex; flex-direction: column; gap: 15px; 
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            max-height: 90vh; overflow-y: auto;
+        }
+        #lobby-container input[type="text"] {
+            width: 80%; padding: 12px; margin: 10px auto;
+            background: rgba(0,0,0,0.5); border: 1px solid #555;
+            color: white; border-radius: 8px; font-size: 16px; text-align: center;
+        }
+
+        /* --- MINIGAME --- */
+        #minigame-ui {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px; padding: 15px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 15px; border: 3px solid white;
+            display: none; flex-direction: column; align-items: center; gap: 8px;
+            pointer-events: none;
+        }
+        #bar-container { width: 100%; height: 20px; background: #333; border-radius: 10px; overflow: hidden; }
+        #bar-fill { height: 100%; transition: width 0.1s linear; }
+
+        /* --- MOBILE CONTROLS --- */
+        #mobile-controls {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            pointer-events: none; z-index: 50;
+        }
+        #joystick-zone {
+            position: absolute; bottom: 20px; left: 20px;
+            width: 35vmin; height: 35vmin;
+            max-width: 180px; max-height: 180px;
+            pointer-events: auto;
+        }
+        #joystick-base {
+            width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%; position: relative;
+        }
+        #joystick-knob {
+            width: 40%; height: 40%;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            position: absolute; top: 30%; left: 30%;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        #touch-buttons { 
+            position: absolute; bottom: 30px; right: 30px; 
+            display: flex; flex-direction: column; align-items: flex-end; gap: 15px; 
+        }
+        .touch-btn {
+            width: 18vmin; height: 18vmin; max-width: 90px; max-height: 90px;
+            background: rgba(68, 68, 255, 0.6);
+            border: 3px solid rgba(255,255,255,0.8);
+            border-radius: 50%; color: white;
+            display: flex; align-items: center; justify-content: center;
+            font-size: clamp(14px, 4vmin, 20px); font-weight: bold;
+            pointer-events: auto; user-select: none;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .touch-btn:active { background: rgba(100, 100, 255, 0.8); transform: scale(0.9); }
+        .touch-btn-sm {
+            width: 12vmin; height: 12vmin; max-width: 60px; max-height: 60px;
+            background: rgba(0,0,0,0.6);
+            border: 2px solid #ccc; border-radius: 50%;
+            color: white; display: flex; align-items: center; justify-content: center;
+            font-size: clamp(12px, 3vmin, 18px); pointer-events: auto;
+        }
+        #mobile-toggles {
+            position: absolute; top: 10px; right: 10px;
+            display: flex; gap: 10px; pointer-events: auto;
+        }
+        .toggle-btn {
+            width: 40px; height: 40px;
+            background: rgba(0,0,0,0.5); border: 1px solid white;
+            border-radius: 8px; color: white;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* --- NPC INTERACT PROMPT --- */
+        #npc-prompt {
+            position: absolute;
+            top: 65%; left: 50%; transform: translateX(-50%);
+            padding: 10px 25px; color: white;
+            font-weight: bold; font-size: 16px; letter-spacing: 1px;
+            text-align: center; display: none; pointer-events: none; 
+            z-index: 100; animation: pulse 1.5s infinite alternate;
+            border: 2px solid var(--accent) !important; /* Force accent border */
+        }
+
+        /* --- GUITAR / MIDI UI --- */
+        #guitar-ui {
+            position: absolute;
+            bottom: 120px !important; right: 20px !important;
+            background: var(--glass);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center; pointer-events: auto; z-index: 60;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            display: none; flex-direction: column; gap: 8px;
+            min-width: 120px;
+        }
+        #midi-status { font-size: 11px; color: #aaa; margin-top: 5px; }
+
+        /* --- AD BANNER --- */
+        #ad-container {
+            position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+            width: 320px; height: 50px; background-color: white !important; 
+            border: 2px solid white; border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5); display: none; 
+            align-items: center; justify-content: center; padding: 0; overflow: hidden;
+            z-index: 3500; pointer-events: auto; animation: fadeUp 0.5s ease-out;
+        }
+        #ad-content { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+        #btn-close-ad { 
+            position: absolute; top: 0; right: 0; background: rgba(0,0,0,0.5); 
+            color: white; border: none; border-bottom-left-radius: 8px; 
+            cursor: pointer; font-size: 16px; width: 25px; height: 25px; 
+            display: flex; align-items: center; justify-content: center; z-index: 99999; 
+        }
+
+        @keyframes fadeUp { 
+            0% { opacity: 0; transform: translateY(20px); } 
+            10% { opacity: 1; transform: translateY(0); } 
+            90% { opacity: 1; transform: translateY(0); } 
+            100% { opacity: 0; transform: translateY(-20px); } 
+        }
+
+        /* --- GLOBAL CHAT SETTINGS (NEW 450px HEIGHT) --- */
+        #chat-ui {
+            position: absolute; 
+            bottom: 100px; 
+            left: 20px;
+            width: 30vw; max-width: 350px; min-width: 250px;
+            /* NEW GLOBAL CHAT HEIGHT */
+            height: 450px; 
+            display: flex; flex-direction: column;
+            pointer-events: none;
+            transition: opacity 0.5s ease-in-out;
+            opacity: 0; 
+        }
+        
+        /* --- RESPONSIVE ADJUSTMENTS (PORTRAIT) --- */
+        @media (max-width: 900px) {
+            #ad-container { bottom: auto !important; top: 70px; transform: translateX(-50%) scale(0.9); z-index: 4000; }
+            #btn-close-ad { width: 50px !important; height: 50px !important; font-size: 30px !important; line-height: 50px; background: #ff4444 !important; border-radius: 0 0 0 12px !important; opacity: 1; }
+            
+            /* SHOW DEDICATED INVENTORY BUTTON ON MOBILE */
+            #btn-inventory-mobile {
+                display: flex !important;
+            }
+
+            /* 1. CHAT POSITIONING ON MOBILE */
+            #chat-ui {
+                bottom: auto !important; 
+                top: 50px !important;       
+                left: 10px !important;
+                width: 45vw; 
+                /* Height maintained at 450px from global rule */
+            }
+            #chat-messages { font-size: 11px; }
+            
+            /* 2. INVENTORY (Hidden and positioned below chat) */
+            #fish-log { 
+                /* Recalculated position: 50px (top) + 450px (chat height) + 10px (gap) = 510px */
+                top: 510px !important; 
+                right: 10px !important; 
+                left: auto !important; 
+                width: 120px; 
+                font-size: 10px; 
+                display: none; /* Crucial: Hidden by default on mobile */
+            }
+            
+            #lobby-container input[type="text"], #lobby-container .btn-lg { width: 100% !important; box-sizing: border-box; margin: 5px 0; font-size: 16px; }
+            
+            #shop-wrapper { flex-direction: column; align-items: center; overflow-y: auto; }
+            #wardrobe-sidebar { width: 90%; height: auto; max-height: 200px; order: -1; }
+            #shop-main-panel { width: 100%; }
+        }
+
+        /* --- RESPONSIVE ADJUSTMENTS (LANDSCAPE) --- */
+        @media (max-width: 900px) and (orientation: landscape) {
+            /* Reposition mobile chat/bait for landscape bottom-left */
+            /* Chat height reduced for landscape readability */
+            #chat-ui { bottom: 5px; left: 5px; width: 40vw; height: 120px; transform: scale(1); transform-origin: bottom left; top: auto !important; }
+            #bait-ui { bottom: 5px; left: 50%; transform: translateX(-50%) scale(1); }
+            
+            /* Reposition mobile log for landscape top-right (standard spot for less intrusion) */
+            #fish-log { top: 60px !important; right: 10px !important; left: auto !important; width: 120px; font-size: 10px; }
+            
+            #touch-buttons { bottom: 10px; right: 10px; gap: 10px; }
+            .touch-btn { width: 15vmin; height: 15vmin; } 
+            .touch-btn-sm { width: 10vmin; height: 10vmin; }
+            #joystick-zone { bottom: 10px; left: 10px; width: 30vmin; height: 30vmin; }
+        }
+
+        /* --- SMALL SCREEN HEIGHT FIX (APPLIED GLOBALLY FOR SMALL DISPLAYS) --- */
+        @media (max-height: 600px) {
+            /* 1. Scale Down Entire UI Layer */
+            #ui-layer {
+                /* Use 0.9 scale factor to fit short screens/landscape view */
+                transform: scale(0.9); 
+                transform-origin: top left; 
+                height: 111.1%; 
+                width: 111.1%;
+            }
+
+            /* 2. Reset scaling on the MOBILE CONTROLS (Fixes disappearance/overlap) */
+            #mobile-controls {
+                transform: none; 
+                transform-origin: bottom right; 
+            }
+
+            /* Non-UI layer overrides (for menus, etc.) */
+            .grid-container { max-height: 55vh; }
+            #options-container, #host-panel-container { max-height: 85vh; }
+            .close-x-btn { width: 40px; height: 40px; font-size: 24px; top: 10px; right: 10px; }
+            h2 { font-size: 1.2em; margin: 10px 0; }
+            #lobby-container { padding: 10px 20px; gap: 5px; max-height: 85vh; }
+            #lobby-container h2 { font-size: 1.2em; margin: 5px 0; }
+            #lobby-container input[type="text"], #lobby-container .btn-lg { padding: 6px 10px; font-size: 14px; margin: 2px 0; height: auto; }
+            hr { margin: 5px 0 !important; }
+            #start-options { gap: 5px; }
+            #lobby-container p { display: none; }
+        }
+		
+		/* --- HIGH RESOLUTION FIX (1080p and above) --- */
+        @media (min-width: 1920px) {
+            #chat-ui {
+                /* Increase chat width from max 350px/30vw to 500px/35vw */
+                width: 35vw !important; 
+                max-width: 500px !important; 
+                
+                /* Ensure it scales back up if the screen is large */
+                height: 35vh !important; 
+            }
+            #chat-messages {
+                /* Slightly increase font size for clarity on large screens */
+                font-size: 14px; 
+            }
+        }
+
+        #rotate-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.95); display: none; 
+            flex-direction: column; align-items: center; justify-content: center;
+            color: white; z-index: 10000; text-align: center;
+        }
+
+        /* --- MOBILE LEFT COLUMN (Slider & Fullscreen) --- */
+        #mobile-zoom-slider {
+            -webkit-appearance: none; appearance: none;
+            width: 140px; height: 15px; 
+            background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.3); border-radius: 10px;
+            outline: none; transform-origin: center; transform: rotate(-90deg);
+            position: absolute; right: 160px; bottom: 160px; 
+            pointer-events: auto; z-index: 60;
+        }
+        #mobile-zoom-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 24px; height: 24px; background: #fff; border-radius: 50%;
+            cursor: pointer; box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+
+        #btn-fullscreen-mobile {
+            position: absolute; right: 160px; bottom: 30px; 
+            width: 50px; height: 50px;
+            background: rgba(0, 0, 0, 0.6); border: 2px solid #ccc;
+            border-radius: 50%; color: white;
+            font-size: 24px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 100; pointer-events: auto; backdrop-filter: blur(4px);
+        }
+        #btn-fullscreen-mobile:active { transform: scale(0.9); background: rgba(255, 255, 255, 0.2); }
