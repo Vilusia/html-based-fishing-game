@@ -468,6 +468,7 @@ function getNewPlayerData() {
         baitInventory: {},
         hasGlove: false,
         autoReelLevel: 0,
+        clickPowerLevel: 0,
         hasGuitar: false,
         unlockedProps: [],
         currentProp: 'campfire',
@@ -545,6 +546,7 @@ wss.on('connection', (ws, req) => {
         serverName: SERVER_NAME,
         motd: "Welcome to the Official Dedicated Server!",
         players: Object.keys(clients).length,
+        adminSalt: ADMIN_SALT,
         // Send existing props to new player
         worldProps: Object.values(worldProps)
     }));
@@ -583,7 +585,8 @@ wss.on('connection', (ws, req) => {
                     unlockedHats: Array.isArray(msg.saveState.unlockedHats) ? msg.saveState.unlockedHats : ['none'],
                     unlockedShirts: Array.isArray(msg.saveState.unlockedShirts) ? msg.saveState.unlockedShirts : ['none'],
                     unlockedRods: Array.isArray(msg.saveState.unlockedRods) ? msg.saveState.unlockedRods : ['bamboo'],
-                    unlockedTitles: Array.isArray(msg.saveState.unlockedTitles) ? msg.saveState.unlockedTitles : ['none']
+                    unlockedTitles: Array.isArray(msg.saveState.unlockedTitles) ? msg.saveState.unlockedTitles : ['none'],
+                    clickPowerLevel: typeof msg.saveState.clickPowerLevel === 'number' ? msg.saveState.clickPowerLevel : 0
                 };
                 logToFile(`LOGIN: Player "${safeName}" joined with $${playerData[id].money} (ID: ${id})`);
                 console.log(`LOGIN: Player "${safeName}" joined with $${playerData[id].money} (ID: ${id})`);

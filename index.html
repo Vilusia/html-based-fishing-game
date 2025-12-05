@@ -2216,6 +2216,10 @@
         // Auto-Reel Upgrade Tiers (REBALANCED)
         const AUTO_CLICK_RATES = [0, 4, 8, 12, 16, 25];
         const AUTO_CLICK_PRICES = [0, 500, 2500, 10000, 50000, 250000];
+
+        // Click Power Upgrade Tiers
+        const CLICK_POWER_RATES = [1, 2, 3, 5, 8, 12];
+        const CLICK_POWER_PRICES = [0, 2000, 10000, 50000, 250000, 1000000];
         let chargeStart = 0, castMarker, lastCastPos = new THREE.Vector3();
         const MAX_CHARGE_TIME = 1500, MAX_CAST_DISTANCE = 18, MIN_CAST_DISTANCE = 3;
         let lastFootstepTime = 0;
@@ -2691,6 +2695,7 @@
             midiVolume: 1.0,
             voiceVolume: 1.0,
             autoReelLevel: 0,
+            clickPowerLevel: 0, // New Upgrade
             hasGuitar: false,
             midiMuted: false,
             unlockedProps: ['campfire'], // Start with campfire unlocked? Or make them buy it. Let's make them buy it.
@@ -2743,6 +2748,7 @@
                     if (d.hasGlove !== undefined) saveState.hasGlove = d.hasGlove;
                     if (d.hasGuitar !== undefined) saveState.hasGuitar = d.hasGuitar;
                     if (d.autoReelLevel !== undefined) saveState.autoReelLevel = d.autoReelLevel;
+                    if (d.clickPowerLevel !== undefined) saveState.clickPowerLevel = d.clickPowerLevel;
 
                     // New Cosmetics (Rods, Shirts, Collars)
                     if (d.unlockedRods) saveState.unlockedRods = d.unlockedRods;
@@ -2956,6 +2962,64 @@
             showToast(`Showing off: ${lastFish.name} (${lastFish.sizeLabel || 'Normal'})`);
         }
 
+        function isFishCatchable(fish, tierId) {
+            // 1. Calculate Player CPS (Clicks Per Second)
+            // We assume a decent manual click rate of ~10 CPS + AutoReel
+            // Multiply manual CPS by Click Power Level
+            const power = CLICK_POWER_RATES[saveState.clickPowerLevel] || 1;
+            const manualCPS = 10 * power;
+            const autoCPS = AUTO_CLICK_RATES[saveState.autoReelLevel] || 0;
+            const totalCPS = manualCPS + autoCPS;
+
+            // 2. Calculate Difficulty (Mirroring startMinigame logic)
+            let clicks = 15;
+            let time = 5.0;
+
+            const r = fish.rarity;
+            if (r === 'Common') { clicks = 15; time = 5.0; }
+            else if (r === 'Uncommon') { clicks = 30; time = 4.5; }
+            else if (r === 'Rare') { clicks = 55; time = 4.0; }
+            else if (r === 'Epic') { clicks = 90; time = 3.5; }
+            else if (r === 'Legendary') { clicks = 120; time = 3.0; }
+
+            // Tier Modifiers
+            if (tierId === 'glistening') { clicks += 20; time -= 0.2; }
+            else if (tierId === 'shining') { clicks += 50; time -= 0.5; }
+            else if (tierId === 'opalescent') { clicks += 80; time -= 1.0; }
+
+            // Lava World Modifiers
+            if (fish.isLava) {
+                clicks *= 2.0;
+                time *= 0.7;
+
+                const b = activeBaitId;
+                if (b === 'magic' || b === 'shrimp' || b === 'jig') {
+                    clicks *= 0.6;
+                    time *= 1.2;
+                } else if (b === 'grub' || b === 'spinner') {
+                    clicks *= 0.8;
+                }
+
+                const rod = saveState.currentRod;
+                if (rod === 'lava' || rod === 'admin' || rod === 'golden' || rod === 'diamond' || rod === 'omega_milestone') {
+                    clicks *= 0.85;
+                    time *= 1.1;
+                }
+            }
+
+            // Bait Time Bonus
+            const bait = BAIT_TYPES.find(b => b.id === activeBaitId);
+            const timeBonus = bait ? (bait.power * 0.3) : 0;
+            const maxTime = Math.max(0.5, time + timeBonus);
+
+            // 3. Check if possible
+            // We add a small safety margin (0.5s) to account for reaction time / lag
+            const effectiveTime = Math.max(0, maxTime - 0.5);
+            const potentialClicks = totalCPS * effectiveTime;
+
+            return potentialClicks >= clicks;
+        }
+
         function selectFish() {
             let bait = BAIT_TYPES.find(b => b.id === activeBaitId);
             if (!bait) bait = BAIT_TYPES[0];
@@ -3004,6 +3068,16 @@
                 pool.push({ ...fish, chance: chance });
             });
 
+            // --- NEW: CATCHABILITY FILTER ---
+            // Filter out fish that are impossible even at Normal tier
+            const catchablePool = pool.filter(f => isFishCatchable(f, 'normal'));
+
+            // Only apply filter if it doesn't empty the pool (Fallback behavior)
+            if (catchablePool.length > 0) {
+                pool = catchablePool;
+            }
+            // --------------------------------
+
             if (pool.length === 0) pool = basePool; // Safety fallback
 
             // 3. Pick Fish
@@ -3031,6 +3105,13 @@
                 tierRandom -= tier.chance;
             }
 
+            // --- NEW: TIER DOWNGRADE ---
+            // If the rolled tier makes the fish uncatchable, downgrade to Normal
+            if (!isFishCatchable(selectedType, selectedTier.id)) {
+                selectedTier = TIERS.find(t => t.id === 'normal');
+            }
+            // ---------------------------
+
             // 5. Size Logic
             let sizeMult = 0.5 + Math.pow(Math.random(), 2) * 2.0;
             if (bait.power > 20) sizeMult += 0.15;
@@ -3054,7 +3135,8 @@
                 size: parseFloat(sizeMult.toFixed(2)),
                 sizeLabel: sizeLabel,
                 price: Math.ceil(selectedType.price * selectedTier.priceMult * sizeMult),
-                drainRate: (selectedType.drain * selectedTier.drainMult) * 0.9
+                drainRate: (selectedType.drain * selectedTier.drainMult) * 0.9,
+                isLava: selectedType.isLava // Preserve this flag
             };
         }
 
@@ -3930,6 +4012,48 @@
             }
             container.appendChild(upgradeDiv);
 
+            // --- 2. RENDER CLICK POWER UPGRADE ---
+            const cpLvl = saveState.clickPowerLevel || 0;
+            const maxCpLvl = CLICK_POWER_RATES.length - 1;
+
+            const cpDiv = document.createElement('div');
+            cpDiv.className = 'grid-entry';
+            cpDiv.style.borderColor = '#ffaa00';
+            cpDiv.style.background = '#331100';
+
+            const cpTitle = document.createElement('div');
+            cpTitle.innerHTML = `<b>💪 Click Power v${cpLvl}</b>`;
+            cpDiv.appendChild(cpTitle);
+
+            const cpDesc = document.createElement('div');
+            cpDesc.style.fontSize = '12px';
+            cpDesc.style.color = '#aaa';
+            cpDesc.style.margin = '5px 0';
+
+            const currentPower = CLICK_POWER_RATES[cpLvl];
+
+            if (cpLvl < maxCpLvl) {
+                const nextPower = CLICK_POWER_RATES[cpLvl + 1];
+                cpDesc.innerHTML = `Current: ${currentPower}x<br>Next: ${nextPower}x Power`;
+                cpDiv.appendChild(cpDesc);
+
+                const cost = CLICK_POWER_PRICES[cpLvl + 1];
+                const btn = document.createElement('button');
+                btn.innerText = `Upgrade ($${cost})`;
+                btn.style.color = saveState.money >= cost ? '#44ff44' : '#ff4444';
+                btn.onclick = () => buyClickPowerUpgrade(cost);
+                cpDiv.appendChild(btn);
+            } else {
+                cpDesc.innerHTML = `MAX LEVEL<br>${currentPower}x Power`;
+                cpDiv.appendChild(cpDesc);
+                const maxed = document.createElement('div');
+                maxed.innerText = "COMPLETED";
+                maxed.style.color = '#ffaa00';
+                maxed.style.fontWeight = 'bold';
+                cpDiv.appendChild(maxed);
+            }
+            container.appendChild(cpDiv);
+
             // --- 2. RENDER BAITS ---
             const uniqueCount = Object.keys(saveState.journal).length;
 
@@ -4773,6 +4897,19 @@
                 Sound.sell();
                 renderBaitShop();
                 showToast(`Upgraded Auto-Reel to Level ${saveState.autoReelLevel}!`);
+            } else {
+                showToast("Not enough money!");
+            }
+        }
+
+        function buyClickPowerUpgrade(cost) {
+            if (saveState.money >= cost) {
+                saveState.money -= cost;
+                saveState.clickPowerLevel++;
+                saveGame();
+                Sound.sell();
+                renderBaitShop();
+                showToast(`Click Power Upgraded to Level ${saveState.clickPowerLevel}!`);
             } else {
                 showToast("Not enough money!");
             }
@@ -9423,7 +9560,11 @@
                     }
 
                     broadcastSound('reel');
-                    minigame.currentClicks++;
+
+                    // --- APPLY CLICK POWER ---
+                    const power = CLICK_POWER_RATES[saveState.clickPowerLevel] || 1;
+                    minigame.currentClicks += power;
+                    // -------------------------
 
                     if (minigame.currentClicks >= minigame.clicksNeeded) {
                         stopFishing(true);
