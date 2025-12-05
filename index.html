@@ -2968,7 +2968,7 @@
             // Multiply manual CPS by Click Power Level
             const power = CLICK_POWER_RATES[saveState.clickPowerLevel] || 1;
             const manualCPS = 10 * power;
-            const autoCPS = AUTO_CLICK_RATES[saveState.autoReelLevel] || 0;
+            const autoCPS = (AUTO_CLICK_RATES[saveState.autoReelLevel] || 0) * power;
             const totalCPS = manualCPS + autoCPS;
 
             // 2. Calculate Difficulty (Mirroring startMinigame logic)
@@ -10088,7 +10088,9 @@
                     const interval = 1.0 / cps;
                     while (autoClickAccumulator >= interval) {
                         autoClickAccumulator -= interval;
-                        minigame.currentClicks++;
+                        // Apply Click Power Multiplier to Auto-Reel
+                        const power = CLICK_POWER_RATES[saveState.clickPowerLevel] || 1;
+                        minigame.currentClicks += power;
                         if (minigame.currentClicks >= minigame.clicksNeeded) {
                             stopFishing(true);
                             break;
