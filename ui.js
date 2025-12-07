@@ -5594,27 +5594,39 @@ function checkLineOfSight(start, end) { // Used for PvP punching
     return { blocked: false };
 }
 
-// --- ADVERTISEMENT SYSTEM ---
-function initAdSystem() {
-    const ad = document.getElementById('ad-container');
-    if (ad) {
+// --- PATREON BANNER SYSTEM ---
+// Change this to your Patreon URL
+const PATREON_LINK = "https://www.patreon.com/c/HTMLFishing";
+
+function initPatreonBanner() {
+    const banner = document.getElementById('patreon-container');
+    if (banner) {
         // Show immediately
-        ad.style.display = 'flex';
-        console.log("Ad Banner: Active");
+        banner.style.display = 'flex';
+        console.log("Patreon Banner: Active");
     }
 }
 
-function closeAd() {
-    const ad = document.getElementById('ad-container');
-    if (ad) {
+function closePatreon() {
+    const banner = document.getElementById('patreon-container');
+    if (banner) {
         // If user closes it, hide it for this session
-        ad.style.display = 'none';
+        banner.style.display = 'none';
         // Optional: Bring it back after 5 minutes if you want
-        // setTimeout(() => { ad.style.display = 'flex'; }, 5 * 60 * 1000);
+        // setTimeout(() => { banner.style.display = 'flex'; }, 5 * 60 * 1000);
     }
 }
 
-// Run immediately on load
-initAdSystem();
+function openPatreon() {
+    window.open(PATREON_LINK, '_blank');
+}
+
+// Run when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPatreonBanner);
+} else {
+    // DOM is already ready, run immediately
+    initPatreonBanner();
+}
 
 
