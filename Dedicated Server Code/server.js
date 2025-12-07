@@ -2,60 +2,50 @@ const http = require('http');
 const WebSocket = require('ws');
 const crypto = require('crypto');
 const fs = require('fs');
+const https = require('https');
 
-const https = require('https'); // Add this line!
+const SERVER_NAME = process.env.SERVER_NAME || "Official Server";
+const PORT = process.env.PORT || 8080;
+const MASTER_URL = "https://html-fishing-master-server.onrender.com";
+const MY_PUBLIC_IP = "play.htmlfishing.com";
+const ADMIN_SALT = crypto.randomBytes(10).toString('hex');
 
-const PROP_TYPES = [
-    { id: 'campfire', name: 'Campfire', price: 500, icon: '🔥' },
-    { id: 'lamp', name: 'Lantern', price: 1000, icon: '🏮' },
-    { id: 'tent', name: 'Tent', price: 2500, icon: '⛺' },
-    { id: 'chair', name: 'Camp Chair', price: 1500, icon: '🪑' },
-    { id: 'radio', name: 'Boombox', price: 2000, icon: '📻' },
-    { id: 'cooler', name: 'Cooler', price: 1200, icon: '🧊' },
-    // --- NEW ITEMS ---
-    { id: 'bucket', name: 'Bucket', price: 300, icon: '🪣' },
-    { id: 'picnic_basket', name: 'Picnic Basket', price: 800, icon: '🧺' },
-    { id: 'picnic_blanket', name: 'Checkered Blanket', price: 1200, icon: '🏁' },
-    { id: 'picnic_table', name: 'Picnic Table', price: 3500, icon: '🪵' }
-];
+// RATE LIMITS (MS)
+const RATE_LIMITS = {
+    chat: 500,
+    sound: 150,
+    anim: 300,
+    punch: 300,
+    prop: 500
+};
+
+// --- GAME DATA DEFINITIONS ---
 
 const FISH_TYPES = [
-    // COMMONS (Base ~ $5 - $15)
     { name: "Old Boot", rarity: "Common", chance: 30, color: "#554433", drain: 10, price: 5 },
     { name: "Guppy", rarity: "Common", chance: 25, color: "#ADD8E6", drain: 12, price: 8 },
     { name: "Sardine", rarity: "Common", chance: 25, color: "#A0A0A0", drain: 15, price: 10 },
     { name: "Bluegill", rarity: "Common", chance: 20, color: "#4682B4", drain: 18, price: 12 },
     { name: "Carp", rarity: "Common", chance: 15, color: "#B8860B", drain: 20, price: 15 },
-
-    // UNCOMMON (Base ~ $30 - $60)
     { name: "Bass", rarity: "Uncommon", chance: 12, color: "#556B2F", drain: 25, price: 30 },
     { name: "Trout", rarity: "Uncommon", chance: 10, color: "#8FBC8F", drain: 28, price: 40 },
     { name: "Catfish", rarity: "Uncommon", chance: 8, color: "#800000", drain: 32, price: 50 },
     { name: "Salmon", rarity: "Uncommon", chance: 8, color: "#FA8072", drain: 35, price: 60 },
-
-    // RARE (Base ~ $100 - $200)
     { name: "Pike", rarity: "Rare", chance: 6, color: "#2E8B57", drain: 38, price: 100 },
     { name: "Clownfish", rarity: "Rare", chance: 5, color: "#FF4500", drain: 40, price: 125 },
     { name: "Tuna", rarity: "Rare", chance: 4, color: "#000080", drain: 45, price: 150 },
     { name: "Jellyfish", rarity: "Rare", chance: 3, color: "#E6E6FA", drain: 48, price: 175 },
-
-    // EPIC (Base ~ $300 - $600)
     { name: "Pufferfish", rarity: "Epic", chance: 3, color: "#F0E68C", drain: 50, price: 300 },
     { name: "Swordfish", rarity: "Epic", chance: 2, color: "#708090", drain: 55, price: 400 },
     { name: "Stingray", rarity: "Epic", chance: 1.5, color: "#778899", drain: 60, price: 500 },
     { name: "Anglerfish", rarity: "Epic", chance: 1.2, color: "#4B0082", drain: 65, price: 600 },
-
-    // LEGENDARY (Base ~ $1000+)
     { name: "Shark", rarity: "Legendary", chance: 1.0, color: "#2F4F4F", drain: 70, price: 1000 },
     { name: "Seahorse", rarity: "Legendary", chance: 0.8, color: "#FF69B4", drain: 75, price: 1500 },
     { name: "Golden Koi", rarity: "Legendary", chance: 0.5, color: "#FFD700", drain: 80, price: 2500 }
 ];
 
-// --- LAVA WORLD FISH GENERATION (250 VARIANTS) ---
 const LAVA_FISH = [];
-
 (function generateLavaFish() {
-    // 5 Prefixes * 50 Bases = 250 New Fish
     const prefixes = [
         { text: "Charred", rarity: "Common", col: "#2a1d1d", priceMult: 1.5 },
         { text: "Molten", rarity: "Uncommon", col: "#ff4500", priceMult: 2.0 },
@@ -63,7 +53,6 @@ const LAVA_FISH = [];
         { text: "Magma", rarity: "Epic", col: "#ffaa00", priceMult: 5.0 },
         { text: "Hellfire", rarity: "Legendary", col: "#ffffff", priceMult: 10.0 }
     ];
-
     const bases = [
         "Guppy", "Tetra", "Crab", "Snapper", "Eel", "Ray", "Shark", "Whale", "Kraken", "Dragon",
         "Piranha", "Salamander", "Toad", "Serpent", "Turtle", "Koi", "Bass", "Pike", "Gar", "Marlin",
@@ -71,29 +60,24 @@ const LAVA_FISH = [];
         "Imp", "Devil", "Soul", "Spirit", "Ghost", "Phantom", "Wraith", "Spectre", "Ghoul", "Lich",
         "Bone", "Skull", "Ash", "Cinder", "Ember", "Flame", "Blaze", "Inferno", "Pyre", "Phoenix"
     ];
-
     for (let p = 0; p < prefixes.length; p++) {
         for (let b = 0; b < bases.length; b++) {
             const prefix = prefixes[p];
             const baseName = bases[b];
-
-            // Base price calculation: Higher than normal fish
             const basePrice = 50 + (b * 5);
-
             LAVA_FISH.push({
                 name: `${prefix.text} ${baseName}`,
                 rarity: prefix.rarity,
-                chance: 10 / (p + 1), // Rarity logic
+                chance: 10 / (p + 1),
                 color: prefix.col,
                 drain: 25 + (p * 10),
                 price: Math.floor(basePrice * prefix.priceMult),
-                isLava: true // Marker to identify lava fish
+                isLava: true
             });
         }
     }
 })();
 
-// --- PROCEDURAL FISH GENERATION (1000 VARIANTS) ---
 (function generateMoreFish() {
     const prefixes = [
         { text: "Mud", rarity: "Common", mult: 1.0, col: "#5c4033" },
@@ -117,7 +101,6 @@ const LAVA_FISH = [];
         { text: "Cosmic", rarity: "Legendary", mult: 25.0, col: "#4b0082" },
         { text: "Divine", rarity: "Legendary", mult: 40.0, col: "#ffffff" }
     ];
-
     const bases = [
         "Tetra", "Minnow", "Dory", "Cod", "Snapper", "Mackerel",
         "Eel", "Ray", "Turtle", "Squid", "Crab", "Lobster", "Urchin",
@@ -128,20 +111,16 @@ const LAVA_FISH = [];
         "Koi", "Guppy", "Molly", "Oscar", "Discus", "Cichlid", "Pleco",
         "Loach", "Arowana", "Gar", "Piranha"
     ];
-
     for (let p = 0; p < prefixes.length; p++) {
         for (let b = 0; b < bases.length; b++) {
             const prefix = prefixes[p];
             const baseName = bases[b];
-
             let baseDrain = 10;
             let chance = 20;
-
             if (prefix.rarity === "Uncommon") { baseDrain = 30; chance = 10; }
             if (prefix.rarity === "Rare") { baseDrain = 50; chance = 5; }
             if (prefix.rarity === "Epic") { baseDrain = 70; chance = 2; }
             if (prefix.rarity === "Legendary") { baseDrain = 95; chance = 0.5; }
-
             FISH_TYPES.push({
                 name: `${prefix.text} ${baseName}`,
                 rarity: prefix.rarity,
@@ -193,7 +172,6 @@ function selectFish(activeBaitId, fishingZone, isRaining) {
     let bait = BAIT_TYPES.find(b => b.id === activeBaitId);
     if (!bait) bait = BAIT_TYPES[0];
 
-    // 1. Filter Pool based on Zone
     let basePool = FISH_TYPES.filter(f => !f.condition);
 
     if (fishingZone === 'void') {
@@ -209,32 +187,24 @@ function selectFish(activeBaitId, fishingZone, isRaining) {
         basePool = FISH_TYPES.filter(f => f.condition === 'rain');
     }
 
-    // Safety check
     if (basePool.length === 0) basePool = FISH_TYPES.filter(f => !f.condition);
 
-    // 2. BAIT FILTERING & LUCK LOGIC
     let pool = [];
     basePool.forEach(fish => {
         let chance = fish.chance;
-
-        // Filter out lower-tier fish when using better bait
         if (fish.rarity === 'Common') {
             if (['squid', 'spinner', 'grub', 'jig', 'shrimp', 'magic'].includes(bait.id)) {
                 if (Math.random() > 0.1) return;
             }
         }
-
-        // --- APPLY RARITY MULTIPLIERS ---
         if (fish.rarity === 'Rare') chance *= (bait.rarityMult * 0.8);
         if (fish.rarity === 'Epic') chance *= (bait.rarityMult * 1.0);
         if (fish.rarity === 'Legendary') chance *= (bait.rarityMult * 1.2);
-
         pool.push({ ...fish, chance: chance });
     });
 
-    if (pool.length === 0) pool = basePool; // Safety fallback
+    if (pool.length === 0) pool = basePool;
 
-    // 3. Pick Fish
     const totalChance = pool.reduce((acc, f) => acc + f.chance, 0);
     let random = Math.random() * totalChance;
     let selectedType = pool[0];
@@ -243,7 +213,6 @@ function selectFish(activeBaitId, fishingZone, isRaining) {
         random -= fish.chance;
     }
 
-    // 4. Tier Logic (Shiny/Gold/Opalescent)
     const totalTierChance = TIERS.reduce((acc, t) => acc + t.chance, 0);
     let tierRandom = Math.random() * totalTierChance;
 
@@ -259,7 +228,6 @@ function selectFish(activeBaitId, fishingZone, isRaining) {
         tierRandom -= tier.chance;
     }
 
-    // 5. Size Logic
     let sizeMult = 0.5 + Math.pow(Math.random(), 2) * 2.0;
     if (bait.power > 20) sizeMult += 0.15;
 
@@ -270,7 +238,6 @@ function selectFish(activeBaitId, fishingZone, isRaining) {
     else if (sizeMult > 1.8) sizeLabel = "Huge";
     else if (sizeMult > 1.3) sizeLabel = "Big";
 
-    // 6. Final Calculation
     return {
         name: selectedType.name,
         basePrice: selectedType.price,
@@ -286,66 +253,6 @@ function selectFish(activeBaitId, fishingZone, isRaining) {
     };
 }
 
-const HAT_TYPES = [
-    // BASIC (Entry Level)
-    { id: 'none', name: 'None', price: 0, type: 'none' },
-    { id: 'redcap', name: 'Red Cap', price: 200, color: '#ff0000', type: 'cap' },
-    { id: 'bluecap', name: 'Blue Cap', price: 200, color: '#0000ff', type: 'cap' },
-    { id: 'straw', name: 'Straw Hat', price: 500, color: '#e4d96f', type: 'wide' },
-    { id: 'beanie', name: 'Beanie', price: 750, color: '#444444', type: 'dome' },
-
-    // MID TIER (Style Upgrades)
-    { id: 'flower', name: 'Flower Pin', price: 1000, color: '#ffffff', type: 'flower' },
-    { id: 'fedora', name: 'Fedora', price: 2500, color: '#222', type: 'fedora' },
-    { id: 'beret', name: 'Beret', price: 3000, color: '#800000', type: 'beret' },
-    { id: 'bucket', name: 'Bucket Hat', price: 3500, color: '#4682B4', type: 'bucket' },
-    { id: 'cowboy', name: 'Cowboy', price: 5000, color: '#8b4513', type: 'wide' },
-    { id: 'headphones', name: 'Headphones', price: 7500, color: '#333', type: 'headphones' },
-
-    // HIGH TIER (Expensive)
-    { id: 'tophat', name: 'Top Hat', price: 10000, color: '#111111', type: 'tall' },
-    { id: 'sombrero', name: 'Sombrero', price: 12000, color: '#edc9af', type: 'sombrero' },
-    { id: 'pirate', name: 'Pirate', price: 15000, color: '#222222', type: 'wide' },
-    { id: 'santa', name: 'Santa Hat', price: 20000, color: '#ff0000', type: 'santa' },
-    { id: 'chef', name: 'Chef Hat', price: 25000, color: '#ffffff', type: 'tall' },
-    { id: 'witch', name: 'Witch Hat', price: 30000, color: '#4b0082', type: 'witch' },
-    { id: 'ninja', name: 'Ninja Band', price: 40000, color: '#000000', type: 'ninja' },
-    { id: 'propeller', name: 'Propeller', price: 50000, color: '#0000ff', type: 'propeller' },
-
-    // ULTRA TIER (Status Symbols)
-    { id: 'viking', name: 'Viking', price: 75000, color: '#a0a0a0', type: 'horn' },
-    { id: 'halo', name: 'Angel Halo', price: 100000, color: '#ffff00', type: 'halo' },
-    { id: 'antlers', name: 'Antlers', price: 150000, color: '#5D4037', type: 'antlers' },
-    { id: 'police', name: 'Police Cap', price: 200000, color: '#000080', type: 'police' },
-    { id: 'tv', name: 'TV Head', price: 500000, color: '#444', type: 'tv' },
-
-    // FLEX TIER (Millionaire Club)
-    { id: 'goldcrown', name: 'King Crown', price: 1000000, color: '#ffff00', type: 'crown' },
-    { id: 'rainbow', name: 'Rainbow Afro', price: 2000000, color: '#ff00ff', type: 'rainbow' },
-    { id: 'void', name: 'Void Mask', price: 3500000, color: '#000000', type: 'void' },
-    { id: 'diamond', name: 'Diamond Tiara', price: 5000000, color: '#00ffff', type: 'diamond' }
-];
-
-// --- MASTER SERVER CONFIG ---
-
-const MASTER_URL = 'https://html-fishing-master-server.onrender.com'; // Change this to your Master Server URL
-const MY_PUBLIC_IP = 'play.htmlfishing.com'; // This server's public IP (or use 'localhost' for testing)
-const SERVER_NAME = process.env.SERVER_NAME || "Official Dedicated Server";
-
-const PORT = process.env.PORT || 8080;
-
-// --- CONFIGURATION ---
-const ADMIN_PLAINTEXT = process.env.ADMIN_PW || 'super-secret-password';
-
-// --- SECURITY & HASHING ---
-function sha256Hex(input) {
-    return crypto.createHash('sha256').update(input, 'utf8').digest('hex');
-}
-
-const ADMIN_SALT = crypto.randomBytes(10).toString('hex');
-const ADMIN_STORED_HASH = sha256Hex(ADMIN_PLAINTEXT + ADMIN_SALT);
-
-// --- LOGGING SYSTEM ---
 function logToFile(text) {
     const timestamp = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
     const logLine = `[${timestamp}] ${text}\n`;
@@ -354,10 +261,7 @@ function logToFile(text) {
     });
 }
 
-// --- Persistence Configuration ---
 const BAN_FILE = 'banned_ips.json';
-
-// --- Ban Persistence Functions ---
 
 function saveBannedIPs() {
     try {
@@ -381,7 +285,7 @@ function sendHeartbeat() {
 
     const options = {
         hostname: url.hostname,
-        port: 443, // HTTPS standard port
+        port: 443,
         path: url.pathname,
         method: 'POST',
         headers: {
@@ -390,13 +294,9 @@ function sendHeartbeat() {
         }
     };
 
-    // Use 'https' here instead of 'http'
     const req = https.request(options, (res) => {
         if (res.statusCode !== 200) {
             console.error(`[HEARTBEAT] Failed. Status Code: ${res.statusCode}`);
-        } else {
-            // Optional: Uncomment to see successful heartbeats in console
-            // console.log("[HEARTBEAT] Sent successfully.");
         }
     });
 
@@ -423,13 +323,46 @@ function loadBannedIPs() {
     }
 }
 
+let admins = new Set();
+const ADMIN_FILE = 'admins.json';
+
+function loadAdmins() {
+    try {
+        if (fs.existsSync(ADMIN_FILE)) {
+            const data = fs.readFileSync(ADMIN_FILE, 'utf8');
+            const loopAdmins = JSON.parse(data);
+            admins.clear();
+            loopAdmins.forEach(ip => admins.add(ip));
+            console.log(`[ADMIN] Loaded ${admins.size} admins.`);
+        } else {
+            console.log("[ADMIN] No admins.json found.");
+        }
+    } catch (err) {
+        console.error("[ADMIN] Failed to load admins:", err);
+    }
+}
+
+fs.watchFile(ADMIN_FILE, (curr, prev) => {
+    console.log("[ADMIN] admins.json changed, reloading...");
+    loadAdmins();
+    Object.keys(clients).forEach(id => {
+        const c = clients[id];
+        const wasAdmin = c.meta.isAdmin;
+        c.meta.isAdmin = admins.has(c.meta.ip);
+        if (wasAdmin !== c.meta.isAdmin) {
+            const status = c.meta.isAdmin ? "GRANTED" : "REVOKED";
+            c.ws.send(JSON.stringify({ type: 'system', text: `Admin privileges ${status}.`, id: 'system' }));
+            c.ws.send(JSON.stringify({ type: c.meta.isAdmin ? 'admin_ok' : 'admin_fail' }));
+        }
+    });
+});
+
+
 console.log('--- SERVER STARTUP ---');
-console.log('Admin salt:', ADMIN_SALT);
+loadAdmins();
+loadBannedIPs();
 console.log('Server is ready to accept connections.');
 
-loadBannedIPs();
-
-// --- HTTP SERVER ---
 const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -446,13 +379,19 @@ const server = http.createServer((req, res) => {
     }
 });
 
-// --- WEBSOCKET SERVER ---
 const wss = new WebSocket.Server({ server });
 
-let clients = {}; // Map: id -> { ws, meta }
-let playerData = {}; // Authoritative state for all players
-let worldProps = {}; // Map: propId -> { id, type, x, y, z, rot, ownerId }
+let clients = {};
+let playerData = {};
 let bannedIPs = new Set();
+let activeProps = []; // { id, type, x, z, owner, timestamp }
+
+let worldTime = 12.0;
+const DAY_DURATION = 600; // 10 Minutes
+setInterval(() => {
+    worldTime += (1 / DAY_DURATION) * 24;
+    if (worldTime >= 24) worldTime -= 24;
+}, 1000);
 
 function getNewPlayerData() {
     return {
@@ -470,8 +409,6 @@ function getNewPlayerData() {
         autoReelLevel: 0,
         clickPowerLevel: 0,
         hasGuitar: false,
-        unlockedProps: [],
-        currentProp: 'campfire',
         unlockedRods: ['bamboo'],
         currentRod: 'bamboo',
         unlockedShirts: ['none'],
@@ -487,11 +424,18 @@ function getNewPlayerData() {
 
 function broadcast(obj, exceptId = null) {
     const data = JSON.stringify(obj);
+    let count = 0;
     Object.keys(clients).forEach(id => {
         if (id !== exceptId && clients[id].ws.readyState === WebSocket.OPEN) {
             clients[id].ws.send(data);
+            count++;
         }
     });
+
+    // Validating if broadcast is actually reaching people
+    if (obj.type === 'punch_hit' || obj.type === 'forceGhost') {
+        console.log(`[DEBUG] Broadcasted ${obj.type} to ${count} clients (Excluded: ${exceptId})`);
+    }
 }
 
 function broadcastPlayerList() {
@@ -504,9 +448,11 @@ function broadcastPlayerList() {
 
 wss.on('connection', (ws, req) => {
     const id = crypto.randomUUID();
-    const ip = req.socket.remoteAddress;
 
-    // BAN CHECK
+    const ip = req.headers['cf-connecting-ip'] ||
+        req.headers['x-forwarded-for'] ||
+        req.socket.remoteAddress;
+
     if (bannedIPs.has(ip)) {
         ws.send(JSON.stringify({ type: 'error', message: "You are BANNED from this server." }));
         ws.close();
@@ -515,7 +461,6 @@ wss.on('connection', (ws, req) => {
 
     console.log(`New client connected: ${id} (${ip})`);
 
-    // Initialize Player
     clients[id] = {
         ws: ws,
         meta: {
@@ -524,36 +469,69 @@ wss.on('connection', (ws, req) => {
             color: "#ff6347",
             x: 0, y: 0, z: 0,
             ip: ip,
-            isAdmin: false,
+            isAdmin: admins.has(ip),
             isChatMuted: false,
             isVoiceMuted: false,
             isMidiMuted: false,
-            lastSeen: Date.now()
+            lastSeen: Date.now(),
+            // --- VISUAL DEFAULTS ---
+            species: 'cat',
+            hat: 'none',
+            shirt: 'none',
+            belly: '#ffffff',
+            eye: '#000000',
+            collar: 'none',
+            title: 'none',
+            rod: 'bamboo',
+            bobber: null
         },
-        props: [],
-        lastPropTime: 0
+        isJoined: false, // <--- ADDED: Track if we have announced them yet
+
+        // RATE LIMITING
+        rateLimits: {
+            chat: 0,
+            sound: 0,
+            anim: 0,
+            punch: 0,
+            prop: 0
+        }
     };
 
-    // Initialize Data if not present (In-Memory Persistence for session)
     if (!playerData[id]) {
         playerData[id] = getNewPlayerData();
     }
 
-    // Send Welcome Packet
     ws.send(JSON.stringify({
         type: 'welcome',
         id: id,
         serverName: SERVER_NAME,
         motd: "Welcome to the Official Dedicated Server!",
         players: Object.keys(clients).length,
-        adminSalt: ADMIN_SALT,
-        // Send existing props to new player
-        worldProps: Object.values(worldProps)
+        worldTime: worldTime,
+
+        // --- FIX: SEND RAIN STATE ---
+        isRaining: isRaining,
+        // ----------------------------
+
+        // --- PROP SYNC ---
+        activeProps: activeProps,
+        // -----------------
+
+        playerList: Object.fromEntries(
+            Object.entries(clients).map(([cid, c]) => [cid, c.meta])
+        )
     }));
 
-    // Notify others
-    broadcast({ type: 'playerJoined', id: id, meta: clients[id].meta }, id);
-    broadcastPlayerList();
+    console.log(`[CONNECTION] New player ${id} connected from IP: ${ip}`);
+
+    if (clients[id].meta.isAdmin) {
+        console.log(`[ADMIN] Auto-authorizing admin at ${ip}`);
+        ws.send(JSON.stringify({ type: 'admin_ok' }));
+    }
+
+    // --- REMOVED: Immediate playerJoined broadcast. We wait for setName now. ---
+    // broadcast({ type: 'playerJoined', id: id, meta: clients[id].meta }, id);
+    // broadcastPlayerList();
 
     ws.on('message', (raw) => {
         clients[id].meta.lastSeen = Date.now();
@@ -562,6 +540,25 @@ wss.on('connection', (ws, req) => {
         const info = clients[id];
 
         if (msg.type === 'update') {
+            const p = msg.payload;
+            if (p) {
+                // Sync Position/Rotation
+                if (p.pos) { info.meta.x = p.pos.x; info.meta.y = p.pos.y; info.meta.z = p.pos.z; }
+                if (p.rot !== undefined) info.meta.rot = p.rot;
+
+                // Sync Visuals
+                if (p.species) info.meta.species = p.species;
+                if (p.hat) info.meta.hat = p.hat;
+                if (p.color) info.meta.color = p.color;
+                if (p.belly) info.meta.belly = p.belly;
+                if (p.eye) info.meta.eye = p.eye;
+                if (p.shirt) info.meta.shirt = p.shirt;
+                if (p.collar) info.meta.collar = p.collar;
+                if (p.title) info.meta.title = p.title;
+                if (p.rod) info.meta.rod = p.rod;
+                if (p.bobber) info.meta.bobber = p.bobber;
+            }
+
             broadcast({ type: 'update', id: id, payload: msg.payload }, id);
         }
 
@@ -570,14 +567,11 @@ wss.on('connection', (ws, req) => {
             info.meta.name = safeName;
             if (msg.peerId) info.meta.peerId = msg.peerId;
 
-            // --- NEW: Accept Client Save Data (Trust on Join) ---
             if (msg.saveState) {
-                // Initialize with client data, but sanitize/validate basics
                 playerData[id] = {
-                    ...getNewPlayerData(), // Start with defaults
+                    ...getNewPlayerData(),
                     money: typeof msg.saveState.money === 'number' ? msg.saveState.money : 0,
                     inventory: Array.isArray(msg.saveState.inventory) ? msg.saveState.inventory : [],
-                    // Add other persistent fields as needed (cosmetics, etc.)
                     currentHat: msg.saveState.currentHat || 'none',
                     currentShirt: msg.saveState.currentShirt || 'none',
                     currentRod: msg.saveState.currentRod || 'bamboo',
@@ -588,113 +582,141 @@ wss.on('connection', (ws, req) => {
                     unlockedTitles: Array.isArray(msg.saveState.unlockedTitles) ? msg.saveState.unlockedTitles : ['none'],
                     clickPowerLevel: typeof msg.saveState.clickPowerLevel === 'number' ? msg.saveState.clickPowerLevel : 0
                 };
+
+                // Sync Visuals
+                info.meta.species = msg.saveState.species || 'cat';
+                info.meta.hat = msg.saveState.currentHat || 'none';
+                info.meta.shirt = msg.saveState.currentShirt || 'none';
+                info.meta.color = msg.saveState.catColor || '#ff6347';
+                info.meta.belly = msg.saveState.bellyColor || '#ffffff';
+                info.meta.eye = msg.saveState.eyeColor || '#000000';
+                info.meta.collar = msg.saveState.currentCollar || 'none';
+                info.meta.title = msg.saveState.currentTitle || 'none';
+
                 logToFile(`LOGIN: Player "${safeName}" joined with $${playerData[id].money} (ID: ${id})`);
-                console.log(`LOGIN: Player "${safeName}" joined with $${playerData[id].money} (ID: ${id})`);
             } else {
                 logToFile(`LOGIN: Player "${safeName}" joined (New/No Save) (ID: ${id})`);
-                console.log(`LOGIN: Player "${safeName}" joined (New/No Save) (ID: ${id})`);
             }
-            // ---------------------------------------------------
+
+            // --- FIX: BROADCAST JOIN HERE ---
+            // Only announce the player once they have set their name.
+            if (!info.isJoined) {
+                info.isJoined = true;
+                broadcast({ type: 'playerJoined', id: id, meta: info.meta }, id);
+            }
 
             broadcastPlayerList();
         }
 
+
         else if (['chat', 'sound', 'anim', 'punch_hit', 'spawnPortal', 'forceGhost'].includes(msg.type)) {
+            // RATE LIMIT CHECK
+            let limitType = 'anim';
+            if (msg.type === 'chat') limitType = 'chat';
+            if (msg.type === 'sound') limitType = 'sound';
+            if (msg.type === 'punch_hit') limitType = 'punch'; // Separate rate limit for punch hits
+
+            const now = Date.now();
+            if (now - info.rateLimits[limitType] < RATE_LIMITS[limitType]) {
+                // Ignore spam
+                return;
+            }
+            info.rateLimits[limitType] = now;
+
             msg.id = id;
 
-            // 1. CHAT LOGIC (Includes Mute & Name Attachment)
             if (msg.type === 'chat') {
-                // Check Mute
                 if (info.meta.isChatMuted) return;
-
-                // --- FIX: ATTACH NAME HERE ---
+                if (msg.text && typeof msg.text === 'string') {
+                    msg.text = msg.text.substring(0, 256);
+                }
                 if (info.meta.name) {
                     msg.name = info.meta.name;
                     logToFile(`CHAT: [${info.meta.name}] ${msg.text}`);
                 }
-                // -----------------------------
+            } else if (msg.type === 'punch_hit') {
+                console.log(`[DEBUG] Received punch_hit from ${info.meta.name} targeting ${msg.targetId}`);
+                logToFile(`PUNCH: ${info.meta.name} punched ${msg.targetId}`);
+
+                const target = clients[msg.targetId];
+                if (!target) {
+                    console.log(`[DEBUG] Punch target ${msg.targetId} not found.`);
+                    return;
+                }
+
+                // Forward ONLY to the correct player
+                target.ws.send(JSON.stringify({
+                    type: 'punch_hit',
+                    attackerId: id,
+                    force: msg.force,
+                    targetId: msg.targetId
+                }));
+
+                return; // Do NOT broadcast globally
             }
 
-            // 2. MIDI/SOUND LOGIC (Includes Mute)
-            if (msg.type === 'sound' && msg.name === 'guitar') {
-                if (info.meta.isMidiMuted) return;
+
+            // Explicit Debug for these types
+            if (['forceGhost', 'spawnPortal'].includes(msg.type)) {
+                console.log(`[DEBUG] Received ${msg.type} from ${info.meta.name}`);
+            }
+
+            if (msg.type === 'sound') {
+                if (info.meta.isMidiMuted && msg.name === 'guitar') return;
             }
 
             broadcast(msg, id);
         }
 
-        else if (msg.type === 'request_prop') {
-            if (!info.props) info.props = [];
+        else if (msg.type === 'placeProp') {
+            // RATE LIMIT CHECK
+            const now = Date.now();
+            if (now - info.rateLimits.prop < RATE_LIMITS.prop) return;
+            info.rateLimits.prop = now;
 
-            // 1. LIMIT CHECK (FIFO - Remove Oldest)
-            if (info.props.length >= 10) {
-                const oldestPropId = info.props.shift();
-
-                // Remove from global memory AND clients
-                if (worldProps[oldestPropId]) {
-                    delete worldProps[oldestPropId]; // <--- Delete from server memory
-                    broadcast({ type: 'remove_prop', id: oldestPropId });
-                }
+            // Limit Check (10 per player)
+            const playerProps = activeProps.filter(p => p.owner === id);
+            if (playerProps.length >= 10) {
+                const oldest = playerProps[0];
+                activeProps = activeProps.filter(p => p.id !== oldest.id);
+                broadcast({ type: 'propRemoved', id: oldest.id });
             }
 
-            // 2. RATE LIMIT
-            const now = Date.now();
-            if (info.lastPropTime && now - info.lastPropTime < 1000) return;
-            info.lastPropTime = now;
-
-            // 3. GENERATE & SAVE
-            const propId = `prop-${id}-${Date.now()}`;
-            const propData = {
-                id: propId,
-                ownerId: id,
+            const newProp = {
+                id: crypto.randomUUID(),
                 type: msg.propType,
                 x: msg.x,
-                y: msg.y,
                 z: msg.z,
-                rot: msg.rot // <--- SAVE ROTATION HERE
+                owner: id,
+                timestamp: Date.now()
             };
-
-            info.props.push(propId);
-            worldProps[propId] = propData;
-
-            broadcast({
-                type: 'spawn_prop',
-                payload: propData
-            });
+            activeProps.push(newProp);
+            broadcast({ type: 'propPlaced', prop: newProp });
         }
 
-        else if (msg.type === 'undo_prop') {
-            if (info.props && info.props.length > 0) {
-                // Remove the LAST item from the array (LIFO)
-                const lastPropId = info.props.pop();
+        else if (msg.type === 'undoProp') {
+            const playerProps = activeProps.filter(p => p.owner === id);
+            if (playerProps.length > 0) {
+                // Find the most recent one
+                playerProps.sort((a, b) => b.timestamp - a.timestamp);
+                const newest = playerProps[0];
 
-                // Remove from global memory
-                if (worldProps[lastPropId]) {
-                    delete worldProps[lastPropId];
-                }
-
-                // Tell everyone to remove it visually
-                broadcast({
-                    type: 'remove_prop',
-                    id: lastPropId
-                });
+                activeProps = activeProps.filter(p => p.id !== newest.id);
+                broadcast({ type: 'propRemoved', id: newest.id });
             }
         }
 
         else if (msg.type === 'fishCaught') {
             if (!playerData[id]) return;
 
-            // Server-side Fish Generation
             const activeBaitId = msg.baitId || 'none';
             const fishingZone = msg.zone || 'lake';
-            // TODO: Implement isRaining check on server (requires global weather state)
             const isRaining = false;
 
             const caughtFish = selectFish(activeBaitId, fishingZone, isRaining);
 
             playerData[id].inventory.push(caughtFish);
 
-            // Notify client of what they caught (so they can show the toast/visuals)
             ws.send(JSON.stringify({
                 type: 'fishCaughtConfirmed',
                 fish: caughtFish
@@ -709,7 +731,6 @@ wss.on('connection', (ws, req) => {
 
             let totalValue = 0;
             player.inventory.forEach(fishInInventory => {
-                // Trust the price in the inventory because WE generated it on the server
                 totalValue += fishInInventory.price;
             });
 
@@ -726,52 +747,38 @@ wss.on('connection', (ws, req) => {
             }));
         }
 
-        // --- ADMIN COMMANDS ---
-        else if (msg.type === 'admin_login') {
-            if (msg.hash && msg.hash === ADMIN_STORED_HASH) {
-                info.meta.isAdmin = true;
-                ws.send(JSON.stringify({ type: 'admin_ok' }));
-                broadcast({ type: 'system', text: `Admin logged in.`, id: 'system' });
-                logToFile(`ADMIN: Successful login from IP ${info.meta.ip}`);
-            } else {
-                ws.send(JSON.stringify({ type: 'admin_fail' }));
-            }
-        }
-
-        else if (msg.type === 'admin_cmd' && info.meta.isAdmin) {
+        if (msg.type === 'admin_cmd' && info.meta.isAdmin) {
 
             if (msg.cmd === 'spawnPortal') {
-                // Determine coordinates: Use sent ones, or generate random ones if missing
-                let x = msg.x;
-                let z = msg.z;
-
-                // If client didn't send coordinates (e.g. Admin Button), randomize it
-                // This prevents it from spawning at 0,0 (Middle of Lake)
-                if (x === undefined || z === undefined) {
-                    const angle = Math.random() * Math.PI * 2;
-                    const dist = 30 + Math.random() * 50; // Distance from center (30-80 units)
-                    x = Math.cos(angle) * dist;
-                    z = Math.sin(angle) * dist;
-                }
-
+                let x = msg.x || 0; let z = msg.z || 0;
                 broadcast({ type: 'spawnPortal', x: x, z: z });
-                logToFile(`ADMIN: ${info.meta.name} spawned a portal at ${x.toFixed(1)}, ${z.toFixed(1)}`);
+                logToFile(`ADMIN: ${info.meta.name} spawned a portal.`);
             }
 
             else if (msg.cmd === 'kick') {
                 const target = clients[msg.targetId];
                 if (target) {
+                    // --- PROTECTION: Prevent kicking other Admins ---
+                    if (target.meta.isAdmin) {
+                        ws.send(JSON.stringify({ type: 'error', message: "⛔ Cannot kick another Admin." }));
+                        return;
+                    }
+
                     target.ws.send(JSON.stringify({ type: 'error', message: "You have been kicked." }));
                     target.ws.close();
                     broadcast({ type: 'system', text: `${target.meta.name || 'Unknown'} was kicked.`, id: 'system' });
                 }
             }
 
-            // You will modify this block:
             else if (msg.cmd === 'ban') {
                 const target = clients[msg.targetId];
                 if (target) {
-                    // --- ADD THIS PURGE BROADCAST ---
+                    // --- PROTECTION: Prevent banning other Admins ---
+                    if (target.meta.isAdmin) {
+                        ws.send(JSON.stringify({ type: 'error', message: "⛔ Cannot ban another Admin." }));
+                        return;
+                    }
+
                     broadcast({ type: 'purge_chat', targetId: msg.targetId });
 
                     if (target.meta.ip) bannedIPs.add(target.meta.ip);
@@ -782,7 +789,6 @@ wss.on('connection', (ws, req) => {
                 }
             }
 
-            // MUTE COMMANDS
             else if (msg.cmd === 'mute_chat') {
                 const target = clients[msg.targetId];
                 if (target) {
@@ -825,32 +831,42 @@ wss.on('connection', (ws, req) => {
     ws.on('close', () => {
         console.log(`Client disconnected: ${id}`);
 
-        // --- REMOVE PROPS ON DISCONNECT ---
-        if (clients[id] && clients[id].props) {
-            clients[id].props.forEach(propId => {
-                delete worldProps[propId]; // <--- Delete from server memory
-                broadcast({ type: 'remove_prop', id: propId });
-            });
-        }
+        // --- FIX 1: REMOVE PROPS OWNED BY THIS PLAYER ---
+        // Find props belonging to the disconnected player
+        const propsToRemove = activeProps.filter(p => p.owner === id);
+
+        // Update the active list to exclude them
+        activeProps = activeProps.filter(p => p.owner !== id);
+
+        // Tell everyone to delete these specific props
+        propsToRemove.forEach(p => {
+            broadcast({ type: 'propRemoved', id: p.id });
+        });
+        // -----------------------------------------------
 
         broadcast({ type: 'playerLeft', id: id });
         delete clients[id];
-        delete playerData[id]; // Clean up player state
         broadcast({ type: 'playerCount', count: Object.keys(clients).length });
         broadcastPlayerList();
     });
 });
 
-// --- ENVIRONMENT LOOP ---
 let isRaining = false;
 let nextWeatherChange = Date.now() + 60000;
 let nextPortalSpawn = Date.now() + 600000;
+let lastTimeSync = 0; // New variable for periodic sync
 
 setInterval(() => {
     const now = Date.now();
-    const date = new Date();
-    const worldTime = date.getHours() + (date.getMinutes() / 60) + (date.getSeconds() / 3600);
+    // Use global worldTime, do not re-declare it
 
+    // 1. Periodic Time Sync (Every 5 Seconds)
+    if (now - lastTimeSync > 5000) {
+        broadcast({ type: 'environment_sync', isRaining: isRaining, time: worldTime });
+        lastTimeSync = now;
+    }
+
+    // 2. Weather Logic
     if (now > nextWeatherChange) {
         if (isRaining) {
             isRaining = false;
@@ -863,6 +879,7 @@ setInterval(() => {
                 nextWeatherChange = now + 120000;
             }
         }
+        // Broadcast immediately on change
         broadcast({ type: 'environment_sync', isRaining: isRaining, time: worldTime });
     }
 
@@ -879,22 +896,15 @@ process.on('SIGINT', () => {
     process.exit();
 });
 
-// --- HEARTBEAT / TIMEOUT CHECK ---
-// Checks every 5 seconds for dead connections
 setInterval(() => {
     const now = Date.now();
-    const TIMEOUT_LIMIT = 20000; // 20 Seconds
+    const TIMEOUT_LIMIT = 20000;
 
     Object.keys(clients).forEach(id => {
         const client = clients[id];
 
-        // If we haven't heard from them in 20 seconds...
         if (now - client.meta.lastSeen > TIMEOUT_LIMIT) {
             console.log(`Removing inactive player: ${id}`);
-
-            // Force close the connection.
-            // This triggers the ws.on('close') handler automatically,
-            // which handles removing props, broadcasting 'playerLeft', and updating count.
             client.ws.terminate();
         }
     });
@@ -904,5 +914,4 @@ server.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
 });
 setInterval(sendHeartbeat, 30000);
-// Send one immediately on startup
 sendHeartbeat();
