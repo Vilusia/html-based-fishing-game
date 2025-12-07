@@ -954,7 +954,10 @@ function connectToDedicatedServer(customUrl = null) {
 
         // 10. Environment (Weather/Time)
         else if (msg.type === 'environment_sync') {
-            worldTime = msg.time;
+            // Store target time for smooth interpolation in updateDayNightCycle
+            if (typeof msg.time === 'number') {
+                window._serverTargetTime = msg.time;
+            }
             const prevRain = isRaining;
             isRaining = msg.isRaining;
             if (prevRain !== isRaining) {
@@ -1673,11 +1676,11 @@ function createRemotePlayer(id, data) {
     const s = group.getObjectByName('playerSprite');
     const texF = createSpeciesTexture(
         data.species || 'cat', data.color, data.belly, false,
-        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000'
+        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none'
     );
     const texB = createSpeciesTexture(
         data.species || 'cat', data.color, data.belly, true,
-        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000'
+        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none'
     );
 
     s.userData.matFront.map = texF;
@@ -1746,13 +1749,13 @@ function updateRemotePlayer(id, data) {
         }
     }
 
-    // 3. VISUALS SYNC (Colors, Hat, Shirt, Collar)
+    // 3. VISUALS SYNC (Colors, Hat, Shirt, Collar, Pattern)
     if (p.lastData.color !== data.color || p.lastData.belly !== data.belly || p.lastData.hat !== data.hat ||
-        p.lastData.eye !== data.eye || p.lastData.species !== data.species || p.lastData.shirt !== data.shirt || p.lastData.collar !== data.collar) {
+        p.lastData.eye !== data.eye || p.lastData.species !== data.species || p.lastData.shirt !== data.shirt || p.lastData.collar !== data.collar || p.lastData.pattern !== data.pattern) {
 
         const s = p.mesh.getObjectByName('playerSprite');
-        const texF = createSpeciesTexture(data.species || 'cat', data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000');
-        const texB = createSpeciesTexture(data.species || 'cat', data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000');
+        const texF = createSpeciesTexture(data.species || 'cat', data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none');
+        const texB = createSpeciesTexture(data.species || 'cat', data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none');
         s.userData.matFront.map = texF;
         s.userData.matBack.map = texB;
     }
@@ -2370,9 +2373,27 @@ function addHotspotParticles(x, y, z) {
 
 function updateDayNightCycle(dt) {
 
+    // Always run local time simulation for smooth movement
     if (typeof DAY_DURATION !== 'undefined') {
         worldTime += (dt / DAY_DURATION) * 24;
         if (worldTime >= 24) worldTime -= 24;
+    }
+
+    // On dedicated servers, smoothly lerp towards server target time
+    if (isConnectedToDedicated && typeof window._serverTargetTime === 'number') {
+        let diff = window._serverTargetTime - worldTime;
+
+        // Handle day wrap-around (e.g., server at 0.1, client at 23.9)
+        if (diff > 12) diff -= 24;
+        if (diff < -12) diff += 24;
+
+        // Only correct if drift is noticeable (> 0.01 hours ~ 0.4 seconds game time)
+        if (Math.abs(diff) > 0.01) {
+            // Lerp towards server time smoothly
+            worldTime += diff * 0.1; // 10% correction per frame
+            if (worldTime >= 24) worldTime -= 24;
+            if (worldTime < 0) worldTime += 24;
+        }
     }
 
 
@@ -3500,8 +3521,134 @@ function drawCollar(ctx, collarId, isBack) {
     }
 }
 
+// Draws fur patterns on the body and head (not covered by shirts)
+function drawPattern(ctx, patternId, col, back) {
+    if (!patternId || patternId === 'none') return;
+
+    const pattern = typeof PATTERN_TYPES !== 'undefined' ? PATTERN_TYPES.find(p => p.id === patternId) : null;
+    if (!pattern) return;
+
+    const patternColor = pattern.color || '#000000';
+    ctx.fillStyle = patternColor;
+
+    // Only draw on HEAD area (14, 10, 36, 24) to avoid overlapping with shirts on body
+    // Head coordinates: x=14, y=10, w=36, h=24
+
+    if (patternId === 'spots') {
+        // Spots on body (primary) and head (secondary)
+        const bodySpots = [[26, 38], [38, 42], [30, 50], [22, 46], [36, 54]];
+        const headSpots = [[20, 18], [44, 20]];
+        [...bodySpots, ...headSpots].forEach(([x, y]) => {
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+    else if (patternId === 'stripes') {
+        // Tiger stripes on body and head
+        ctx.fillRect(22, 35, 20, 3);
+        ctx.fillRect(22, 42, 20, 3);
+        ctx.fillRect(22, 49, 20, 3);
+        ctx.fillRect(18, 14, 3, 8);
+        ctx.fillRect(43, 14, 3, 8);
+    }
+    else if (patternId === 'calico') {
+        // Calico patches on body (orange and black)
+        ctx.fillStyle = '#ff8c00';
+        ctx.fillRect(22, 34, 8, 10);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(34, 40, 8, 12);
+        ctx.fillStyle = '#ff8c00';
+        ctx.fillRect(26, 50, 10, 8);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(38, 14, 8, 8);
+    }
+    else if (patternId === 'tuxedo') {
+        // White chest (front only)
+        if (!back) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(26, 36, 12, 18);
+            ctx.fillRect(28, 28, 8, 6);
+        }
+    }
+    else if (patternId === 'tabby') {
+        // Tabby stripes on body + M forehead
+        ctx.save();
+        ctx.translate(32, 45);
+        ctx.rotate(0.3);
+        ctx.fillRect(-10, -8, 3, 16);
+        ctx.fillRect(-4, -10, 3, 20);
+        ctx.fillRect(2, -8, 3, 16);
+        ctx.fillRect(8, -6, 3, 12);
+        ctx.restore();
+        ctx.beginPath();
+        ctx.moveTo(20, 18);
+        ctx.lineTo(26, 10);
+        ctx.lineTo(32, 16);
+        ctx.lineTo(38, 10);
+        ctx.lineTo(44, 18);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = patternColor;
+        ctx.stroke();
+    }
+    else if (patternId === 'dalmatian') {
+        // Black spots on body and head
+        const spots = [[26, 36, 4], [38, 40, 3], [30, 48, 5], [24, 54, 3], [40, 52, 4], [20, 16, 3], [42, 18, 4]];
+        spots.forEach(([x, y, r]) => {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+    else if (patternId === 'cow') {
+        // Irregular black patches on body and head
+        ctx.beginPath();
+        ctx.ellipse(28, 40, 7, 5, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(38, 52, 6, 8, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(40, 18, 5, 4, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    else if (patternId === 'hearts') {
+        // Hearts on body and head
+        const drawHeart = (x, y, size) => {
+            ctx.beginPath();
+            ctx.moveTo(x, y + size / 4);
+            ctx.bezierCurveTo(x, y, x - size / 2, y, x - size / 2, y + size / 4);
+            ctx.bezierCurveTo(x - size / 2, y + size / 2, x, y + size * 0.7, x, y + size);
+            ctx.bezierCurveTo(x, y + size * 0.7, x + size / 2, y + size / 2, x + size / 2, y + size / 4);
+            ctx.bezierCurveTo(x + size / 2, y, x, y, x, y + size / 4);
+            ctx.fill();
+        };
+        drawHeart(28, 38, 8);
+        drawHeart(38, 48, 6);
+        drawHeart(32, 16, 5);
+    }
+    else if (patternId === 'stars') {
+        // Stars on body and head
+        const drawStar = (cx, cy, size) => {
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+                const x = cx + Math.cos(angle) * size;
+                const y = cy + Math.sin(angle) * size;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+        };
+        drawStar(28, 40, 5);
+        drawStar(38, 50, 4);
+        drawStar(32, 18, 4);
+    }
+}
+
 // Main texture compositing function. Combines species, colors, and all cosmetics into one texture.
-function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000') {
+function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none') {
     const c = document.createElement('canvas'); c.width = 64; c.height = 64;
     const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
     const col = new THREE.Color(hex).getStyle();
@@ -3509,6 +3656,9 @@ function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shir
     const eyeCol = new THREE.Color(eyeHex).getStyle();
 
     drawSpecies(ctx, species, col, bellyCol, eyeCol, back);
+
+    // Draw fur pattern AFTER species but BEFORE shirt (so it doesn't cover clothes)
+    drawPattern(ctx, patternId, col, back);
 
     // UPDATE: Pass 'col' (body color) to drawShirt so it can fix necklines
     drawShirt(ctx, shirtId, back, col);
@@ -3809,23 +3959,28 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
     g.add(s);
 
     // Name & Title
-    const nt = new THREE.Sprite(new THREE.SpriteMaterial({ map: createNameTagTexture(name) }));
+    const ntMat = new THREE.SpriteMaterial({ map: createNameTagTexture(name), depthWrite: false, depthTest: false });
+    const nt = new THREE.Sprite(ntMat);
     nt.position.y = 2.1; nt.scale.set(3, 0.75, 1); nt.name = "nameTag";
+    nt.renderOrder = 100;
     g.add(nt);
 
     const tTex = createTitleTexture(titleId);
     if (tTex) {
-        const titleSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tTex }));
+        const titleMat = new THREE.SpriteMaterial({ map: tTex, depthWrite: false, depthTest: false });
+        const titleSprite = new THREE.Sprite(titleMat);
         titleSprite.position.y = 2.5; titleSprite.scale.set(3, 0.75, 1);
         titleSprite.name = "titleSprite";
+        titleSprite.renderOrder = 101;
         titleSprite.visible = saveState.showTitles;
         g.add(titleSprite);
     }
 
     const st = createSpeakerTexture();
-    const sm = new THREE.SpriteMaterial({ map: st, transparent: true });
+    const sm = new THREE.SpriteMaterial({ map: st, transparent: true, depthWrite: false, depthTest: false });
     const sp = new THREE.Sprite(sm);
     sp.position.y = 3.0; sp.scale.set(0.5, 0.5, 1); sp.name = "talkingIcon"; sp.visible = false;
+    sp.renderOrder = 102;
     g.add(sp);
 
     // --- ROD LOGIC (FORWARD FACING) ---
@@ -3858,6 +4013,15 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
 
 function createLocalPlayer() {
     player = createPlayerMesh(saveState.catColor, saveState.displayName, saveState.currentHat, saveState.eyeColor, saveState.species, saveState.currentTitle);
+
+    // Give local player's UI elements higher renderOrder so they overlap other players
+    const nameTag = player.getObjectByName('nameTag');
+    if (nameTag) nameTag.renderOrder = 200;
+    const titleSprite = player.getObjectByName('titleSprite');
+    if (titleSprite) titleSprite.renderOrder = 201;
+    const talkingIcon = player.getObjectByName('talkingIcon');
+    if (talkingIcon) talkingIcon.renderOrder = 202;
+
     updateLocalVisuals();
     player.position.set(25, 0, 0); scene.add(player);
 }
@@ -4541,20 +4705,12 @@ function performPunch() {
 }
 
 function handleHit(data) {
-    console.log("DEBUG: handleHit", data);
-
-    // Debug check for ID mismatch
+    // Check for ID mismatch
     const isMePeer = data.targetId === myPeerId;
     const isMeDedicated = (dedicatedId && data.targetId === dedicatedId);
 
-    if (!isMePeer && !isMeDedicated) {
-        // Determine who this message was for if possible, or just log mismatch
-        console.log(`DEBUG: Validate Fail. Target: ${data.targetId} | MePeer: ${myPeerId} | MeDed: ${dedicatedId}`);
-    }
-
     // FIX: Simplified check to ensure it works even if connection state flags are desynced
     if (isMePeer || isMeDedicated) {
-        showToast("DEBUG: OUCH! Accepted Hit!");
 
         knockbackVelocity.x = data.force.x;
         knockbackVelocity.z = data.force.z;
@@ -4753,7 +4909,6 @@ function showToast(t) { const d = document.createElement('div'); d.className = '
 // --- GHOST/HAUNTING MECHANIC ---
 // --- GHOST/HAUNTING MECHANIC ---
 function spawnGhostMesh(x, z) {
-    showToast("DEBUG: Spawning Ghost Mesh");
     if (ghostMesh) scene.remove(ghostMesh);
 
     // Create base mesh and override textures for a ghostly appearance.

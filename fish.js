@@ -396,7 +396,19 @@ const COLLAR_TYPES = [
     { id: 'pearls', name: 'Pearls', price: 100000, color: '#ffffff', type: 'pearls' }
 ];
 
-// --- BAIT DEFINITIONS (1000 FISH PROGRESSION) ---
+// --- FUR PATTERN DEFINITIONS ---
+const PATTERN_TYPES = [
+    { id: 'none', name: 'No Pattern', price: 0 },
+    { id: 'spots', name: 'Spots', price: 500, color: '#000000' },
+    { id: 'stripes', name: 'Tiger Stripes', price: 750, color: '#000000' },
+    { id: 'calico', name: 'Calico Patches', price: 1000 },
+    { id: 'tuxedo', name: 'Tuxedo', price: 800, color: '#000000' },
+    { id: 'tabby', name: 'Tabby', price: 600, color: '#000000' },
+    { id: 'dalmatian', name: 'Dalmatian', price: 1200, color: '#000000' },
+    { id: 'cow', name: 'Cow Print', price: 1500, color: '#000000' },
+    { id: 'hearts', name: 'Hearts', price: 2000, color: '#ff69b4' },
+    { id: 'stars', name: 'Stars', price: 2500, color: '#ffd700' }
+];
 const BAIT_TYPES = [
     // EARLY GAME
     { id: 'none', name: 'No Bait', price: 0, unlockFish: 0, power: 0, rarityMult: 1.0, tierLuck: 1.0 }, // Power reduced from 1 to 0

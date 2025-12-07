@@ -17,5 +17,5 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v10.5";
+const GAME_VERSION = "v10.21";
 const MAX_VOICE_DISTANCE = 50;

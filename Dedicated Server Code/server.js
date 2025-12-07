@@ -417,6 +417,8 @@ function getNewPlayerData() {
         currentCollar: 'none',
         unlockedTitles: ['none', 'novice', 'gay', 'lesbian', 'bi', 'trans', 'pan', 'ace', 'aro', 'enby', 'queer', 'fluid', 'agender', 'demi', 'inter', 'mlm', 'wlw', 'bear', 'otter', 'butch', 'femme', 'ally'],
         currentTitle: 'none',
+        unlockedPatterns: ['none'],
+        currentPattern: 'none',
         lavaUnlocked: false,
         displayName: "Fisher"
     };
@@ -431,11 +433,6 @@ function broadcast(obj, exceptId = null) {
             count++;
         }
     });
-
-    // Validating if broadcast is actually reaching people
-    if (obj.type === 'punch_hit' || obj.type === 'forceGhost') {
-        console.log(`[DEBUG] Broadcasted ${obj.type} to ${count} clients (Excluded: ${exceptId})`);
-    }
 }
 
 function broadcastPlayerList() {
@@ -482,6 +479,7 @@ wss.on('connection', (ws, req) => {
             eye: '#000000',
             collar: 'none',
             title: 'none',
+            pattern: 'none',
             rod: 'bamboo',
             bobber: null
         },
@@ -555,6 +553,7 @@ wss.on('connection', (ws, req) => {
                 if (p.shirt) info.meta.shirt = p.shirt;
                 if (p.collar) info.meta.collar = p.collar;
                 if (p.title) info.meta.title = p.title;
+                if (p.pattern) info.meta.pattern = p.pattern;
                 if (p.rod) info.meta.rod = p.rod;
                 if (p.bobber) info.meta.bobber = p.bobber;
             }
@@ -580,6 +579,8 @@ wss.on('connection', (ws, req) => {
                     unlockedShirts: Array.isArray(msg.saveState.unlockedShirts) ? msg.saveState.unlockedShirts : ['none'],
                     unlockedRods: Array.isArray(msg.saveState.unlockedRods) ? msg.saveState.unlockedRods : ['bamboo'],
                     unlockedTitles: Array.isArray(msg.saveState.unlockedTitles) ? msg.saveState.unlockedTitles : ['none'],
+                    unlockedPatterns: Array.isArray(msg.saveState.unlockedPatterns) ? msg.saveState.unlockedPatterns : ['none'],
+                    currentPattern: msg.saveState.currentPattern || 'none',
                     clickPowerLevel: typeof msg.saveState.clickPowerLevel === 'number' ? msg.saveState.clickPowerLevel : 0
                 };
 
@@ -592,6 +593,7 @@ wss.on('connection', (ws, req) => {
                 info.meta.eye = msg.saveState.eyeColor || '#000000';
                 info.meta.collar = msg.saveState.currentCollar || 'none';
                 info.meta.title = msg.saveState.currentTitle || 'none';
+                info.meta.pattern = msg.saveState.currentPattern || 'none';
 
                 logToFile(`LOGIN: Player "${safeName}" joined with $${playerData[id].money} (ID: ${id})`);
             } else {
@@ -635,12 +637,10 @@ wss.on('connection', (ws, req) => {
                     logToFile(`CHAT: [${info.meta.name}] ${msg.text}`);
                 }
             } else if (msg.type === 'punch_hit') {
-                console.log(`[DEBUG] Received punch_hit from ${info.meta.name} targeting ${msg.targetId}`);
                 logToFile(`PUNCH: ${info.meta.name} punched ${msg.targetId}`);
 
                 const target = clients[msg.targetId];
                 if (!target) {
-                    console.log(`[DEBUG] Punch target ${msg.targetId} not found.`);
                     return;
                 }
 
@@ -653,12 +653,6 @@ wss.on('connection', (ws, req) => {
                 }));
 
                 return; // Do NOT broadcast globally
-            }
-
-
-            // Explicit Debug for these types
-            if (['forceGhost', 'spawnPortal'].includes(msg.type)) {
-                console.log(`[DEBUG] Received ${msg.type} from ${info.meta.name}`);
             }
 
             if (msg.type === 'sound') {
@@ -687,6 +681,7 @@ wss.on('connection', (ws, req) => {
                 type: msg.propType,
                 x: msg.x,
                 z: msg.z,
+                rot: msg.rot, // Include rotation
                 owner: id,
                 timestamp: Date.now()
             };
