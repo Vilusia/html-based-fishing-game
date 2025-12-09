@@ -1998,6 +1998,7 @@ function renderShop() {
             drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
 
 
+            drawPattern(ctx, pattern.id, saveState.catColor, false);
             drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
             entry.appendChild(canvas);
 
