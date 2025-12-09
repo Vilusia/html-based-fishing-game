@@ -492,6 +492,7 @@ const DEFAULT_KEYBINDS = {
 };
 
 // --- SAVE DATA STRUCTURE & HANDLING ---
+console.log("AUDIO.JS LOADED");
 let saveState = {
     money: 0,
     inventory: [],
@@ -517,6 +518,10 @@ let saveState = {
     noseColor: '',
     miscColor: '',
     tailColor: '',
+    // New Hair System
+    unlockedHair: ['none'],
+    currentHair: 'none',
+    hairColor: '',
     masterVolume: 0.5,
     sfxVolume: 1.0,
     midiVolume: 1.0,
@@ -582,6 +587,11 @@ function loadSave() {
             if (d.noseColor !== undefined) saveState.noseColor = d.noseColor;
             if (d.miscColor !== undefined) saveState.miscColor = d.miscColor;
             if (d.tailColor !== undefined) saveState.tailColor = d.tailColor;
+
+            // Hair
+            if (d.unlockedHair) saveState.unlockedHair = d.unlockedHair;
+            if (d.currentHair) saveState.currentHair = d.currentHair;
+            if (d.hairColor !== undefined) saveState.hairColor = d.hairColor;
 
             // Migration: Convert old species to new parts system
             if (d.species && !d.currentEars) {
@@ -697,6 +707,8 @@ function loadSave() {
     myData.nose = saveState.currentNose;
     myData.misc = saveState.currentMisc;
     myData.tail = saveState.currentTail;
+    myData.hair = saveState.currentHair;
+    myData.hairColor = saveState.hairColor || '';
 
     updateBaitSelector();
     updateUI();
@@ -714,12 +726,14 @@ function saveGame() {
     myData.nose = saveState.currentNose;
     myData.misc = saveState.currentMisc;
     myData.tail = saveState.currentTail;
+    myData.hair = saveState.currentHair;
 
     // Update myData with part colors
     myData.earsColor = saveState.earsColor || '';
     myData.noseColor = saveState.noseColor || '';
     myData.miscColor = saveState.miscColor || '';
     myData.tailColor = saveState.tailColor || '';
+    myData.hairColor = saveState.hairColor || '';
 
     // Update myData with base colors
     myData.color = saveState.catColor;
@@ -1179,10 +1193,21 @@ window.changeEars = function (val) {
     if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
 }
 
+window.changeHair = function (val) {
+    saveState.currentHair = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
 window.changeEyes = function (val) {
     saveState.currentEyes = val;
     saveGame();
     if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
     if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
 }
 
@@ -1190,6 +1215,8 @@ window.changeNose = function (val) {
     saveState.currentNose = val;
     saveGame();
     if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
     if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
 }
 
@@ -1197,6 +1224,8 @@ window.changeMisc = function (val) {
     saveState.currentMisc = val;
     saveGame();
     if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
     if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
 }
 
@@ -1204,12 +1233,21 @@ window.changeTail = function (val) {
     saveState.currentTail = val;
     saveGame();
     if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
     if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
 }
 
 // --- PART COLOR CHANGE FUNCTIONS ---
 window.changeEarsColor = function (val) {
     saveState.earsColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+window.changeHairColor = function (val) {
+    saveState.hairColor = val;
     saveGame();
     if (player) updateLocalVisuals();
     updateCharacterPreview();
@@ -1252,6 +1290,7 @@ function populatePartSelectors() {
     };
 
     populate('ears-select', EAR_TYPES, saveState.currentEars);
+    populate('hair-select', HAIR_TYPES, saveState.currentHair);
     populate('eyes-select', EYE_TYPES, saveState.currentEyes);
     populate('nose-select', NOSE_TYPES, saveState.currentNose);
     populate('misc-select', MISC_TYPES, saveState.currentMisc);
@@ -1260,11 +1299,13 @@ function populatePartSelectors() {
     // Set part color pickers (default to fur color if not set)
     const furCol = saveState.catColor || '#ff6347';
     const earsColorPicker = document.getElementById('ears-color-picker');
+    const hairColorPicker = document.getElementById('hair-color-picker');
     const noseColorPicker = document.getElementById('nose-color-picker');
     const miscColorPicker = document.getElementById('misc-color-picker');
     const tailColorPicker = document.getElementById('tail-color-picker');
 
     if (earsColorPicker) earsColorPicker.value = saveState.earsColor || furCol;
+    if (hairColorPicker) hairColorPicker.value = saveState.hairColor || '#ffffff';
     if (noseColorPicker) noseColorPicker.value = saveState.noseColor || furCol;
     if (miscColorPicker) miscColorPicker.value = saveState.miscColor || furCol;
     if (tailColorPicker) tailColorPicker.value = saveState.tailColor || furCol;
@@ -1377,8 +1418,8 @@ function updateLocalVisuals() {
         };
 
         // Generate textures based on current save state with modular parts
-        const texF = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, false, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors);
-        const texB = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, true, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors);
+        const texF = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, false, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors, saveState.currentHair, saveState.hairColor);
+        const texB = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, true, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors, saveState.currentHair, saveState.hairColor);
 
         s.userData.matFront.map = texF;
         s.userData.matBack.map = texB;
@@ -1631,7 +1672,9 @@ function saveCurrentOutfit() {
         collar: saveState.currentCollar,
         rod: saveState.currentRod,
         title: saveState.currentTitle,
-        pattern: saveState.currentPattern
+        pattern: saveState.currentPattern,
+        hair: saveState.currentHair,
+        hairColor: saveState.hairColor
     };
 
     saveState.savedOutfits.push(outfit);
@@ -1688,8 +1731,15 @@ function loadOutfit(id) {
         saveState.currentEyes = parts.eyes;
         saveState.currentNose = parts.nose;
         saveState.currentMisc = parts.misc;
+        saveState.currentMisc = parts.misc;
         saveState.currentTail = parts.tail;
+        saveState.currentHair = 'none'; // Default for legacy species
+    } else {
+        // Fallback
+        saveState.currentHair = outfit.hair || 'none';
     }
+
+    saveState.hairColor = outfit.hairColor || '';
 
     // Apply cosmetics
     saveState.currentHat = saveState.unlockedHats.includes(outfit.hat) ? outfit.hat : 'none';
@@ -1709,7 +1759,9 @@ function loadOutfit(id) {
     if (document.getElementById('ears-color-picker')) document.getElementById('ears-color-picker').value = saveState.earsColor || saveState.catColor;
     if (document.getElementById('nose-color-picker')) document.getElementById('nose-color-picker').value = saveState.noseColor || saveState.catColor;
     if (document.getElementById('misc-color-picker')) document.getElementById('misc-color-picker').value = saveState.miscColor || saveState.catColor;
+    if (document.getElementById('misc-color-picker')) document.getElementById('misc-color-picker').value = saveState.miscColor || saveState.catColor;
     if (document.getElementById('tail-color-picker')) document.getElementById('tail-color-picker').value = saveState.tailColor || saveState.catColor;
+    if (document.getElementById('hair-color-picker')) document.getElementById('hair-color-picker').value = saveState.hairColor || '#ffffff';
 
     saveGame();
     updateLocalVisuals();
@@ -1801,7 +1853,8 @@ function updateCharacterPreview() {
         eyes: saveState.currentEyes,
         nose: saveState.currentNose,
         misc: saveState.currentMisc,
-        tail: saveState.currentTail
+        tail: saveState.currentTail,
+        hair: saveState.currentHair
     };
 
     // Build part colors object
@@ -1809,7 +1862,8 @@ function updateCharacterPreview() {
         earsColor: saveState.earsColor || '',
         noseColor: saveState.noseColor || '',
         miscColor: saveState.miscColor || '',
-        tailColor: saveState.tailColor || ''
+        tailColor: saveState.tailColor || '',
+        hairColor: saveState.hairColor || ''
     };
 
     // Draw front view with modular parts
@@ -1817,6 +1871,7 @@ function updateCharacterPreview() {
     drawPattern(tempCtx, saveState.currentPattern, saveState.catColor, false);
     drawShirt(tempCtx, saveState.currentShirt, false);
     drawCollar(tempCtx, saveState.currentCollar, false);
+    drawHair(tempCtx, saveState.currentHair, saveState.hairColor, false);
     drawHat(tempCtx, saveState.currentHat, false);
 
     // Scale to preview canvas (centered, scaled 1.5x)
@@ -1828,6 +1883,7 @@ function updateCharacterPreview() {
     drawPattern(tempCtx, saveState.currentPattern, saveState.catColor, true);
     drawShirt(tempCtx, saveState.currentShirt, true);
     drawCollar(tempCtx, saveState.currentCollar, true);
+    drawHair(tempCtx, saveState.currentHair, saveState.hairColor, true);
     drawHat(tempCtx, saveState.currentHat, true);
 
     backCtx.drawImage(tempCanvas, 0, 0, 64, 64, 0, 0, 96, 96);
@@ -1889,6 +1945,7 @@ function renderShop() {
             drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
             drawShirt(ctx, saveState.currentShirt, false);
             drawCollar(ctx, item.id, false);
+            drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
             entry.appendChild(canvas);
 
             const name = document.createElement('div');
@@ -1939,7 +1996,9 @@ function renderShop() {
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
             drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
-            drawPattern(ctx, pattern.id, saveState.catColor, false);
+
+
+            drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
             entry.appendChild(canvas);
 
             const name = document.createElement('div');
@@ -1992,6 +2051,8 @@ function renderShop() {
             drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
             drawShirt(ctx, shirt.id, false);
             drawCollar(ctx, saveState.currentCollar, false);
+            drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
+            drawHat(ctx, saveState.currentHat, false); // Add drawHat here
             entry.appendChild(canvas);
 
             const name = document.createElement('div');
@@ -2042,6 +2103,7 @@ function renderShop() {
             drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
             drawShirt(ctx, saveState.currentShirt, false);
             drawCollar(ctx, saveState.currentCollar, false);
+            drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
             drawHat(ctx, hat.id, false);
             entry.appendChild(canvas);
 

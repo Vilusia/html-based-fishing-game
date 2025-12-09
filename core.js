@@ -17,11 +17,40 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v10.86";
+const GAME_VERSION = "v10.98";
 const MAX_VOICE_DISTANCE = 50;
 
 // --- MODULAR CHARACTER PART TYPES ---
 // All parts are free and unlocked by default
+
+const HAIR_TYPES = [
+    { id: 'none', name: 'None' },
+    { id: 'messy', name: 'Messy' },
+    { id: 'bob', name: 'Bob Cut' },
+    { id: 'long', name: 'Long & Straight' },
+    { id: 'spiky', name: 'Spiky' },
+    { id: 'mohawk', name: 'Mohawk' },
+    { id: 'ponytail', name: 'Ponytail' },
+    { id: 'pigtails', name: 'Pigtails' },
+    { id: 'afro', name: 'Afro' },
+    { id: 'wavy', name: 'Wavy' },
+    { id: 'bangs', name: 'Bangs' },
+    { id: 'buzzed', name: 'Buzz Cut' },
+    { id: 'curly', name: 'Curly' },
+    { id: 'emo', name: 'Emo Sweep' },
+    { id: 'bun', name: 'Bun' },
+    { id: 'braid', name: 'Single Braid' },
+    { id: 'twintails', name: 'Twin Tails' },
+    { id: 'pompadour', name: 'Pompadour' },
+    { id: 'shaggy', name: 'Shaggy' },
+    { id: 'undercut', name: 'Undercut' },
+    { id: 'mullet', name: 'Mullet' },
+    { id: 'dreads', name: 'Dreadlocks' },
+    { id: 'pixie', name: 'Pixie Cut' },
+    { id: 'topknot', name: 'Top Knot' },
+    { id: 'sidepart', name: 'Side Part' },
+    { id: 'slicked', name: 'Slicked Back' },
+];
 
 const EAR_TYPES = [
     { id: 'none', name: 'None' },

@@ -1,3 +1,4 @@
+
 const UICache = { mEl: null, logHeader: null, lEl: null };
 
 function cacheUIElements() {
@@ -1627,6 +1628,8 @@ function sendUpdate() {
     myData.name = saveState.displayName;
     myData.rod = saveState.currentRod;
     myData.handsEmpty = isHandsHidden;
+    myData.hair = saveState.currentHair;
+    myData.hairColor = saveState.hairColor;
 
     myData.version = GAME_VERSION;
 
@@ -1688,7 +1691,9 @@ function createRemotePlayer(id, data) {
         data.eye || '#000000',
         data.species || 'cat',
         data.title || 'none',
-        data.rod || 'bamboo'
+        data.rod || 'bamboo',
+        data.hair || 'none',
+        data.hairColor || ''
     );
 
     // Determine if using new parts system or legacy species
@@ -1711,11 +1716,11 @@ function createRemotePlayer(id, data) {
     const s = group.getObjectByName('playerSprite');
     const texF = createSpeciesTexture(
         speciesOrParts, data.color, data.belly, false,
-        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors
+        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || ''
     );
     const texB = createSpeciesTexture(
         speciesOrParts, data.color, data.belly, true,
-        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors
+        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || ''
     );
 
     s.userData.matFront.map = texF;
@@ -1787,9 +1792,9 @@ function updateRemotePlayer(id, data) {
     // 3. VISUALS SYNC (Colors, Hat, Shirt, Collar, Pattern, Parts)
     const partsChanged = (p.lastData.ears !== data.ears || p.lastData.eyes !== data.eyes ||
         p.lastData.nose !== data.nose || p.lastData.misc !== data.misc ||
-        p.lastData.tail !== data.tail);
+        p.lastData.tail !== data.tail || p.lastData.hair !== data.hair);
     const partColorsChanged = (p.lastData.earsColor !== data.earsColor || p.lastData.noseColor !== data.noseColor ||
-        p.lastData.miscColor !== data.miscColor || p.lastData.tailColor !== data.tailColor);
+        p.lastData.miscColor !== data.miscColor || p.lastData.tailColor !== data.tailColor || p.lastData.hairColor !== data.hairColor);
     if (p.lastData.color !== data.color || p.lastData.belly !== data.belly || p.lastData.hat !== data.hat ||
         p.lastData.eye !== data.eye || p.lastData.species !== data.species || p.lastData.shirt !== data.shirt ||
         p.lastData.collar !== data.collar || p.lastData.pattern !== data.pattern || partsChanged || partColorsChanged) {
@@ -1797,7 +1802,7 @@ function updateRemotePlayer(id, data) {
         // Determine if using new parts system or legacy species
         let speciesOrParts;
         if (data.ears) {
-            speciesOrParts = { ears: data.ears, eyes: data.eyes, nose: data.nose, misc: data.misc, tail: data.tail };
+            speciesOrParts = { ears: data.ears, eyes: data.eyes, nose: data.nose, misc: data.misc, tail: data.tail, hair: data.hair };
         } else {
             speciesOrParts = data.species || 'cat';
         }
@@ -1807,12 +1812,13 @@ function updateRemotePlayer(id, data) {
             earsColor: data.earsColor || '',
             noseColor: data.noseColor || '',
             miscColor: data.miscColor || '',
-            tailColor: data.tailColor || ''
+            tailColor: data.tailColor || '',
+            hairColor: data.hairColor || ''
         };
 
         const s = p.mesh.getObjectByName('playerSprite');
-        const texF = createSpeciesTexture(speciesOrParts, data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors);
-        const texB = createSpeciesTexture(speciesOrParts, data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors);
+        const texF = createSpeciesTexture(speciesOrParts, data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || '');
+        const texB = createSpeciesTexture(speciesOrParts, data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || '');
         s.userData.matFront.map = texF;
         s.userData.matBack.map = texB;
     }
@@ -5051,9 +5057,170 @@ function drawPattern(ctx, patternId, col, back) {
     }
 }
 
+function drawHair(ctx, hairId, col, back) {
+    if (!hairId || hairId === 'none') return;
+    const hair = HAIR_TYPES.find(h => h.id === hairId);
+    if (!hair) return;
+
+    // Default to white if no color provided, so it can be tinted? 
+    // Actually, logic expects 'col' to be the chosen color. If empty, maybe default to somewhat visible?
+    // But caller passes hairColor || '#ffffff'.
+    ctx.fillStyle = col || '#ffffff'; // Fallback to white 
+
+    if (back) {
+        // --- BACK VIEW ---
+        if (hair.id === 'messy') {
+            ctx.beginPath(); ctx.moveTo(18, 14); ctx.lineTo(46, 14); ctx.lineTo(50, 24); ctx.lineTo(42, 32); ctx.lineTo(22, 32); ctx.lineTo(14, 24); ctx.fill();
+        } else if (hair.id === 'bob') {
+            ctx.fillRect(16, 10, 32, 24);
+        } else if (hair.id === 'long') {
+            ctx.fillRect(16, 10, 32, 36);
+        } else if (hair.id === 'spiky') {
+            ctx.beginPath(); ctx.moveTo(14, 20); ctx.lineTo(18, 8); ctx.lineTo(24, 20); ctx.lineTo(32, 6); ctx.lineTo(40, 20); ctx.lineTo(46, 8); ctx.lineTo(50, 20); ctx.lineTo(48, 26); ctx.lineTo(16, 26); ctx.fill();
+        } else if (hair.id === 'mohawk') {
+            ctx.fillRect(28, 6, 8, 28);
+        } else if (hair.id === 'ponytail') {
+            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI * 2); ctx.fill();
+            ctx.fillRect(28, 20, 8, 24); // Tail down back
+        } else if (hair.id === 'pigtails') {
+            // Two tails
+            ctx.fillRect(12, 16, 6, 24); ctx.fillRect(46, 16, 6, 24);
+            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI, true); ctx.fill(); // Back of head
+        } else if (hair.id === 'afro') {
+            ctx.beginPath(); ctx.arc(32, 12, 20, 0, Math.PI * 2); ctx.fill(); // Big circle (higher)
+        } else if (hair.id === 'wavy') {
+            ctx.beginPath(); ctx.moveTo(16, 12); ctx.quadraticCurveTo(8, 24, 16, 36); ctx.lineTo(48, 36); ctx.quadraticCurveTo(56, 24, 48, 12); ctx.fill();
+        } else if (hair.id === 'bangs') {
+            ctx.fillRect(16, 10, 32, 24); // Same as bob from back
+        } else if (hair.id === 'buzzed') {
+            ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Stubble effect
+            ctx.beginPath(); ctx.arc(32, 18, 14, Math.PI, 0); ctx.fill();
+        } else if (hair.id === 'curly') {
+            ctx.beginPath(); ctx.arc(32, 18, 16, 0, Math.PI * 2); ctx.fill();
+            // Texture
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.beginPath(); ctx.arc(24, 14, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(40, 14, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(32, 24, 4, 0, Math.PI * 2); ctx.fill();
+        } else if (hair.id === 'emo') {
+            ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(50, 12); ctx.lineTo(46, 32); ctx.lineTo(18, 32); ctx.fill();
+        } else if (hair.id === 'bun') {
+            ctx.beginPath(); ctx.arc(32, 18, 14, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(32, 8, 6, 0, Math.PI * 2); ctx.fill(); // Bun
+        } else if (hair.id === 'braid') {
+            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI * 2); ctx.fill();
+            // Braid down back
+            for (let y = 20; y < 44; y += 4) {
+                ctx.beginPath(); ctx.arc(32, y, 3, 0, Math.PI * 2); ctx.fill();
+            }
+        } else if (hair.id === 'twintails') {
+            // Long tails
+            ctx.fillRect(10, 16, 6, 36); ctx.fillRect(48, 16, 6, 36);
+            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI, true); ctx.fill();
+        } else if (hair.id === 'pompadour') {
+            ctx.beginPath(); ctx.moveTo(20, 14); ctx.lineTo(44, 14); ctx.lineTo(40, 26); ctx.lineTo(24, 26); ctx.fill();
+        } else if (hair.id === 'shaggy') {
+            ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(50, 12); ctx.lineTo(54, 28); ctx.lineTo(46, 30); ctx.lineTo(32, 28); ctx.lineTo(18, 30); ctx.lineTo(10, 28); ctx.fill();
+        } else if (hair.id === 'undercut') {
+            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill(); // Top only
+        } else if (hair.id === 'mullet') {
+            ctx.fillRect(20, 10, 24, 14); // Top
+            ctx.fillRect(16, 20, 32, 20); // Party in back
+        } else if (hair.id === 'dreads') {
+            ctx.fillRect(16, 12, 4, 24); ctx.fillRect(22, 12, 4, 24);
+            ctx.fillRect(28, 12, 4, 24); ctx.fillRect(34, 12, 4, 24);
+            ctx.fillRect(40, 12, 4, 24); ctx.fillRect(46, 12, 4, 24);
+        } else if (hair.id === 'pixie') {
+            ctx.beginPath(); ctx.arc(32, 18, 14, 0, Math.PI * 2); ctx.fill();
+        } else if (hair.id === 'topknot') {
+            ctx.beginPath(); ctx.arc(32, 18, 14, 0, Math.PI * 2); ctx.fill();
+            ctx.fillRect(30, 4, 4, 6); // Knot
+        } else if (hair.id === 'sidepart') {
+            ctx.fillRect(18, 12, 28, 18);
+        } else if (hair.id === 'slicked') {
+            ctx.fillRect(20, 12, 24, 16);
+        }
+    } else {
+        // --- FRONT VIEW ---
+        if (hair.id === 'messy') {
+            ctx.beginPath(); ctx.moveTo(16, 14); ctx.lineTo(24, 20); ctx.lineTo(32, 12); ctx.lineTo(40, 20); ctx.lineTo(48, 14); ctx.lineTo(48, 24); ctx.lineTo(16, 24); ctx.fill();
+        } else if (hair.id === 'bob') {
+            ctx.fillRect(14, 10, 10, 26); ctx.fillRect(40, 10, 10, 26); // Sides wider
+            ctx.fillRect(14, 10, 36, 10); // Top wider
+        } else if (hair.id === 'long') {
+            ctx.fillRect(14, 10, 10, 38); ctx.fillRect(40, 10, 10, 38);
+            ctx.fillRect(14, 10, 36, 8);
+        } else if (hair.id === 'spiky') {
+            ctx.beginPath(); ctx.moveTo(12, 20); ctx.lineTo(18, 6); ctx.lineTo(24, 18); ctx.lineTo(32, 4); ctx.lineTo(40, 18); ctx.lineTo(46, 6); ctx.lineTo(52, 20); ctx.fill();
+        } else if (hair.id === 'mohawk') {
+            ctx.fillRect(28, 4, 8, 12);
+        } else if (hair.id === 'ponytail') {
+            // Pulled back look
+            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
+        } else if (hair.id === 'pigtails') {
+            ctx.fillRect(12, 14, 4, 2); ctx.fillRect(48, 14, 4, 2); // Ties
+            ctx.fillRect(10, 16, 6, 24); ctx.fillRect(48, 16, 6, 24); // Tails
+            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill(); // Head
+        } else if (hair.id === 'afro') {
+            ctx.save();
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.beginPath(); ctx.arc(32, 22, 24, 0, Math.PI * 2); ctx.fill(); // Big halo behind head
+            ctx.restore();
+        } else if (hair.id === 'wavy') {
+            ctx.fillRect(14, 10, 8, 36); ctx.fillRect(42, 10, 8, 36);
+            ctx.fillRect(14, 10, 36, 6);
+        } else if (hair.id === 'bangs') {
+            ctx.fillRect(16, 10, 32, 10); // Bangs
+            ctx.fillRect(16, 10, 8, 24); ctx.fillRect(40, 10, 8, 24); // Sides
+        } else if (hair.id === 'buzzed') {
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath(); ctx.arc(32, 16, 13, Math.PI, 0); ctx.fill();
+            ctx.fillRect(16, 16, 32, 2); // Hairline
+        } else if (hair.id === 'curly') {
+            ctx.beginPath(); ctx.arc(32, 14, 16, Math.PI, 0); ctx.fill();
+            ctx.beginPath(); ctx.arc(18, 20, 6, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(46, 20, 6, 0, Math.PI * 2); ctx.fill();
+        } else if (hair.id === 'emo') {
+            ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(50, 10); ctx.lineTo(50, 20); ctx.lineTo(32, 28); ctx.lineTo(14, 20); ctx.fill();
+            ctx.fillRect(14, 10, 8, 28); // Side drop
+        } else if (hair.id === 'bun') {
+            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
+            ctx.beginPath(); ctx.arc(32, 6, 6, 0, Math.PI * 2); ctx.fill();
+        } else if (hair.id === 'braid') {
+            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
+            // Braid over shoulder? No just stick to head
+        } else if (hair.id === 'twintails') {
+            ctx.fillRect(10, 16, 6, 36); ctx.fillRect(48, 16, 6, 36);
+            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
+        } else if (hair.id === 'pompadour') {
+            ctx.beginPath(); ctx.arc(32, 14, 8, 0, Math.PI * 2); ctx.fill(); // Pomp
+            ctx.fillRect(24, 14, 16, 6); // Base
+        } else if (hair.id === 'shaggy') {
+            ctx.fillRect(14, 10, 36, 18); // messy coverage
+        } else if (hair.id === 'undercut') {
+            ctx.fillRect(20, 10, 24, 6); // Top patch
+        } else if (hair.id === 'mullet') {
+            ctx.fillRect(20, 10, 24, 8); // Short top
+            ctx.fillRect(14, 20, 6, 12); ctx.fillRect(44, 20, 6, 12); // Long sides visible from front?
+        } else if (hair.id === 'dreads') {
+            for (let i = 16; i <= 46; i += 6) ctx.fillRect(i, 10, 4, 24);
+        } else if (hair.id === 'pixie') {
+            ctx.beginPath(); ctx.moveTo(16, 20); ctx.lineTo(32, 12); ctx.lineTo(48, 20); ctx.lineTo(32, 8); ctx.fill();
+        } else if (hair.id === 'topknot') {
+            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
+            ctx.fillRect(30, 4, 4, 6);
+        } else if (hair.id === 'sidepart') {
+            ctx.fillRect(18, 10, 28, 8);
+            ctx.fillRect(40, 10, 6, 20); // Side sweep
+        } else if (hair.id === 'slicked') {
+            ctx.fillRect(20, 10, 24, 8); // Tight
+        }
+    }
+}
+
 // Main texture compositing function. Combines species, colors, and all cosmetics into one texture.
 // partColors is optional: { earsColor, noseColor, miscColor, tailColor }
-function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none', partColors = null) {
+function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none', partColors = null, hairId = 'none', hairColor = null) {
     const c = document.createElement('canvas'); c.width = 64; c.height = 64;
     const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
     const col = new THREE.Color(hex).getStyle();
@@ -5069,6 +5236,40 @@ function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shir
     drawShirt(ctx, shirtId, back, col);
 
     drawCollar(ctx, collarId, back);
+
+    // HAIR (Under Hat)
+    drawHair(ctx, hairId, hairColor, back);
+
+    // EYES OVERLAY (To appear on top of hair/bangs)
+    if (!back) {
+        let parts;
+        if (typeof species === 'string') {
+            const speciesMapping = {
+                cat: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'cat' },
+                bunny: { ears: 'bunny', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'bunny' },
+                dog: { ears: 'dog', eyes: 'standard', nose: 'dog', misc: 'none', tail: 'dog' },
+                bear: { ears: 'bear', eyes: 'standard', nose: 'bear', misc: 'none', tail: 'bear' },
+                fox: { ears: 'fox', eyes: 'standard', nose: 'dog', misc: 'fox_cheeks', tail: 'fox' },
+                pig: { ears: 'pig', eyes: 'standard', nose: 'pig', misc: 'none', tail: 'pig' },
+                dragon: { ears: 'dragon', eyes: 'dragon', nose: 'dragon', misc: 'dragon_wings', tail: 'dragon' },
+                mouse: { ears: 'mouse', eyes: 'standard', nose: 'mouse', misc: 'none', tail: 'mouse' },
+                duck: { ears: 'none', eyes: 'standard', nose: 'duck', misc: 'none', tail: 'duck' },
+                axolotl: { ears: 'none', eyes: 'standard', nose: 'axolotl', misc: 'axolotl_gills', tail: 'axolotl' },
+                raccoon: { ears: 'raccoon', eyes: 'standard', nose: 'dog', misc: 'raccoon_mask', tail: 'raccoon' },
+                koala: { ears: 'koala', eyes: 'standard', nose: 'koala', misc: 'none', tail: 'none' },
+                lion: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'lion_mane', tail: 'lion' },
+                cow: { ears: 'cow', eyes: 'standard', nose: 'cow', misc: 'none', tail: 'cat' },
+                frog: { ears: 'none', eyes: 'frog', nose: 'frog', misc: 'none', tail: 'frog' },
+                monkey: { ears: 'monkey', eyes: 'standard', nose: 'monkey', misc: 'none', tail: 'monkey' },
+                penguin: { ears: 'none', eyes: 'standard', nose: 'penguin', misc: 'penguin_belly', tail: 'penguin' },
+            };
+            parts = speciesMapping[species] || speciesMapping.cat;
+        } else {
+            parts = species;
+        }
+        drawEyes(ctx, parts.eyes, eyeCol);
+    }
+
     drawHat(ctx, hatId, back);
 
     const t = new THREE.CanvasTexture(c);
@@ -5351,12 +5552,13 @@ function createRodTexture(rodId) {
     return t;
 }
 
-function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species = 'cat', titleId = 'none', rodId = 'bamboo') {
+function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species = 'cat', titleId = 'none', rodId = 'bamboo', hairId = 'none', hairColor = '') {
     const g = new THREE.Group();
 
     // Sprite Layers
-    const tf = createSpeciesTexture(species, col, '#ffffff', false, hatId, 'none', 'none', eyeHex);
-    const tb = createSpeciesTexture(species, col, '#ffffff', true, hatId, 'none', 'none', eyeHex);
+    // Sprite Layers
+    const tf = createSpeciesTexture(species, col, '#ffffff', false, hatId, 'none', 'none', eyeHex, 'none', null, hairId, hairColor);
+    const tb = createSpeciesTexture(species, col, '#ffffff', true, hatId, 'none', 'none', eyeHex, 'none', null, hairId, hairColor);
     const m1 = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
     const m2 = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
     const s = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m1);
@@ -5417,7 +5619,7 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
 }
 
 function createLocalPlayer() {
-    player = createPlayerMesh(saveState.catColor, saveState.displayName, saveState.currentHat, saveState.eyeColor, saveState.species, saveState.currentTitle);
+    player = createPlayerMesh(saveState.catColor, saveState.displayName, saveState.currentHat, saveState.eyeColor, saveState.species, saveState.currentTitle, saveState.currentRod, saveState.currentHair, saveState.hairColor);
 
     // Give local player's UI elements higher renderOrder so they overlap other players
     const nameTag = player.getObjectByName('nameTag');

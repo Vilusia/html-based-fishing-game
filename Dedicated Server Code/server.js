@@ -424,6 +424,9 @@ function getNewPlayerData() {
         currentTitle: 'none',
         unlockedPatterns: ['none'],
         currentPattern: 'none',
+        unlockedHair: ['none'],
+        currentHair: 'none',
+        hairColor: '',
         lavaUnlocked: false,
         displayName: "Fisher"
     };
@@ -492,7 +495,9 @@ wss.on('connection', (ws, req) => {
             eyes: 'standard',
             nose: 'cat',
             misc: 'none',
-            tail: 'cat'
+            tail: 'cat',
+            hair: 'none',
+            hairColor: ''
         },
         isJoined: false, // <--- ADDED: Track if we have announced them yet
 
@@ -573,11 +578,13 @@ wss.on('connection', (ws, req) => {
                 if (p.nose) info.meta.nose = p.nose;
                 if (p.misc) info.meta.misc = p.misc;
                 if (p.tail) info.meta.tail = p.tail;
+                if (p.hair) info.meta.hair = p.hair;
                 // Part colors
                 if (p.earsColor !== undefined) info.meta.earsColor = p.earsColor;
                 if (p.noseColor !== undefined) info.meta.noseColor = p.noseColor;
                 if (p.miscColor !== undefined) info.meta.miscColor = p.miscColor;
                 if (p.tailColor !== undefined) info.meta.tailColor = p.tailColor;
+                if (p.hairColor !== undefined) info.meta.hairColor = p.hairColor;
             }
 
             broadcast({ type: 'update', id: id, payload: msg.payload }, id);
@@ -602,6 +609,9 @@ wss.on('connection', (ws, req) => {
                     unlockedRods: Array.isArray(msg.saveState.unlockedRods) ? msg.saveState.unlockedRods : ['bamboo'],
                     unlockedTitles: Array.isArray(msg.saveState.unlockedTitles) ? msg.saveState.unlockedTitles : ['none'],
                     unlockedPatterns: Array.isArray(msg.saveState.unlockedPatterns) ? msg.saveState.unlockedPatterns : ['none'],
+                    unlockedHair: Array.isArray(msg.saveState.unlockedHair) ? msg.saveState.unlockedHair : ['none'],
+                    currentHair: msg.saveState.currentHair || 'none',
+                    hairColor: msg.saveState.hairColor || '',
                     currentPattern: msg.saveState.currentPattern || 'none',
                     clickPowerLevel: typeof msg.saveState.clickPowerLevel === 'number' ? msg.saveState.clickPowerLevel : 0
                 };
@@ -623,12 +633,14 @@ wss.on('connection', (ws, req) => {
                 info.meta.nose = msg.saveState.currentNose || 'cat';
                 info.meta.misc = msg.saveState.currentMisc || 'none';
                 info.meta.tail = msg.saveState.currentTail || 'cat';
+                info.meta.hair = msg.saveState.currentHair || 'none';
 
                 // Sync part colors
                 info.meta.earsColor = msg.saveState.earsColor || '';
                 info.meta.noseColor = msg.saveState.noseColor || '';
                 info.meta.miscColor = msg.saveState.miscColor || '';
                 info.meta.tailColor = msg.saveState.tailColor || '';
+                info.meta.hairColor = msg.saveState.hairColor || '';
 
                 logToFile(`LOGIN: Player "${safeName}" joined with $${playerData[id].money} (ID: ${id})`);
             } else {
@@ -647,13 +659,13 @@ wss.on('connection', (ws, req) => {
 
 
         else if (['chat', 'sound', 'anim', 'punch_hit', 'spawnPortal', 'forceGhost'].includes(msg.type)) {
-        // --- MIDI EXEMPTION: allow unlimited guitar notes ---
-        if (msg.type === 'sound' && msg.name === 'guitar') {
-            if (info.meta.isMidiMuted) return;
-            msg.id = id;
-            broadcast(msg, id);
-            return;
-        }
+            // --- MIDI EXEMPTION: allow unlimited guitar notes ---
+            if (msg.type === 'sound' && msg.name === 'guitar') {
+                if (info.meta.isMidiMuted) return;
+                msg.id = id;
+                broadcast(msg, id);
+                return;
+            }
 
             // RATE LIMIT CHECK
             let limitType = 'anim';
