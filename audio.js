@@ -2634,30 +2634,34 @@ function updateMidiLoop() {
     for (let i = activeMidiNotes.length - 1; i >= 0; i--) {
         const note = activeMidiNotes[i];
         if (note.time <= elapsedTime) {
+            // Always play locally immediately
             Sound.playSpatial('guitar', player.position, note.freq);
 
-            // Limit to 2 notes per tick to prevent flooding
-            if (sentCount < 2) {
-                const msg = {
-                    type: 'sound',
-                    name: 'guitar',
-                    pos: { x: player.position.x, y: player.position.y, z: player.position.z },
-                    var: note.freq
-                };
+            const msg = {
+                type: 'sound',
+                name: 'guitar',
+                pos: { x: player.position.x, y: player.position.y, z: player.position.z },
+                var: note.freq
+            };
 
-                // FIX: Prioritize Dedicated Server and check ReadyState
-                if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-                    dedicatedSocket.send(JSON.stringify(msg));
+            if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+                // MIDI EXEMPTION: forward ALL guitar notes to the dedicated server
+                // without applying local per-tick throttling.
+                dedicatedSocket.send(JSON.stringify(msg));
+            } else {
+                // P2P path keeps the original flood protection so we don't
+                // spam other peers with too many packets per tick.
+                if (sentCount < 2) {
+                    if (isHost) {
+                        broadcastToClients(msg);
+                    } else if (hostConn && hostConn.open) {
+                        hostConn.send(msg);
+                    }
+                    sentCount++;
                 }
-                else if (isHost) {
-                    broadcastToClients(msg);
-                }
-                else if (hostConn && hostConn.open) {
-                    hostConn.send(msg);
-                }
-
-                sentCount++;
             }
+
+            // This note has been handled, remove from queue
             activeMidiNotes.splice(i, 1);
         }
     }

@@ -647,6 +647,14 @@ wss.on('connection', (ws, req) => {
 
 
         else if (['chat', 'sound', 'anim', 'punch_hit', 'spawnPortal', 'forceGhost'].includes(msg.type)) {
+        // --- MIDI EXEMPTION: allow unlimited guitar notes ---
+        if (msg.type === 'sound' && msg.name === 'guitar') {
+            if (info.meta.isMidiMuted) return;
+            msg.id = id;
+            broadcast(msg, id);
+            return;
+        }
+
             // RATE LIMIT CHECK
             let limitType = 'anim';
             if (msg.type === 'chat') limitType = 'chat';
