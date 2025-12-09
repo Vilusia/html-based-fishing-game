@@ -568,6 +568,11 @@ wss.on('connection', (ws, req) => {
                 if (p.nose) info.meta.nose = p.nose;
                 if (p.misc) info.meta.misc = p.misc;
                 if (p.tail) info.meta.tail = p.tail;
+                // Part colors
+                if (p.earsColor !== undefined) info.meta.earsColor = p.earsColor;
+                if (p.noseColor !== undefined) info.meta.noseColor = p.noseColor;
+                if (p.miscColor !== undefined) info.meta.miscColor = p.miscColor;
+                if (p.tailColor !== undefined) info.meta.tailColor = p.tailColor;
             }
 
             broadcast({ type: 'update', id: id, payload: msg.payload }, id);
@@ -606,6 +611,19 @@ wss.on('connection', (ws, req) => {
                 info.meta.collar = msg.saveState.currentCollar || 'none';
                 info.meta.title = msg.saveState.currentTitle || 'none';
                 info.meta.pattern = msg.saveState.currentPattern || 'none';
+
+                // Sync modular parts
+                info.meta.ears = msg.saveState.currentEars || 'cat';
+                info.meta.eyes = msg.saveState.currentEyes || 'standard';
+                info.meta.nose = msg.saveState.currentNose || 'cat';
+                info.meta.misc = msg.saveState.currentMisc || 'none';
+                info.meta.tail = msg.saveState.currentTail || 'cat';
+
+                // Sync part colors
+                info.meta.earsColor = msg.saveState.earsColor || '';
+                info.meta.noseColor = msg.saveState.noseColor || '';
+                info.meta.miscColor = msg.saveState.miscColor || '';
+                info.meta.tailColor = msg.saveState.tailColor || '';
 
                 logToFile(`LOGIN: Player "${safeName}" joined with $${playerData[id].money} (ID: ${id})`);
             } else {
@@ -752,6 +770,18 @@ wss.on('connection', (ws, req) => {
                 soldCount: count,
                 soldValue: totalValue
             }));
+        }
+
+        // --- NEW: Sync Money from Client (after shop purchases) ---
+        else if (msg.type === 'syncMoney') {
+            if (!playerData[id]) return;
+            if (typeof msg.money === 'number' && msg.money >= 0) {
+                // Only allow money to decrease (purchases) or stay same
+                // This prevents cheating by sending inflated money values
+                if (msg.money <= playerData[id].money) {
+                    playerData[id].money = msg.money;
+                }
+            }
         }
 
         if (msg.type === 'admin_cmd' && info.meta.isAdmin) {

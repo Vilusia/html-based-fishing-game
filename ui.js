@@ -1699,15 +1699,23 @@ function createRemotePlayer(id, data) {
         speciesOrParts = data.species || 'cat';
     }
 
+    // Build partColors object from data
+    const partColors = {
+        earsColor: data.earsColor || '',
+        noseColor: data.noseColor || '',
+        miscColor: data.miscColor || '',
+        tailColor: data.tailColor || ''
+    };
+
     // Apply specific textures (Shirt, Collar, Pattern, Parts)
     const s = group.getObjectByName('playerSprite');
     const texF = createSpeciesTexture(
         speciesOrParts, data.color, data.belly, false,
-        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none'
+        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors
     );
     const texB = createSpeciesTexture(
         speciesOrParts, data.color, data.belly, true,
-        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none'
+        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors
     );
 
     s.userData.matFront.map = texF;
@@ -1780,9 +1788,11 @@ function updateRemotePlayer(id, data) {
     const partsChanged = (p.lastData.ears !== data.ears || p.lastData.eyes !== data.eyes ||
         p.lastData.nose !== data.nose || p.lastData.misc !== data.misc ||
         p.lastData.tail !== data.tail);
+    const partColorsChanged = (p.lastData.earsColor !== data.earsColor || p.lastData.noseColor !== data.noseColor ||
+        p.lastData.miscColor !== data.miscColor || p.lastData.tailColor !== data.tailColor);
     if (p.lastData.color !== data.color || p.lastData.belly !== data.belly || p.lastData.hat !== data.hat ||
         p.lastData.eye !== data.eye || p.lastData.species !== data.species || p.lastData.shirt !== data.shirt ||
-        p.lastData.collar !== data.collar || p.lastData.pattern !== data.pattern || partsChanged) {
+        p.lastData.collar !== data.collar || p.lastData.pattern !== data.pattern || partsChanged || partColorsChanged) {
 
         // Determine if using new parts system or legacy species
         let speciesOrParts;
@@ -1792,9 +1802,17 @@ function updateRemotePlayer(id, data) {
             speciesOrParts = data.species || 'cat';
         }
 
+        // Build partColors object from data
+        const partColors = {
+            earsColor: data.earsColor || '',
+            noseColor: data.noseColor || '',
+            miscColor: data.miscColor || '',
+            tailColor: data.tailColor || ''
+        };
+
         const s = p.mesh.getObjectByName('playerSprite');
-        const texF = createSpeciesTexture(speciesOrParts, data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none');
-        const texB = createSpeciesTexture(speciesOrParts, data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none');
+        const texF = createSpeciesTexture(speciesOrParts, data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors);
+        const texB = createSpeciesTexture(speciesOrParts, data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors);
         s.userData.matFront.map = texF;
         s.userData.matBack.map = texB;
     }
@@ -3249,6 +3267,143 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.fillRect(12, 4, 2, 4); ctx.fillRect(50, 4, 2, 4);
     }
+    // --- NEW 25 SPECIES EARS ---
+    else if (earId === 'wolf') {
+        // Sharp pointed wolf ears
+        ctx.beginPath(); ctx.moveTo(12, 10); ctx.lineTo(8, -4); ctx.lineTo(22, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(52, 10); ctx.lineTo(56, -4); ctx.lineTo(42, 10); ctx.fill();
+        // Inner ear
+        ctx.fillStyle = bellyCol;
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(12, 2); ctx.lineTo(20, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(52, 2); ctx.lineTo(44, 10); ctx.fill();
+    }
+    else if (earId === 'deer') {
+        // Antlers
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(16, 2, 3, 10); ctx.fillRect(45, 2, 3, 10);
+        ctx.fillRect(12, 0, 8, 3); ctx.fillRect(44, 0, 8, 3);
+        ctx.fillRect(10, -4, 3, 6); ctx.fillRect(51, -4, 3, 6);
+    }
+    else if (earId === 'owl') {
+        // Feather tufts
+        ctx.beginPath(); ctx.moveTo(16, 10); ctx.lineTo(14, -2); ctx.lineTo(22, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(48, 10); ctx.lineTo(50, -2); ctx.lineTo(42, 10); ctx.fill();
+    }
+    else if (earId === 'bat') {
+        // Large bat ears
+        ctx.beginPath(); ctx.moveTo(10, 14); ctx.lineTo(6, -6); ctx.lineTo(26, 14); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(54, 14); ctx.lineTo(58, -6); ctx.lineTo(38, 14); ctx.fill();
+        // Inner ear membrane
+        ctx.fillStyle = bellyCol;
+        ctx.beginPath(); ctx.moveTo(12, 12); ctx.lineTo(10, 0); ctx.lineTo(22, 12); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(52, 12); ctx.lineTo(54, 0); ctx.lineTo(42, 12); ctx.fill();
+    }
+    else if (earId === 'shark') {
+        // Fin-like ears
+        ctx.beginPath(); ctx.moveTo(14, 14); ctx.lineTo(18, 0); ctx.lineTo(22, 14); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(42, 14); ctx.lineTo(46, 0); ctx.lineTo(50, 14); ctx.fill();
+    }
+    else if (earId === 'dolphin' || earId === 'snake') {
+        // No visible ears - do nothing
+    }
+    else if (earId === 'tiger' || earId === 'leopard') {
+        // Round cat-like ears
+        ctx.beginPath(); ctx.arc(16, 8, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(48, 8, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = bellyCol;
+        ctx.beginPath(); ctx.arc(16, 8, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(48, 8, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'rhino') {
+        // Small ears with horn
+        ctx.beginPath(); ctx.arc(14, 12, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 12, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'elephant') {
+        // Large floppy elephant ears
+        ctx.beginPath();
+        ctx.ellipse(8, 20, 10, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(56, 20, 10, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    else if (earId === 'hippo') {
+        // Small round hippo ears
+        ctx.beginPath(); ctx.arc(16, 8, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(48, 8, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'giraffe') {
+        // Ossicones (horn-like)
+        ctx.fillRect(18, 0, 4, 12); ctx.fillRect(42, 0, 4, 12);
+        ctx.beginPath(); ctx.arc(20, 0, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(44, 0, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'zebra') {
+        // Upright zebra ears
+        ctx.fillRect(14, 0, 6, 12); ctx.fillRect(44, 0, 6, 12);
+        ctx.fillStyle = bellyCol;
+        ctx.fillRect(16, 2, 2, 8); ctx.fillRect(46, 2, 2, 8);
+    }
+    else if (earId === 'panda') {
+        // Round black panda ears
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(14, 8, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 8, 6, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'red_panda') {
+        // Fluffy red panda ears
+        ctx.beginPath(); ctx.arc(14, 8, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 8, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = bellyCol;
+        ctx.beginPath(); ctx.arc(14, 8, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 8, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'skunk') {
+        // Pointed skunk ears
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(12, 0); ctx.lineTo(22, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(52, 0); ctx.lineTo(42, 10); ctx.fill();
+    }
+    else if (earId === 'otter' || earId === 'beaver') {
+        // Small round ears
+        ctx.beginPath(); ctx.arc(14, 10, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 10, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'hedgehog') {
+        // Small spiky ears
+        ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(12, 6); ctx.lineTo(18, 12); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 12); ctx.lineTo(52, 6); ctx.lineTo(46, 12); ctx.fill();
+    }
+    else if (earId === 'squirrel') {
+        // Tufted squirrel ears
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, -2); ctx.lineTo(20, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, -2); ctx.lineTo(44, 10); ctx.fill();
+        // Tufts
+        ctx.fillRect(8, -4, 3, 4); ctx.fillRect(53, -4, 3, 4);
+    }
+    else if (earId === 'chipmunk') {
+        // Small rounded chipmunk ears
+        ctx.beginPath(); ctx.arc(14, 10, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 10, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'hamster') {
+        // Tiny round hamster ears
+        ctx.beginPath(); ctx.arc(16, 10, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(48, 10, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'chinchilla') {
+        // Large round chinchilla ears
+        ctx.beginPath(); ctx.arc(12, 10, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(52, 10, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = bellyCol;
+        ctx.beginPath(); ctx.arc(12, 10, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(52, 10, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'ferret') {
+        // Small rounded ferret ears
+        ctx.beginPath(); ctx.arc(14, 12, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 12, 4, 0, Math.PI * 2); ctx.fill();
+    }
 }
 
 // Draw eyes based on selected type (front only)
@@ -3391,6 +3546,235 @@ function drawEyes(ctx, eyeId, eyeCol) {
         ctx.fillRect(38, 20, 6, 4);
         ctx.shadowBlur = 0;
     }
+    // --- NEW EYE TYPES ---
+    else if (eyeId === 'wolf') {
+        // Fierce wolf eyes
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillRect(18, 18, 10, 8); ctx.fillRect(36, 18, 10, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 18, 4, 8); ctx.fillRect(40, 18, 4, 8);
+        // Angry brow
+        ctx.fillStyle = '#333';
+        ctx.beginPath(); ctx.moveTo(16, 16); ctx.lineTo(28, 18); ctx.lineTo(28, 16); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(48, 16); ctx.lineTo(36, 18); ctx.lineTo(36, 16); ctx.fill();
+    }
+    else if (eyeId === 'owl') {
+        // Large round owl eyes
+        ctx.fillStyle = '#ffcc00';
+        ctx.beginPath(); ctx.arc(22, 20, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 20, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(22, 20, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 20, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'shark') {
+        // Dark beady shark eyes
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.arc(22, 20, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 20, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'snake') {
+        // Slit snake eyes
+        ctx.fillStyle = '#ffffaa';
+        ctx.beginPath(); ctx.ellipse(24, 20, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(40, 20, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(23, 15, 2, 10); ctx.fillRect(39, 15, 2, 10);
+    }
+    else if (eyeId === 'tired') {
+        // Tired eyes with bags
+        ctx.fillStyle = 'white';
+        ctx.fillRect(20, 20, 8, 6); ctx.fillRect(36, 20, 8, 6);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 21, 4, 4); ctx.fillRect(40, 21, 4, 4);
+        // Bags under eyes
+        ctx.fillStyle = 'rgba(100,80,120,0.4)';
+        ctx.fillRect(20, 26, 8, 2); ctx.fillRect(36, 26, 8, 2);
+    }
+    else if (eyeId === 'wink') {
+        // One eye open, one winking
+        ctx.fillStyle = 'white';
+        ctx.fillRect(20, 18, 8, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 20, 4, 4);
+        // Wink (closed eye)
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(40, 22, 4, 0, Math.PI); ctx.fill();
+    }
+    else if (eyeId === 'crying') {
+        // Crying eyes with tears
+        ctx.fillStyle = 'white';
+        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
+        // Tears
+        ctx.fillStyle = '#88ccff';
+        ctx.fillRect(22, 26, 2, 6); ctx.fillRect(42, 26, 2, 6);
+    }
+    else if (eyeId === 'star') {
+        // Star-shaped pupils
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        const star = (cx, cy) => { ctx.beginPath(); for (let i = 0; i < 5; i++) { const a = (i * 4 * Math.PI) / 5 - Math.PI / 2; ctx.lineTo(cx + Math.cos(a) * 3, cy + Math.sin(a) * 3); } ctx.fill(); };
+        star(24, 20); star(40, 20);
+    }
+    else if (eyeId === 'spiral') {
+        // Hypnotic spiral eyes
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = eyeCol; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(24, 20, 4, 0, Math.PI * 4); ctx.stroke();
+        ctx.beginPath(); ctx.arc(40, 20, 4, 0, Math.PI * 4); ctx.stroke();
+    }
+    else if (eyeId === 'closed') {
+        // Happy closed eyes
+        ctx.strokeStyle = eyeCol; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(24, 22, 4, Math.PI, 0); ctx.stroke();
+        ctx.beginPath(); ctx.arc(40, 22, 4, Math.PI, 0); ctx.stroke();
+    }
+    else if (eyeId === 'wide') {
+        // Wide surprised eyes
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(24, 20, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(24, 20, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'beady') {
+        // Small beady eyes
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(24, 22, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 22, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'anime') {
+        // Large anime eyes with shine
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(22, 20, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 20, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(23, 21, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(43, 21, 5, 0, Math.PI * 2); ctx.fill();
+        // Shine spots
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(20, 18, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 18, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(24, 23, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(44, 23, 1, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'glasses') {
+        // Eyes with glasses
+        ctx.fillStyle = 'white';
+        ctx.fillRect(18, 18, 10, 8); ctx.fillRect(36, 18, 10, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(22, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
+        // Glasses frames
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+        ctx.strokeRect(16, 16, 14, 12); ctx.strokeRect(34, 16, 14, 12);
+        ctx.beginPath(); ctx.moveTo(30, 22); ctx.lineTo(34, 22); ctx.stroke();
+    }
+    else if (eyeId === 'sunglasses') {
+        // Cool sunglasses
+        ctx.fillStyle = '#111';
+        ctx.fillRect(16, 16, 14, 10); ctx.fillRect(34, 16, 14, 10);
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+        ctx.strokeRect(16, 16, 14, 10); ctx.strokeRect(34, 16, 14, 10);
+        ctx.beginPath(); ctx.moveTo(30, 20); ctx.lineTo(34, 20); ctx.stroke();
+    }
+    else if (eyeId === 'monocle') {
+        // One eye normal, one with monocle
+        ctx.fillStyle = 'white';
+        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
+        // Monocle on right eye
+        ctx.strokeStyle = '#c9a000'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(40, 22, 7, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(46, 26); ctx.lineTo(50, 34); ctx.stroke();
+    }
+    else if (eyeId === 'eyepatch') {
+        // Pirate eyepatch
+        ctx.fillStyle = 'white';
+        ctx.fillRect(20, 18, 8, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 20, 4, 4);
+        // Eyepatch on right eye
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.arc(40, 22, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(34, 18); ctx.lineTo(50, 10); ctx.stroke();
+    }
+    else if (eyeId === 'cross') {
+        // Cross/plus shaped eyes
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = eyeCol; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(22, 20); ctx.lineTo(26, 20); ctx.moveTo(24, 18); ctx.lineTo(24, 22); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(38, 20); ctx.lineTo(42, 20); ctx.moveTo(40, 18); ctx.lineTo(40, 22); ctx.stroke();
+    }
+    else if (eyeId === 'dollar') {
+        // Dollar sign eyes
+        ctx.fillStyle = '#44ff44';
+        ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.font = '10px Arial';
+        ctx.fillText('$', 21, 24); ctx.fillText('$', 37, 24);
+    }
+    else if (eyeId === 'fire') {
+        // Fiery eyes
+        ctx.fillStyle = '#ff4400';
+        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffcc00';
+        ctx.beginPath(); ctx.arc(24, 20, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(24, 20, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 1, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'galaxy') {
+        // Galaxy/cosmic eyes
+        ctx.fillStyle = '#220044';
+        ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ff88ff';
+        ctx.beginPath(); ctx.arc(22, 18, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(38, 18, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#8888ff';
+        ctx.beginPath(); ctx.arc(26, 22, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 22, 1, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'robot') {
+        // Robot LED eyes
+        ctx.fillStyle = '#00ff00';
+        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillStyle = '#003300';
+        ctx.fillRect(22, 20, 2, 4); ctx.fillRect(24, 20, 2, 4);
+        ctx.fillRect(38, 20, 2, 4); ctx.fillRect(40, 20, 2, 4);
+    }
+    else if (eyeId === 'demon') {
+        // Demonic red eyes
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.fillRect(23, 17, 2, 6); ctx.fillRect(39, 17, 2, 6);
+    }
+    else if (eyeId === 'alien') {
+        // Large black alien eyes
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.ellipse(22, 20, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(42, 20, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
+        // Shine
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath(); ctx.arc(20, 16, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 16, 2, 0, Math.PI * 2); ctx.fill();
+    }
 }
 
 // Draw nose/mouth based on selected type (front only)
@@ -3477,6 +3861,158 @@ function drawNose(ctx, noseId, bellyCol, noseCol) {
         ctx.fillStyle = '#00aaaa';
         ctx.fillRect(26, 29, 12, 1);
     }
+    // --- NEW NOSE TYPES ---
+    else if (noseId === 'wolf') {
+        // Long wolf snout
+        ctx.fillStyle = getCol(bellyCol || '#ccc');
+        ctx.fillRect(26, 24, 12, 10);
+        ctx.fillStyle = 'black';
+        ctx.fillRect(30, 24, 4, 3);
+    }
+    else if (noseId === 'deer') {
+        // Small deer nose
+        ctx.fillStyle = getCol('black');
+        ctx.fillRect(29, 27, 6, 3);
+    }
+    else if (noseId === 'owl') {
+        // Small beak
+        ctx.fillStyle = getCol('#cc8800');
+        ctx.beginPath(); ctx.moveTo(28, 26); ctx.lineTo(36, 26); ctx.lineTo(32, 32); ctx.fill();
+    }
+    else if (noseId === 'bat') {
+        // Flat bat nose
+        ctx.fillStyle = getCol('#666');
+        ctx.fillRect(28, 26, 8, 4);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(29, 27, 2, 2); ctx.fillRect(33, 27, 2, 2);
+    }
+    else if (noseId === 'shark') {
+        // Shark gills/nose
+        ctx.fillStyle = getCol('#888');
+        ctx.fillRect(28, 28, 8, 2);
+        // Gills on side
+        ctx.fillStyle = '#555';
+        ctx.fillRect(16, 26, 4, 1); ctx.fillRect(16, 28, 4, 1); ctx.fillRect(16, 30, 4, 1);
+        ctx.fillRect(44, 26, 4, 1); ctx.fillRect(44, 28, 4, 1); ctx.fillRect(44, 30, 4, 1);
+    }
+    else if (noseId === 'dolphin') {
+        // Long dolphin snout
+        ctx.fillStyle = getCol(bellyCol || '#ccc');
+        ctx.fillRect(26, 26, 12, 6);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(26, 30, 12, 1);
+    }
+    else if (noseId === 'snake') {
+        // Forked tongue
+        ctx.fillStyle = getCol('#333');
+        ctx.fillRect(30, 28, 4, 2);
+        ctx.fillStyle = '#ff4466';
+        ctx.fillRect(30, 30, 1, 4); ctx.fillRect(33, 30, 1, 4);
+    }
+    else if (noseId === 'tiger') {
+        // Tiger nose with whiskers
+        ctx.fillStyle = getCol('black');
+        ctx.fillRect(29, 26, 6, 4);
+        // Whiskers
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(18, 28); ctx.lineTo(28, 28); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(36, 28); ctx.lineTo(46, 28); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(18, 30); ctx.lineTo(28, 30); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(36, 30); ctx.lineTo(46, 30); ctx.stroke();
+    }
+    else if (noseId === 'rhino') {
+        // Horn on nose
+        ctx.fillStyle = getCol('#888');
+        ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(32, 18); ctx.lineTo(36, 28); ctx.fill();
+        ctx.fillStyle = '#666';
+        ctx.fillRect(28, 28, 8, 4);
+    }
+    else if (noseId === 'elephant') {
+        // Trunk
+        ctx.fillStyle = getCol(bellyCol || '#ccc');
+        ctx.fillRect(30, 26, 4, 12);
+        ctx.fillRect(28, 36, 8, 4);
+    }
+    else if (noseId === 'hippo') {
+        // Wide hippo nose
+        ctx.fillStyle = getCol('#dca');
+        ctx.fillRect(22, 26, 20, 8);
+        ctx.fillStyle = '#666';
+        ctx.fillRect(26, 28, 3, 3); ctx.fillRect(35, 28, 3, 3);
+    }
+    else if (noseId === 'giraffe') {
+        // Spotted giraffe nose
+        ctx.fillStyle = getCol('#b8860b');
+        ctx.fillRect(28, 26, 8, 6);
+        ctx.fillStyle = '#8b6914';
+        ctx.fillRect(29, 27, 2, 2); ctx.fillRect(33, 28, 2, 2);
+    }
+    else if (noseId === 'zebra') {
+        // Striped zebra nose
+        ctx.fillStyle = getCol('#333');
+        ctx.fillRect(28, 26, 8, 6);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(30, 26, 2, 6);
+    }
+    else if (noseId === 'panda') {
+        // Black panda nose
+        ctx.fillStyle = getCol('black');
+        ctx.fillRect(29, 27, 6, 4);
+    }
+    else if (noseId === 'skunk') {
+        // Pink skunk nose
+        ctx.fillStyle = getCol('pink');
+        ctx.fillRect(30, 28, 4, 2);
+    }
+    else if (noseId === 'otter') {
+        // Otter nose with whiskers
+        ctx.fillStyle = getCol('black');
+        ctx.fillRect(29, 27, 6, 3);
+        // Whiskers
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(20, 28); ctx.lineTo(28, 28); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(36, 28); ctx.lineTo(44, 28); ctx.stroke();
+    }
+    else if (noseId === 'beaver') {
+        // Beaver with buck teeth
+        ctx.fillStyle = getCol('black');
+        ctx.fillRect(29, 26, 6, 3);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(30, 30, 2, 4); ctx.fillRect(32, 30, 2, 4);
+    }
+    else if (noseId === 'hedgehog') {
+        // Small dark hedgehog nose
+        ctx.fillStyle = getCol('#333');
+        ctx.fillRect(30, 28, 4, 2);
+    }
+    else if (noseId === 'squirrel' || noseId === 'hamster') {
+        // Tiny pink nose
+        ctx.fillStyle = getCol('pink');
+        ctx.fillRect(30, 28, 4, 2);
+    }
+    else if (noseId === 'ferret') {
+        // Small pink ferret nose
+        ctx.fillStyle = getCol('pink');
+        ctx.fillRect(30, 27, 4, 3);
+    }
+    else if (noseId === 'bird') {
+        // Pointed bird beak
+        ctx.fillStyle = getCol('orange');
+        ctx.beginPath(); ctx.moveTo(26, 28); ctx.lineTo(38, 28); ctx.lineTo(32, 36); ctx.fill();
+    }
+    else if (noseId === 'smile') {
+        // Simple smile
+        ctx.strokeStyle = getCol('#333'); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(32, 28, 4, 0, Math.PI); ctx.stroke();
+    }
+    else if (noseId === 'blep') {
+        // Cat nose with tongue sticking out
+        ctx.fillStyle = getCol('pink');
+        ctx.fillRect(30, 28, 4, 2);
+        // Tongue
+        ctx.fillStyle = '#ff6688';
+        ctx.fillRect(31, 30, 2, 4);
+    }
 }
 
 // Draw misc extras (wings, gills, mane, mask, etc.)
@@ -3550,6 +4086,189 @@ function drawMisc(ctx, miscId, col, bellyCol, back) {
             ctx.fillRect(30, 12, 4, 2);
             ctx.fillRect(28, 30, 8, 2);
         }
+    }
+    // --- NEW MISC TYPES ---
+    else if (miscId === 'wolf_ruff') {
+        // Fluffy neck ruff
+        ctx.fillStyle = col;
+        if (!back) {
+            ctx.fillRect(18, 32, 28, 6);
+        } else {
+            ctx.fillRect(16, 30, 32, 8);
+        }
+    }
+    else if (miscId === 'deer_spots') {
+        // White spots on body
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.beginPath(); ctx.arc(24, 40, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 38, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(30, 48, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(38, 50, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (miscId === 'owl_feathers') {
+        // Feathery chest
+        if (!back) {
+            ctx.fillStyle = col;
+            for (let y = 36; y < 56; y += 4) {
+                for (let x = 22; x < 42; x += 4) {
+                    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+        }
+    }
+    else if (miscId === 'bat_wings') {
+        // Bat wings
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.moveTo(20, 35); ctx.lineTo(0, 20); ctx.lineTo(4, 40); ctx.lineTo(10, 35); ctx.lineTo(12, 50); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(44, 35); ctx.lineTo(64, 20); ctx.lineTo(60, 40); ctx.lineTo(54, 35); ctx.lineTo(52, 50); ctx.fill();
+    }
+    else if (miscId === 'shark_fin') {
+        // Dorsal fin on back
+        if (back) {
+            ctx.fillStyle = col;
+            ctx.beginPath(); ctx.moveTo(28, 40); ctx.lineTo(32, 30); ctx.lineTo(36, 40); ctx.fill();
+        }
+    }
+    else if (miscId === 'dolphin_fin') {
+        // Smaller dorsal fin
+        if (back) {
+            ctx.fillStyle = col;
+            ctx.beginPath(); ctx.moveTo(30, 42); ctx.lineTo(32, 34); ctx.lineTo(34, 42); ctx.fill();
+        }
+    }
+    else if (miscId === 'snake_scales') {
+        // Scale pattern
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        for (let y = 36; y < 58; y += 4) {
+            for (let x = 22 + ((y / 4) % 2) * 2; x < 42; x += 4) {
+                ctx.fillRect(x, y, 3, 3);
+            }
+        }
+    }
+    else if (miscId === 'tiger_stripes') {
+        // Orange tiger stripes
+        ctx.fillStyle = '#222';
+        ctx.fillRect(22, 38, 2, 8); ctx.fillRect(28, 36, 2, 10);
+        ctx.fillRect(34, 38, 2, 8); ctx.fillRect(40, 36, 2, 10);
+        // Head stripes
+        ctx.fillRect(18, 16, 2, 6); ctx.fillRect(44, 16, 2, 6);
+    }
+    else if (miscId === 'leopard_spots') {
+        // Leopard spots
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.arc(26, 40, 3, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(38, 42, 3, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(30, 50, 3, 0, Math.PI * 2); ctx.stroke();
+    }
+    else if (miscId === 'zebra_stripes') {
+        // Black zebra stripes
+        ctx.fillStyle = '#000';
+        ctx.fillRect(22, 36, 2, 20); ctx.fillRect(28, 36, 2, 20);
+        ctx.fillRect(34, 36, 2, 20); ctx.fillRect(40, 36, 2, 20);
+    }
+    else if (miscId === 'panda_patches') {
+        // Black eye patches
+        if (!back) {
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.ellipse(22, 20, 6, 5, -0.3, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(42, 20, 6, 5, 0.3, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    else if (miscId === 'skunk_stripe') {
+        // White stripe down back
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(30, 10, 4, 50);
+    }
+    else if (miscId === 'otter_belly') {
+        // Light belly patch
+        if (!back) {
+            ctx.fillStyle = col;
+            ctx.fillRect(24, 36, 16, 18);
+        }
+    }
+    else if (miscId === 'hedgehog_spines') {
+        // Spiky back
+        if (back) {
+            ctx.fillStyle = '#8B4513';
+            for (let x = 18; x < 46; x += 3) {
+                ctx.beginPath(); ctx.moveTo(x, 34); ctx.lineTo(x + 1.5, 28); ctx.lineTo(x + 3, 34); ctx.fill();
+            }
+        }
+    }
+    else if (miscId === 'squirrel_cheeks' || miscId === 'hamster_cheeks') {
+        // Puffy cheeks
+        if (!back) {
+            ctx.fillStyle = col;
+            ctx.beginPath(); ctx.arc(16, 26, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(48, 26, 5, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    else if (miscId === 'freckles') {
+        // Cute freckles
+        if (!back) {
+            ctx.fillStyle = 'rgba(139,69,19,0.5)';
+            ctx.beginPath(); ctx.arc(18, 26, 1, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(22, 28, 1, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(20, 24, 1, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(42, 26, 1, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(46, 28, 1, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(44, 24, 1, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    else if (miscId === 'blush') {
+        // Blushing cheeks
+        if (!back) {
+            ctx.fillStyle = 'rgba(255,100,150,0.4)';
+            ctx.beginPath(); ctx.ellipse(18, 26, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(46, 26, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    else if (miscId === 'scars') {
+        // Battle scars
+        if (!back) {
+            ctx.strokeStyle = 'rgba(100,50,50,0.6)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(16, 18); ctx.lineTo(22, 26); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(18, 18); ctx.lineTo(24, 26); ctx.stroke();
+        }
+    }
+    else if (miscId === 'bandage') {
+        // Bandage on head
+        if (!back) {
+            ctx.fillStyle = '#f5f5dc';
+            ctx.fillRect(40, 14, 10, 6);
+            ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(42, 14); ctx.lineTo(42, 20); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(48, 14); ctx.lineTo(48, 20); ctx.stroke();
+        }
+    }
+    else if (miscId === 'whiskers_long') {
+        // Long whiskers
+        if (!back) {
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(10, 24); ctx.lineTo(26, 26); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(10, 28); ctx.lineTo(26, 28); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(10, 32); ctx.lineTo(26, 30); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(54, 24); ctx.lineTo(38, 26); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(54, 28); ctx.lineTo(38, 28); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(54, 32); ctx.lineTo(38, 30); ctx.stroke();
+        }
+    }
+    else if (miscId === 'angel_wings') {
+        // White feathered wings
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.moveTo(20, 38); ctx.lineTo(0, 30); ctx.lineTo(4, 45); ctx.lineTo(10, 40); ctx.lineTo(14, 52); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(44, 38); ctx.lineTo(64, 30); ctx.lineTo(60, 45); ctx.lineTo(54, 40); ctx.lineTo(50, 52); ctx.fill();
+    }
+    else if (miscId === 'demon_horns') {
+        // Red demon horns
+        ctx.fillStyle = '#aa0000';
+        ctx.beginPath(); ctx.moveTo(16, 10); ctx.lineTo(10, -4); ctx.lineTo(22, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(48, 10); ctx.lineTo(54, -4); ctx.lineTo(42, 10); ctx.fill();
+    }
+    else if (miscId === 'halo') {
+        // Floating golden halo
+        ctx.strokeStyle = '#ffdd00'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.ellipse(32, -4, 10, 3, 0, 0, Math.PI * 2); ctx.stroke();
     }
 }
 
@@ -3679,6 +4398,221 @@ function drawTail(ctx, tailId, col, bellyCol, back) {
         // Outline
         ctx.strokeStyle = 'rgba(0,0,0,0.4)';
         ctx.strokeRect(26, 48, 12, 12);
+    }
+    // --- NEW TAIL TYPES ---
+    else if (tailId === 'wolf') {
+        // Bushy wolf tail
+        ctx.beginPath();
+        ctx.moveTo(26, 48);
+        ctx.quadraticCurveTo(20, 45, 18, 52);
+        ctx.quadraticCurveTo(16, 58, 26, 56);
+        ctx.lineTo(38, 56);
+        ctx.quadraticCurveTo(40, 52, 38, 48);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'deer') {
+        // Short deer tail
+        ctx.fillRect(30, 50, 4, 6);
+        ctx.strokeRect(30, 50, 4, 6);
+    }
+    else if (tailId === 'owl') {
+        // Feathered owl tail
+        ctx.beginPath(); ctx.moveTo(26, 50); ctx.lineTo(32, 60); ctx.lineTo(38, 50); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(28, 52); ctx.lineTo(32, 58); ctx.lineTo(36, 52); ctx.stroke();
+    }
+    else if (tailId === 'bat') {
+        // Bat wing-like tail
+        ctx.beginPath(); ctx.moveTo(28, 50); ctx.lineTo(24, 58); ctx.lineTo(32, 54); ctx.lineTo(40, 58); ctx.lineTo(36, 50); ctx.fill();
+    }
+    else if (tailId === 'shark') {
+        // Shark tail fin
+        ctx.beginPath(); ctx.moveTo(26, 52); ctx.lineTo(20, 48); ctx.lineTo(20, 58); ctx.lineTo(26, 54); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(38, 52); ctx.lineTo(44, 48); ctx.lineTo(44, 58); ctx.lineTo(38, 54); ctx.fill();
+    }
+    else if (tailId === 'dolphin') {
+        // Horizontal dolphin fluke
+        ctx.beginPath(); ctx.moveTo(28, 54); ctx.lineTo(16, 50); ctx.lineTo(16, 58); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(36, 54); ctx.lineTo(48, 50); ctx.lineTo(48, 58); ctx.fill();
+    }
+    else if (tailId === 'snake') {
+        // Long serpentine tail
+        ctx.strokeStyle = col; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(32, 50); ctx.quadraticCurveTo(40, 56, 32, 62); ctx.quadraticCurveTo(24, 68, 32, 74); ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(32, 50); ctx.quadraticCurveTo(40, 56, 32, 62); ctx.stroke();
+    }
+    else if (tailId === 'tiger') {
+        // Striped tiger tail
+        ctx.fillRect(28, 48, 8, 12); ctx.strokeRect(28, 48, 8, 12);
+        ctx.fillStyle = '#222';
+        ctx.fillRect(28, 50, 8, 2); ctx.fillRect(28, 54, 8, 2); ctx.fillRect(28, 58, 8, 2);
+    }
+    else if (tailId === 'leopard') {
+        // Spotted leopard tail
+        ctx.fillRect(28, 48, 8, 12); ctx.strokeRect(28, 48, 8, 12);
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.arc(30, 52, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(34, 56, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (tailId === 'rhino') {
+        // Short rhino tail
+        ctx.fillRect(30, 52, 4, 6);
+        ctx.strokeRect(30, 52, 4, 6);
+    }
+    else if (tailId === 'elephant') {
+        // Thin elephant tail with tuft
+        ctx.strokeStyle = col; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(32, 50); ctx.lineTo(32, 62); ctx.stroke();
+        ctx.fillStyle = '#444';
+        ctx.beginPath(); ctx.arc(32, 64, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (tailId === 'hippo') {
+        // Stubby hippo tail
+        ctx.fillRect(30, 52, 4, 4);
+        ctx.strokeRect(30, 52, 4, 4);
+    }
+    else if (tailId === 'giraffe') {
+        // Tufted giraffe tail
+        ctx.strokeStyle = col; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(32, 50); ctx.lineTo(32, 60); ctx.stroke();
+        ctx.fillStyle = '#8B4513';
+        ctx.beginPath(); ctx.arc(32, 62, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (tailId === 'zebra') {
+        // Striped zebra tail with tuft
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(32, 50); ctx.lineTo(32, 58); ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(32, 60, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.fillRect(30, 58, 1, 4); ctx.fillRect(33, 58, 1, 4);
+    }
+    else if (tailId === 'panda') {
+        // Short panda tail
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(32, 52, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (tailId === 'red_panda') {
+        // Ringed red panda tail
+        ctx.fillRect(28, 48, 8, 14); ctx.strokeRect(28, 48, 8, 14);
+        ctx.fillStyle = '#cc6600';
+        ctx.fillRect(28, 50, 8, 2); ctx.fillRect(28, 54, 8, 2); ctx.fillRect(28, 58, 8, 2);
+    }
+    else if (tailId === 'skunk') {
+        // Bushy skunk tail with stripe
+        ctx.beginPath();
+        ctx.moveTo(24, 48);
+        ctx.quadraticCurveTo(16, 38, 20, 32);
+        ctx.quadraticCurveTo(32, 28, 44, 32);
+        ctx.quadraticCurveTo(48, 38, 40, 48);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(30, 32, 4, 18);
+    }
+    else if (tailId === 'otter') {
+        // Flat paddle otter tail
+        ctx.beginPath();
+        ctx.ellipse(32, 56, 8, 4, 0, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'beaver') {
+        // Flat beaver tail
+        ctx.beginPath();
+        ctx.ellipse(32, 56, 10, 5, 0, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+        // Scale pattern
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.5;
+        for (let y = 52; y < 60; y += 2) {
+            ctx.beginPath(); ctx.moveTo(24, y); ctx.lineTo(40, y); ctx.stroke();
+        }
+    }
+    else if (tailId === 'hedgehog') {
+        // Stubby hedgehog tail
+        ctx.beginPath(); ctx.arc(32, 52, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'squirrel') {
+        // Big fluffy squirrel tail
+        ctx.beginPath();
+        ctx.moveTo(28, 48);
+        ctx.quadraticCurveTo(16, 40, 18, 30);
+        ctx.quadraticCurveTo(32, 24, 46, 30);
+        ctx.quadraticCurveTo(48, 40, 36, 48);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'chipmunk') {
+        // Striped chipmunk tail
+        ctx.fillRect(28, 46, 8, 12); ctx.strokeRect(28, 46, 8, 12);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(30, 46, 2, 12); ctx.fillRect(34, 46, 2, 12);
+    }
+    else if (tailId === 'hamster') {
+        // Tiny hamster tail
+        ctx.beginPath(); ctx.arc(32, 52, 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'chinchilla') {
+        // Fluffy chinchilla tail
+        ctx.beginPath();
+        ctx.moveTo(28, 48);
+        ctx.quadraticCurveTo(24, 52, 26, 58);
+        ctx.quadraticCurveTo(32, 62, 38, 58);
+        ctx.quadraticCurveTo(40, 52, 36, 48);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'ferret') {
+        // Long thin ferret tail
+        ctx.strokeStyle = col; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(32, 50); ctx.quadraticCurveTo(38, 56, 34, 64); ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(32, 50); ctx.quadraticCurveTo(38, 56, 34, 64); ctx.stroke();
+    }
+    else if (tailId === 'peacock') {
+        // Colorful peacock feathers
+        ctx.fillStyle = '#00aa44';
+        ctx.beginPath();
+        ctx.moveTo(24, 48);
+        ctx.quadraticCurveTo(10, 30, 14, 20);
+        ctx.lineTo(32, 28);
+        ctx.lineTo(50, 20);
+        ctx.quadraticCurveTo(54, 30, 40, 48);
+        ctx.closePath();
+        ctx.fill();
+        // Eye spots
+        ctx.fillStyle = '#0066aa';
+        ctx.beginPath(); ctx.arc(22, 30, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(32, 26, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 30, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(22, 30, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(32, 26, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 30, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (tailId === 'mermaid') {
+        // Mermaid fish tail
+        ctx.fillStyle = '#00ccaa';
+        ctx.beginPath();
+        ctx.moveTo(28, 50);
+        ctx.lineTo(24, 56);
+        ctx.lineTo(10, 52);
+        ctx.lineTo(10, 60);
+        ctx.lineTo(24, 56);
+        ctx.lineTo(28, 62);
+        ctx.lineTo(36, 62);
+        ctx.lineTo(40, 56);
+        ctx.lineTo(54, 60);
+        ctx.lineTo(54, 52);
+        ctx.lineTo(40, 56);
+        ctx.lineTo(36, 50);
+        ctx.closePath();
+        ctx.fill();
+        // Scales
+        ctx.strokeStyle = 'rgba(0,100,80,0.4)'; ctx.lineWidth = 0.5;
+        ctx.beginPath(); ctx.arc(32, 54, 4, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(28, 58, 3, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(36, 58, 3, 0, Math.PI * 2); ctx.stroke();
     }
 }
 
@@ -5512,8 +6446,20 @@ function removePlayer(pid) {
     }
 }
 
+// --- MOBILE FPS LIMITER ---
+const MOBILE_FPS_INTERVAL = 1000 / 60; // 60 FPS = ~16.67ms per frame
+let lastFrameTime = 0;
+
 function animate() {
     requestAnimationFrame(animate);
+
+    // FPS limit on mobile to prevent overheating
+    if (isMobile) {
+        const now = performance.now();
+        if (now - lastFrameTime < MOBILE_FPS_INTERVAL) return;
+        lastFrameTime = now;
+    }
+
     const dt = clock.getDelta();
 
     // --- TIME & VISUALS ---

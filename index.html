@@ -1309,11 +1309,15 @@
                 border-radius: 1.2vh;
             }
 
-            /* --- ROOM INFO --- */
+            /* --- ROOM INFO: Centered at top --- */
             #room-info-ui {
-                top: 1.2vh !important;
-                padding: 1vh 2.5vh !important;
+                top: 1.5vh !important;
+                left: 50% !important;
+                right: auto !important;
+                transform: translateX(-50%) !important;
+                padding: 1vh 3vh !important;
                 font-size: 2vh !important;
+                max-width: 40vw;
             }
 
             /* --- CHAT: Positioned above joystick, taller --- */
@@ -1350,21 +1354,21 @@
                 font-size: 2vh;
             }
 
-            /* --- FISH LOG / INVENTORY --- */
+            /* --- FISH LOG / INVENTORY: Left side under settings like desktop --- */
             #fish-log {
                 top: 9vh !important;
-                right: 1.5vh !important;
-                left: auto !important;
-                width: 18vw;
-                max-height: 28vh;
+                left: 1.5vh !important;
+                right: auto !important;
+                width: 22vw;
+                max-height: 25vh;
                 font-size: 1.8vh;
                 padding: 1.2vh;
             }
 
             /* --- TOUCH CONTROLS: Scale to viewport (INCREASED) --- */
             #joystick-zone {
-                bottom: 2.5vh;
-                left: 2.5vh;
+                bottom: 8vh;
+                left: 8vh;
                 width: 28vh;
                 height: 28vh;
                 max-width: none;
@@ -1394,25 +1398,48 @@
                 font-size: 2.5vh;
             }
 
-            /* --- ZOOM SLIDER & FULLSCREEN --- */
+            /* --- ZOOM SLIDER: Vertical on far right edge under mic/chat buttons --- */
             #mobile-zoom-slider {
-                width: 22vh;
-                height: 2.5vh;
-                right: 24vh;
-                bottom: 24vh;
+                width: 40vh;
+                height: 3vh;
+                right: -15vh;
+                left: auto;
+                top: 45%;
+                bottom: auto;
+                transform: rotate(-90deg);
+                transform-origin: center center;
+                position: absolute;
             }
 
+            /* --- FULLSCREEN: Next to action buttons --- */
             #btn-fullscreen-mobile {
-                right: 24vh;
-                bottom: 4vh;
-                width: 8vh;
-                height: 8vh;
-                font-size: 3.5vh;
+                right: 18vh;
+                left: auto;
+                bottom: 12vh;
+                top: auto;
+                width: 10vh;
+                height: 10vh;
+                font-size: 4vh;
             }
 
             /* --- OVERLAYS: Unified scaling --- */
             .overlay-screen {
                 padding: 2vh;
+            }
+
+            /* --- TOASTS: Ensure full price displays --- */
+            .toast {
+                min-width: 40vw;
+                width: auto !important;
+                max-width: 80vw;
+                white-space: nowrap;
+                font-size: 2.2vh;
+                padding: 1.5vh 3vh;
+                text-align: center;
+            }
+
+            #notification-area {
+                width: 80vw;
             }
 
             .overlay-screen h2 {
@@ -1462,67 +1489,69 @@
                 min-width: 12vh;
             }
 
-            /* --- SHOP OVERLAY: PC-like layout with vertical scrolling --- */
+            /* --- SHOP OVERLAY: PC-like layout with wardrobe sidebar --- */
             #shop-overlay {
                 padding: 1.5vh;
                 overflow-y: auto;
             }
 
             #shop-wrapper {
-                flex-direction: column;
+                flex-direction: row;
                 width: 96vw;
-                height: auto;
-                max-height: 88vh;
+                height: 85vh;
+                max-height: none;
                 gap: 1.5vh;
                 padding: 1vh;
+                overflow: hidden;
+            }
+
+            /* Main shop panel - narrower for mobile */
+            #shop-main-panel {
+                width: 62vw;
+                height: 100%;
                 overflow-y: auto;
             }
 
-            #shop-main-panel {
-                width: 100%;
-                height: auto;
-            }
-
             #shop-main-panel h2 {
-                font-size: 3vh;
-                margin: 0.8vh 0;
+                font-size: 2.5vh;
+                margin: 0.5vh 0;
             }
 
-            /* Part selectors - horizontal row like PC */
+            /* Part selectors - compact grid */
             #color-picker-container {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 1vh;
-                padding: 1.5vh;
-                font-size: 1.8vh;
-                margin-bottom: 1.5vh;
-                justify-content: center;
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 0.5vh;
+                padding: 1vh;
+                font-size: 1.4vh;
+                margin-bottom: 1vh;
             }
 
             #color-picker-container .picker-row {
-                flex-direction: row;
-                gap: 0.8vh;
-                padding: 0.8vh;
+                flex-direction: column;
+                gap: 0.3vh;
+                padding: 0.5vh;
                 min-width: auto;
             }
 
             #color-picker-container .picker-row span {
-                font-size: 1.6vh;
-                min-width: 4vh;
+                font-size: 1.2vh;
+                min-width: auto;
             }
 
             #color-picker-container .picker-row select {
-                font-size: 1.6vh;
-                padding: 0.5vh;
-                max-width: 15vh;
+                font-size: 1.3vh;
+                padding: 0.3vh;
+                max-width: none;
+                width: 100%;
             }
 
             #color-picker-container .picker-row input[type="color"] {
-                width: 4vh;
-                height: 3.5vh;
+                width: 100%;
+                height: 3vh;
             }
 
-            /* Shop grid items - PC-like grid with vertical scroll */
+            /* Shop grid items - BIGGER with more rows */
             #shop-container {
                 max-height: 50vh;
                 padding: 1.5vh;
@@ -1530,18 +1559,73 @@
                 max-width: none;
                 overflow-y: auto;
                 display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(12vh, 1fr));
+                grid-template-columns: repeat(auto-fill, minmax(16vh, 1fr));
                 gap: 1.5vh;
             }
 
             #shop-container .grid-entry {
-                padding: 0.8vh;
-                font-size: 1.4vh;
+                padding: 1vh;
+                font-size: 1.6vh;
             }
 
-            /* Hide wardrobe on phones */
+            /* Title names - BIGGER */
+            #shop-container .grid-entry .item-name,
+            #shop-container .grid-entry>div:first-child {
+                font-size: 2vh !important;
+                font-weight: bold;
+            }
+
+            /* Prices - readable size */
+            #shop-container .grid-entry .item-price,
+            #shop-container .grid-entry>div:last-child {
+                font-size: 1.6vh !important;
+            }
+
+            /* Buy/Equip buttons in grid */
+            #shop-container .grid-entry button {
+                font-size: 1.6vh !important;
+                padding: 0.6vh 1.2vh !important;
+            }
+
+            /* Shop tab buttons - bigger */
+            #shop-main-panel .tab-btn,
+            #shop-main-panel button {
+                font-size: 2.2vh !important;
+                padding: 1.2vh 2.5vh !important;
+            }
+
+            /* Show wardrobe sidebar on mobile with outfit preview */
             #wardrobe-sidebar {
-                display: none !important;
+                display: flex !important;
+                flex-direction: column;
+                width: 30vw;
+                height: 100%;
+                padding: 1vh;
+                overflow-y: auto;
+                background: rgba(0, 0, 0, 0.3);
+                border-radius: 1.5vh;
+            }
+
+            #wardrobe-sidebar h3 {
+                font-size: 2vh;
+                margin: 0.5vh 0;
+            }
+
+            /* Preview canvas */
+            #wardrobe-sidebar canvas,
+            #preview-canvas {
+                width: 100% !important;
+                max-width: none;
+                height: auto;
+                aspect-ratio: 1 / 1;
+            }
+
+            /* Outfit slots - compact */
+            .outfit-slot,
+            #wardrobe-sidebar button {
+                font-size: 1.5vh;
+                padding: 1vh;
+                margin: 0.5vh 0;
             }
 
             /* --- PROPS PANEL --- */
@@ -1913,7 +1997,7 @@
 
     <div id="game-container"></div>
     <div id="loading">Initializing Game Engine...</div>
-    <div id="version">v10.65</div>
+    <div id="version">v10.70</div>
 
     <div id="rotate-overlay">
         <h1>Please Rotate Your Device</h1>
@@ -1944,7 +2028,7 @@
 
     <div id="lobby-screen" style="display: none;">
         <h2>HTML Fishing</h2>
-        <div id="lobby-version" style="color: #888; font-size: 12px; margin-top: -10px; margin-bottom: 10px;">v10.65
+        <div id="lobby-version" style="color: #888; font-size: 12px; margin-top: -10px; margin-bottom: 10px;">v10.70
         </div>
         <div id="lobby-container">
             <label>Your Name:</label>
@@ -2313,6 +2397,7 @@
                     <div id="btn-mobile-show-fish" class="touch-btn-sm">🐟</div>
                     <div id="btn-mobile-glove" class="touch-btn-sm">🥊</div>
                     <div id="btn-mobile-empty" class="touch-btn-sm">📷</div>
+                    <div id="btn-mobile-undo-prop" class="touch-btn-sm" onclick="undoProp()">🗑️</div>
                 </div>
 
 
@@ -2331,12 +2416,12 @@
 
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
-    <script src="core.js?v=10.65"></script>
-    <script src="fish.js?v=10.65"></script>
-    <script src="networking.js?v=10.65"></script>
-    <script src="audio.js?v=10.65"></script>
-    <script src="ui.js?v=10.65"></script>
-    <script src="props.js?v=10.65"></script>
+    <script src="core.js?v=10.83"></script>
+    <script src="fish.js?v=10.83"></script>
+    <script src="networking.js?v=10.83"></script>
+    <script src="audio.js?v=10.83"></script>
+    <script src="ui.js?v=10.83"></script>
+    <script src="props.js?v=10.83"></script>
 
     <!-- Start Open Web Analytics Tracker -->
     <script type="text/javascript">

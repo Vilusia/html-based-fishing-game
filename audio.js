@@ -715,16 +715,34 @@ function saveGame() {
     myData.misc = saveState.currentMisc;
     myData.tail = saveState.currentTail;
 
+    // Update myData with part colors
+    myData.earsColor = saveState.earsColor || '';
+    myData.noseColor = saveState.noseColor || '';
+    myData.miscColor = saveState.miscColor || '';
+    myData.tailColor = saveState.tailColor || '';
+
+    // Update myData with base colors
+    myData.color = saveState.catColor;
+    myData.belly = saveState.bellyColor;
+    myData.eye = saveState.eyeColor;
+
     updateUI();
     updateLocalVisuals();
 
-    // --- ADD THIS BLOCK ---
-    // Force immediate update to Dedicated Server if connected
+    // --- Sync with Dedicated Server if connected ---
     if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+        // Sync name/visuals with full saveState
         dedicatedSocket.send(JSON.stringify({
             type: 'setName',
             name: saveState.displayName,
-            peerId: myPeerId
+            peerId: myPeerId,
+            saveState: saveState // Send full saveState for visuals sync
+        }));
+
+        // Sync money to prevent desync after shop purchases
+        dedicatedSocket.send(JSON.stringify({
+            type: 'syncMoney',
+            money: saveState.money
         }));
     }
     // ---------------------
@@ -1847,7 +1865,7 @@ function renderShop() {
             canvas.width = 64; canvas.height = 64;
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
-            drawSpecies(ctx, saveState.species, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
+            drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
             drawShirt(ctx, saveState.currentShirt, false);
             drawCollar(ctx, item.id, false);
             entry.appendChild(canvas);
@@ -1899,7 +1917,7 @@ function renderShop() {
             canvas.width = 64; canvas.height = 64;
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
-            drawSpecies(ctx, saveState.species, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
+            drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
             drawPattern(ctx, pattern.id, saveState.catColor, false);
             entry.appendChild(canvas);
 
@@ -1950,7 +1968,7 @@ function renderShop() {
             canvas.width = 64; canvas.height = 64;
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
-            drawSpecies(ctx, saveState.species, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
+            drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
             drawShirt(ctx, shirt.id, false);
             drawCollar(ctx, saveState.currentCollar, false);
             entry.appendChild(canvas);
@@ -2000,7 +2018,7 @@ function renderShop() {
             canvas.width = 64; canvas.height = 64;
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
-            drawSpecies(ctx, saveState.species, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
+            drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
             drawShirt(ctx, saveState.currentShirt, false);
             drawCollar(ctx, saveState.currentCollar, false);
             drawHat(ctx, hat.id, false);
