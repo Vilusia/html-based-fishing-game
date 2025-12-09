@@ -471,6 +471,52 @@
             -webkit-overflow-scrolling: touch;
         }
 
+        /* --- COLOR PICKER / PART SELECTOR STYLES --- */
+        #color-picker-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+
+        .picker-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .picker-row span {
+            min-width: 50px;
+            color: #ccc;
+        }
+
+        .picker-row select {
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .picker-row input[type="color"] {
+            width: 30px;
+            height: 24px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 0;
+        }
+
         .grid-container {
             background: rgba(0, 0, 0, 0.3);
             border: 2px solid var(--accent);
@@ -940,6 +986,44 @@
             transform: scale(1.1);
         }
 
+        /* --- JOURNAL TIER MEDALS --- */
+        .journal-medals {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .medal {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #333;
+            border: 1px solid #555;
+        }
+
+        .medal.got-normal {
+            background: #ffffff;
+            border-color: #aaa;
+        }
+
+        .medal.got-glistening {
+            background: #cd7f32;
+            border-color: #aa6622;
+            box-shadow: 0 0 4px #cd7f32;
+        }
+
+        .medal.got-shining {
+            background: #c0c0c0;
+            border-color: #888;
+            box-shadow: 0 0 6px #c0c0c0;
+        }
+
+        .medal.got-opalescent {
+            background: linear-gradient(135deg, #ffd700, #ffaa00, #ffd700);
+            border-color: #cc9900;
+            box-shadow: 0 0 8px #ffd700;
+        }
+
         @keyframes fadeUp {
             0% {
                 opacity: 0;
@@ -1034,21 +1118,108 @@
                 font-size: 16px;
             }
 
+            /* Mobile Shop - Complete Overhaul */
+            #shop-overlay {
+                padding: 10px;
+            }
+
+            #shop-overlay h2 {
+                font-size: 16px;
+                margin: 0 0 5px 0;
+            }
+
             #shop-wrapper {
                 flex-direction: column;
-                align-items: center;
+                width: 100%;
+                height: 100%;
+                max-height: 95vh;
+                padding: 5px;
+                gap: 5px;
                 overflow-y: auto;
             }
 
+            /* Hide wardrobe on mobile - too bulky */
             #wardrobe-sidebar {
-                width: 90%;
-                height: auto;
-                max-height: 200px;
-                order: -1;
+                display: none !important;
             }
 
             #shop-main-panel {
                 width: 100%;
+                height: auto;
+            }
+
+            #shop-main-panel h2 {
+                font-size: 14px;
+                margin: 0 0 5px 0;
+            }
+
+            /* Ultra-compact part selectors - 4 columns */
+            #color-picker-container {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 3px;
+                width: 100%;
+                padding: 5px;
+                font-size: 9px;
+                margin-bottom: 5px;
+            }
+
+            #color-picker-container .picker-row {
+                flex-direction: column;
+                gap: 2px;
+                padding: 3px;
+                text-align: center;
+            }
+
+            #color-picker-container .picker-row span {
+                font-size: 8px;
+                min-width: auto;
+            }
+
+            #color-picker-container .picker-row select {
+                width: 100%;
+                max-width: none;
+                font-size: 9px;
+                padding: 2px;
+            }
+
+            #color-picker-container .picker-row input[type="color"] {
+                width: 100%;
+                height: 20px;
+            }
+
+            /* Compact shop container */
+            #shop-container {
+                max-height: 45vh;
+                padding: 5px;
+                width: 100%;
+                max-width: none;
+            }
+
+            #shop-container .grid-entry {
+                padding: 4px;
+                font-size: 9px;
+            }
+
+            /* Smaller tab buttons */
+            #shop-container button {
+                font-size: 10px !important;
+                padding: 5px 8px !important;
+            }
+
+            /* Close button */
+            #shop-overlay .btn-lg {
+                padding: 8px 16px;
+                font-size: 12px;
+                margin-top: 5px;
+            }
+
+            .close-x-btn {
+                width: 35px;
+                height: 35px;
+                font-size: 20px;
+                top: 5px;
+                right: 5px;
             }
         }
 
@@ -1103,6 +1274,394 @@
                 left: 10px;
                 width: 30vmin;
                 height: 30vmin;
+            }
+        }
+
+        /* === UNIFIED LANDSCAPE PHONE SCALING (max-height: 500px) === */
+        @media (max-height: 500px) and (orientation: landscape) {
+
+            /* --- TOP BAR: Scale proportionally (INCREASED 25%) --- */
+            #stats-ui {
+                top: 1.2vh;
+                left: 1.2vh;
+            }
+
+            .stat-row {
+                gap: 1.2vh;
+            }
+
+            .stat-box {
+                height: 6.5vh;
+                padding: 0 2.5vh;
+                font-size: 2.5vh;
+            }
+
+            #btn-settings,
+            #btn-host-panel,
+            #btn-journal,
+            #btn-players,
+            #btn-props-ui,
+            #btn-admin-login,
+            #btn-inventory-mobile {
+                height: 6.5vh;
+                padding: 0 2vh;
+                font-size: 2.2vh;
+                border-radius: 1.2vh;
+            }
+
+            /* --- ROOM INFO --- */
+            #room-info-ui {
+                top: 1.2vh !important;
+                padding: 1vh 2.5vh !important;
+                font-size: 2vh !important;
+            }
+
+            /* --- CHAT: Positioned above joystick, taller --- */
+            #chat-ui {
+                bottom: 32vh !important;
+                left: 1.5vh !important;
+                top: auto !important;
+                width: 35vw;
+                height: 35vh;
+                min-width: unset;
+            }
+
+            #chat-messages {
+                font-size: 2vh;
+                padding: 1.2vh;
+            }
+
+            #chat-input {
+                padding: 1.2vh;
+                font-size: 2.2vh;
+            }
+
+            /* --- BAIT UI --- */
+            #bait-ui {
+                bottom: 1.5vh;
+                left: 38vw;
+                transform: none;
+                padding: 1.2vh 2.5vh;
+                font-size: 2vh;
+            }
+
+            #bait-select {
+                padding: 1vh 1.5vh;
+                font-size: 2vh;
+            }
+
+            /* --- FISH LOG / INVENTORY --- */
+            #fish-log {
+                top: 9vh !important;
+                right: 1.5vh !important;
+                left: auto !important;
+                width: 18vw;
+                max-height: 28vh;
+                font-size: 1.8vh;
+                padding: 1.2vh;
+            }
+
+            /* --- TOUCH CONTROLS: Scale to viewport (INCREASED) --- */
+            #joystick-zone {
+                bottom: 2.5vh;
+                left: 2.5vh;
+                width: 28vh;
+                height: 28vh;
+                max-width: none;
+                max-height: none;
+            }
+
+            #touch-buttons {
+                bottom: 2.5vh;
+                right: 2.5vh;
+                gap: 2vh;
+            }
+
+            .touch-btn {
+                width: 14vh;
+                height: 14vh;
+                max-width: none;
+                max-height: none;
+                font-size: 3vh;
+                border-width: 0.5vh;
+            }
+
+            .touch-btn-sm {
+                width: 9vh;
+                height: 9vh;
+                max-width: none;
+                max-height: none;
+                font-size: 2.5vh;
+            }
+
+            /* --- ZOOM SLIDER & FULLSCREEN --- */
+            #mobile-zoom-slider {
+                width: 22vh;
+                height: 2.5vh;
+                right: 24vh;
+                bottom: 24vh;
+            }
+
+            #btn-fullscreen-mobile {
+                right: 24vh;
+                bottom: 4vh;
+                width: 8vh;
+                height: 8vh;
+                font-size: 3.5vh;
+            }
+
+            /* --- OVERLAYS: Unified scaling --- */
+            .overlay-screen {
+                padding: 2vh;
+            }
+
+            .overlay-screen h2 {
+                font-size: 3.5vh;
+                margin: 1.2vh 0;
+            }
+
+            .close-x-btn {
+                width: 7vh;
+                height: 7vh;
+                font-size: 4.5vh;
+                top: 1.5vh;
+                right: 1.5vh;
+                border-width: 0.5vh;
+            }
+
+            .btn-lg {
+                padding: 1.8vh 3.5vh;
+                font-size: 2.2vh;
+                margin: 0.6vh;
+            }
+
+            /* --- OPTIONS MENU --- */
+            #options-container {
+                max-height: 92vh;
+                max-width: 92vw;
+                padding: 2.5vh;
+            }
+
+            #options-container h2 {
+                font-size: 3vh;
+                margin-bottom: 1.2vh;
+            }
+
+            .control-row {
+                padding: 1.2vh 1.8vh;
+                margin-bottom: 0.6vh;
+            }
+
+            .control-label {
+                font-size: 2.2vh;
+            }
+
+            .key-btn {
+                padding: 1vh 2.5vh;
+                font-size: 2vh;
+                min-width: 12vh;
+            }
+
+            /* --- SHOP OVERLAY: PC-like layout with vertical scrolling --- */
+            #shop-overlay {
+                padding: 1.5vh;
+                overflow-y: auto;
+            }
+
+            #shop-wrapper {
+                flex-direction: column;
+                width: 96vw;
+                height: auto;
+                max-height: 88vh;
+                gap: 1.5vh;
+                padding: 1vh;
+                overflow-y: auto;
+            }
+
+            #shop-main-panel {
+                width: 100%;
+                height: auto;
+            }
+
+            #shop-main-panel h2 {
+                font-size: 3vh;
+                margin: 0.8vh 0;
+            }
+
+            /* Part selectors - horizontal row like PC */
+            #color-picker-container {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 1vh;
+                padding: 1.5vh;
+                font-size: 1.8vh;
+                margin-bottom: 1.5vh;
+                justify-content: center;
+            }
+
+            #color-picker-container .picker-row {
+                flex-direction: row;
+                gap: 0.8vh;
+                padding: 0.8vh;
+                min-width: auto;
+            }
+
+            #color-picker-container .picker-row span {
+                font-size: 1.6vh;
+                min-width: 4vh;
+            }
+
+            #color-picker-container .picker-row select {
+                font-size: 1.6vh;
+                padding: 0.5vh;
+                max-width: 15vh;
+            }
+
+            #color-picker-container .picker-row input[type="color"] {
+                width: 4vh;
+                height: 3.5vh;
+            }
+
+            /* Shop grid items - PC-like grid with vertical scroll */
+            #shop-container {
+                max-height: 50vh;
+                padding: 1.5vh;
+                width: 100%;
+                max-width: none;
+                overflow-y: auto;
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(12vh, 1fr));
+                gap: 1.5vh;
+            }
+
+            #shop-container .grid-entry {
+                padding: 0.8vh;
+                font-size: 1.4vh;
+            }
+
+            /* Hide wardrobe on phones */
+            #wardrobe-sidebar {
+                display: none !important;
+            }
+
+            /* --- PROPS PANEL --- */
+            #props-panel {
+                max-width: 95vw !important;
+                max-height: 90vh !important;
+                padding: 1.5vh !important;
+            }
+
+            #props-panel h2 {
+                font-size: 2.5vh;
+            }
+
+            #props-list {
+                grid-template-columns: repeat(5, 1fr);
+                gap: 1vh;
+                padding: 1vh;
+                max-height: 60vh;
+            }
+
+            #props-list .grid-entry {
+                font-size: 1.4vh;
+            }
+
+            #props-list .grid-entry div:first-child {
+                font-size: 4vh;
+            }
+
+            /* --- JOURNAL OVERLAY --- */
+            .grid-container {
+                max-height: 65vh;
+                padding: 1vh;
+                gap: 1vh;
+            }
+
+            .grid-entry {
+                padding: 1vh;
+                font-size: 1.4vh;
+            }
+
+            /* --- PLAYER LIST --- */
+            #player-list-container {
+                max-width: 60vw;
+                max-height: 85vh;
+                padding: 2vh;
+            }
+
+            /* --- HOST PANEL --- */
+            #host-panel-container {
+                max-width: 80vw;
+                max-height: 85vh;
+                padding: 2vh;
+            }
+
+            /* --- LOBBY --- */
+            #lobby-container {
+                padding: 2vh 3vh;
+                max-height: 90vh;
+                gap: 1vh;
+            }
+
+            #lobby-container h2 {
+                font-size: 3vh;
+                margin: 0.5vh 0;
+            }
+
+            #lobby-container input[type="text"] {
+                padding: 1.5vh;
+                font-size: 2vh;
+                margin: 0.5vh auto;
+            }
+
+            #lobby-container .btn-lg {
+                padding: 1.5vh 3vh;
+                font-size: 2vh;
+            }
+
+            /* --- MINIGAME UI --- */
+            #minigame-ui {
+                width: 35vw;
+                padding: 2vh;
+            }
+
+            #bar-container {
+                height: 3vh;
+            }
+
+            /* --- NPC PROMPT --- */
+            #npc-prompt {
+                font-size: 2.5vh;
+                padding: 1.5vh 4vh;
+            }
+
+            /* --- GUITAR UI --- */
+            #guitar-ui {
+                bottom: 15vh !important;
+                right: 2vh !important;
+                padding: 1.5vh;
+                min-width: 15vh;
+                font-size: 1.8vh;
+            }
+
+            /* --- PATREON --- */
+            #patreon-container {
+                bottom: auto !important;
+                top: 8vh;
+                width: 20vh;
+                height: 10vh;
+            }
+
+            #patreon-content,
+            #patreon-content img {
+                width: 20vh;
+                height: 10vh;
+            }
+
+            #btn-close-patreon {
+                width: 4vh !important;
+                height: 4vh !important;
+                font-size: 2.5vh !important;
             }
         }
 
@@ -1354,7 +1913,7 @@
 
     <div id="game-container"></div>
     <div id="loading">Initializing Game Engine...</div>
-    <div id="version">v10.21</div>
+    <div id="version">v10.65</div>
 
     <div id="rotate-overlay">
         <h1>Please Rotate Your Device</h1>
@@ -1385,7 +1944,7 @@
 
     <div id="lobby-screen" style="display: none;">
         <h2>HTML Fishing</h2>
-        <div id="lobby-version" style="color: #888; font-size: 12px; margin-top: -10px; margin-bottom: 10px;">v10.23
+        <div id="lobby-version" style="color: #888; font-size: 12px; margin-top: -10px; margin-bottom: 10px;">v10.65
         </div>
         <div id="lobby-container">
             <label>Your Name:</label>
@@ -1419,6 +1978,21 @@
                 <button class="btn-lg" onclick="location.reload()">LEAVE</button>
             </div>
 
+            <!-- Discord Link -->
+            <div style="margin-top: 15px; display: flex; justify-content: center;">
+                <a href="https://discord.gg/7HRa4EMgxg" target="_blank"
+                    style="display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: #5865F2; border-radius: 8px; text-decoration: none; color: white; font-size: 13px; font-weight: bold; transition: all 0.2s;"
+                    onmouseover="this.style.background='#4752C4'; this.style.transform='translateY(-2px)'"
+                    onmouseout="this.style.background='#5865F2'; this.style.transform='translateY(0)'">
+                    <span style="font-size: 18px;">🐱</span>
+                    <svg width="20" height="15" viewBox="0 0 71 55" fill="white">
+                        <path
+                            d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1c-.6 1.1-1.3 2.6-1.8 3.8a54 54 0 00-16.2 0c-.5-1.2-1.2-2.7-1.8-3.8 0-.1-.1-.1-.2-.1a58.4 58.4 0 00-14.7 4.6s-.1 0-.1.1C1.5 18.8-.9 32.3.3 45.7l.1.2a59 59 0 0017.7 9 .2.2 0 00.3-.1c1.4-1.9 2.6-3.9 3.6-6a.2.2 0 00-.1-.3c-2-.8-3.8-1.7-5.6-2.7-.2-.1-.2-.4 0-.5l1.1-.9c.1 0 .1 0 .2 0a42 42 0 0035.8 0h.2l1.1.9c.2.1.2.4 0 .5-1.8 1-3.6 1.9-5.6 2.7-.2.1-.2.3-.1.4 1.1 2.1 2.3 4 3.7 6 0 .1.2.1.3 0a58.6 58.6 0 0017.8-9l.1-.1c1.4-15-2.4-28.1-10-39.7 0 0 0-.1-.1-.1zM23.7 37.5c-3.4 0-6.3-3.2-6.3-7 0-3.9 2.8-7.1 6.3-7.1s6.4 3.2 6.3 7c0 3.9-2.8 7.1-6.3 7.1zm23.3 0c-3.5 0-6.3-3.2-6.3-7 0-3.9 2.8-7.1 6.3-7.1s6.4 3.2 6.3 7c0 3.9-2.8 7.1-6.3 7.1z" />
+                    </svg>
+                    Discord
+                </a>
+            </div>
+
             <!-- AI Disclaimer -->
             <div
                 style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #888; text-align: center;">
@@ -1445,34 +2019,27 @@
                 <h2>Cosmetic Shop</h2>
 
                 <div id="color-picker-container">
-                    <div class="picker-row">
-                        <span>Species:</span>
-                        <select id="species-select" onchange="changeSpecies(this.value)"
-                            style="padding: 5px; border-radius: 5px;">
-                            <option value="cat">Cat</option>
-                            <option value="bunny">Bunny</option>
-                            <option value="dog">Dog</option>
-                            <option value="bear">Bear</option>
-                            <option value="fox">Fox</option>
-                            <option value="pig">Pig</option>
-                            <option value="dragon">Dragon</option>
-                            <option value="mouse">Mouse</option>
-                            <option value="duck">Duck</option>
-                            <option value="axolotl">Axolotl</option>
-                            <option value="raccoon">Raccoon</option>
-                            <option value="koala">Koala</option>
-                            <option value="lion">Lion</option>
-                            <option value="cow">Cow</option>
-                            <option value="frog">Frog</option>
-                            <option value="monkey">Monkey</option>
-                            <option value="penguin">Penguin</option>
-                        </select>
-                    </div>
+                    <!-- Character Parts Selectors with Color Pickers -->
+                    <div class="picker-row"><span>Ears:</span><select id="ears-select" onchange="changeEars(this.value)"
+                            style="padding: 5px; border-radius: 5px;"></select><input type="color"
+                            id="ears-color-picker" onchange="changeEarsColor(this.value)" title="Ear Color"></div>
+                    <div class="picker-row"><span>Eyes:</span><select id="eyes-select" onchange="changeEyes(this.value)"
+                            style="padding: 5px; border-radius: 5px;"></select></div>
+                    <div class="picker-row"><span>Nose:</span><select id="nose-select" onchange="changeNose(this.value)"
+                            style="padding: 5px; border-radius: 5px;"></select><input type="color"
+                            id="nose-color-picker" onchange="changeNoseColor(this.value)" title="Nose Color"></div>
+                    <div class="picker-row"><span>Misc:</span><select id="misc-select" onchange="changeMisc(this.value)"
+                            style="padding: 5px; border-radius: 5px;"></select><input type="color"
+                            id="misc-color-picker" onchange="changeMiscColor(this.value)" title="Misc Color"></div>
+                    <div class="picker-row"><span>Tail:</span><select id="tail-select" onchange="changeTail(this.value)"
+                            style="padding: 5px; border-radius: 5px;"></select><input type="color"
+                            id="tail-color-picker" onchange="changeTailColor(this.value)" title="Tail Color"></div>
+                    <!-- Base Colors -->
                     <div class="picker-row"><span>Fur:</span><input type="color" id="fur-color-picker"
                             onchange="changeFurColor(this.value)"></div>
                     <div class="picker-row"><span>Belly:</span><input type="color" id="belly-color-picker"
                             onchange="changeBellyColor(this.value)"></div>
-                    <div class="picker-row"><span>Eyes:</span><input type="color" id="eye-color-picker"
+                    <div class="picker-row"><span>Eye Color:</span><input type="color" id="eye-color-picker"
                             onchange="changeEyeColor(this.value)"></div>
                 </div>
 
@@ -1482,6 +2049,25 @@
 
             <div id="wardrobe-sidebar"
                 style="width: 200px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 10px; height: 100%;">
+
+                <!-- Character Preview Section -->
+                <div id="character-preview"
+                    style="display: flex; flex-direction: column; align-items: center; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; border: 1px solid rgba(255,255,255,0.1);">
+                    <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #aaa;">Preview</h3>
+                    <div style="display: flex; gap: 10px; justify-content: center;">
+                        <div style="text-align: center;">
+                            <canvas id="preview-front" width="96" height="96"
+                                style="background: rgba(50,50,50,0.5); border-radius: 6px; image-rendering: pixelated;"></canvas>
+                            <div style="font-size: 10px; color: #888; margin-top: 4px;">Front</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <canvas id="preview-back" width="96" height="96"
+                                style="background: rgba(50,50,50,0.5); border-radius: 6px; image-rendering: pixelated;"></canvas>
+                            <div style="font-size: 10px; color: #888; margin-top: 4px;">Back</div>
+                        </div>
+                    </div>
+                </div>
+
                 <h3 style="margin: 5px 0; text-align: center;">Wardrobe</h3>
 
                 <button class="btn-sm btn-green" onclick="saveCurrentOutfit()" style="width: 100%;">+ Save
@@ -1618,16 +2204,16 @@
     </div>
 
     <div id="props-ui" class="overlay-screen">
-        <button class="close-x-btn" onclick="togglePropsUI()">×</button>
         <div id="props-panel"
-            style="width: 90%; max-width: 500px; background: rgba(20, 20, 20, 0.95); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; max-height: 80vh;">
+            style="position: relative; width: 90%; max-width: 500px; background: rgba(20, 20, 20, 0.95); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; max-height: 80vh;">
+            <button class="close-x-btn" onclick="togglePropsUI()"
+                style="position: absolute; top: 10px; right: 10px;">×</button>
             <h2>Props</h2>
             <p style="color: #888; font-size: 12px; margin-bottom: 10px;">Click to place at your position</p>
-            <div id="props-list" class="grid-container" style="width:100%; flex:1;">
+            <div id="props-list" class="grid-container" style="width:100%; flex:1; overflow-y: auto;">
                 <!-- Prop Items will be injected here -->
             </div>
-            <br>
-            <button class="btn-lg" onclick="togglePropsUI()">CLOSE</button>
+            <button class="btn-lg" onclick="togglePropsUI()" style="margin-top: 10px;">CLOSE</button>
         </div>
     </div>
 
@@ -1690,6 +2276,7 @@
             <b>I</b> <span>Props</span>
             <b>O</b> <span>Undo Prop</span>
             <b>N</b> <span>Empty Hands</span>
+            <b>H</b> <span>Hide HUD</span>
         </div>
         <div id="fish-log"><b>Inventory:</b><br>
             <div id="log-content">Empty.</div>
@@ -1744,12 +2331,31 @@
 
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
-    <script src="core.js?v=10.23"></script>
-    <script src="fish.js?v=10.23"></script>
-    <script src="networking.js?v=10.23"></script>
-    <script src="audio.js?v=10.23"></script>
-    <script src="ui.js?v=10.23"></script>
-    <script src="props.js?v=10.23"></script>
+    <script src="core.js?v=10.65"></script>
+    <script src="fish.js?v=10.65"></script>
+    <script src="networking.js?v=10.65"></script>
+    <script src="audio.js?v=10.65"></script>
+    <script src="ui.js?v=10.65"></script>
+    <script src="props.js?v=10.65"></script>
+
+    <!-- Start Open Web Analytics Tracker -->
+    <script type="text/javascript">
+        //<![CDATA[
+        var owa_baseUrl = 'https://htmlfishing.com/admin/';
+        var owa_cmds = owa_cmds || [];
+        owa_cmds.push(['setSiteId', 'f1bcfd2a6dcc34239db3d445913cdcfe']);
+        owa_cmds.push(['trackPageView']);
+        owa_cmds.push(['trackClicks']);
+
+        (function () {
+            var _owa = document.createElement('script'); _owa.type = 'text/javascript'; _owa.async = true;
+            owa_baseUrl = ('https:' == document.location.protocol ? window.owa_baseSecUrl || owa_baseUrl.replace(/http:/, 'https:') : owa_baseUrl);
+            _owa.src = owa_baseUrl + 'modules/base/dist/owa.tracker.js';
+            var _owa_s = document.getElementsByTagName('script')[0]; _owa_s.parentNode.insertBefore(_owa, _owa_s);
+        }());
+        //]]>
+    </script>
+    <!-- End Open Web Analytics Code -->
 </body>
 
 </html>

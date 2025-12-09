@@ -24,6 +24,41 @@ const SPAM_THRESHOLDS = {
     general: 50     // 50ms min between ANY packet (prevents DOS)
 };
 
+const createOscGain = (freq, type = 'sine') => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    osc.connect(gain);
+    return { osc, gain };
+};
+
+const createNoiseGain = (duration) => {
+    const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * duration, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const noise = audioCtx.createBufferSource();
+    const gain = audioCtx.createGain();
+    noise.buffer = buffer;
+    noise.connect(gain);
+    return { noise, gain };
+};
+
+const createPanner = (pos) => {
+    const panner = audioCtx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'linear';
+    panner.refDistance = 1;
+    panner.maxDistance = MAX_VOICE_DISTANCE;
+    panner.rolloffFactor = 1;
+    if (pos) {
+        panner.positionX.value = pos.x;
+        panner.positionY.value = pos.y;
+        panner.positionZ.value = pos.z;
+    }
+    return panner;
+};
+
 // --- PROCEDURAL SOUND ENGINE ---
 const Sound = {
     playSpatial: (soundName, pos, variant = 0) => {
@@ -67,19 +102,21 @@ const Sound = {
         }
 
         else if (soundName === 'punch') {
-            const osc = audioCtx.createOscillator(); osc.type = 'square';
-            const gain = audioCtx.createGain();
-            osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
-            gain.gain.setValueAtTime(0.3, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-            osc.connect(gain); osc.start(now); osc.stop(now + 0.1); nodes = { output: gain };
+            const { osc, gain } = createOscGain(150, 'square');
+            osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc.start(now);
+            osc.stop(now + 0.1);
+            nodes = { output: gain };
         }
 
         else if (soundName === 'footstep') {
-            const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.1, audioCtx.sampleRate);
-            const data = buffer.getChannelData(0); for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-            const noise = audioCtx.createBufferSource(); noise.buffer = buffer;
-            const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-            noise.connect(gain); noise.start(); nodes = { output: gain };
+            const { noise, gain } = createNoiseGain(0.1);
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+            noise.start();
+            nodes = { output: gain };
         }
 
         else if (['jump', 'cast', 'splash', 'meow', 'chat', 'reel'].includes(soundName)) {
@@ -134,34 +171,32 @@ const Sound = {
         }
 
 
-        if (nodes && pos) {
-            const panner = audioCtx.createPanner();
-            panner.panningModel = 'HRTF';
-            panner.distanceModel = 'linear';
-            panner.refDistance = 1;
-            panner.maxDistance = MAX_VOICE_DISTANCE;
-            panner.rolloffFactor = 1;
-
-            panner.positionX.value = pos.x;
-            panner.positionY.value = pos.y;
-            panner.positionZ.value = pos.z;
-
-            nodes.output.connect(panner);
-            panner.connect(targetGain);
-        } else if (nodes) {
-            nodes.output.connect(targetGain);
+        if (nodes) {
+            if (pos) {
+                const panner = createPanner(pos);
+                nodes.output.connect(panner);
+                panner.connect(targetGain);
+            } else {
+                nodes.output.connect(targetGain);
+            }
         }
     },
     sell: () => {
-
         const now = audioCtx.currentTime;
-        const o1 = audioCtx.createOscillator(); const g1 = audioCtx.createGain();
-        o1.frequency.setValueAtTime(1000, now); g1.gain.setValueAtTime(0.1, now); g1.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-        o1.connect(g1); g1.connect(sfxGain); o1.start(); o1.stop(now + 0.1);
 
-        const o2 = audioCtx.createOscillator(); const g2 = audioCtx.createGain();
-        o2.frequency.setValueAtTime(1500, now + 0.1); g2.gain.setValueAtTime(0.1, now + 0.1); g2.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-        o2.connect(g2); g2.connect(sfxGain); o2.start(now + 0.1); o2.stop(now + 0.3);
+        const { osc: o1, gain: g1 } = createOscGain(1000);
+        g1.gain.setValueAtTime(0.1, now);
+        g1.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        g1.connect(sfxGain);
+        o1.start();
+        o1.stop(now + 0.1);
+
+        const { osc: o2, gain: g2 } = createOscGain(1500);
+        g2.gain.setValueAtTime(0.1, now + 0.1);
+        g2.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        g2.connect(sfxGain);
+        o2.start(now + 0.1);
+        o2.stop(now + 0.3);
     }
 };
 
@@ -452,7 +487,8 @@ const DEFAULT_KEYBINDS = {
     meow: 'KeyZ',
     showFish: 'KeyF',
     chat: 'Enter',
-    menu: 'Escape'
+    menu: 'Escape',
+    hideHud: 'KeyH'
 };
 
 // --- SAVE DATA STRUCTURE & HANDLING ---
@@ -470,7 +506,17 @@ let saveState = {
     micId: 'default',
     musicMuted: false,
     hasGlove: false,
-    species: 'cat',
+    species: 'cat', // Legacy, kept for migration
+    currentEars: 'cat',
+    currentEyes: 'standard',
+    currentNose: 'cat',
+    currentMisc: 'none',
+    currentTail: 'cat',
+    // Part-specific colors (empty = use fur color)
+    earsColor: '',
+    noseColor: '',
+    miscColor: '',
+    tailColor: '',
     masterVolume: 0.5,
     sfxVolume: 1.0,
     midiVolume: 1.0,
@@ -524,6 +570,48 @@ function loadSave() {
             if (d.eyeColor) saveState.eyeColor = d.eyeColor;
             if (d.species) saveState.species = d.species;
 
+            // New modular parts
+            if (d.currentEars) saveState.currentEars = d.currentEars;
+            if (d.currentEyes) saveState.currentEyes = d.currentEyes;
+            if (d.currentNose) saveState.currentNose = d.currentNose;
+            if (d.currentMisc) saveState.currentMisc = d.currentMisc;
+            if (d.currentTail) saveState.currentTail = d.currentTail;
+
+            // Part-specific colors
+            if (d.earsColor !== undefined) saveState.earsColor = d.earsColor;
+            if (d.noseColor !== undefined) saveState.noseColor = d.noseColor;
+            if (d.miscColor !== undefined) saveState.miscColor = d.miscColor;
+            if (d.tailColor !== undefined) saveState.tailColor = d.tailColor;
+
+            // Migration: Convert old species to new parts system
+            if (d.species && !d.currentEars) {
+                const speciesMapping = {
+                    cat: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'cat' },
+                    bunny: { ears: 'bunny', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'bunny' },
+                    dog: { ears: 'dog', eyes: 'standard', nose: 'dog', misc: 'none', tail: 'dog' },
+                    bear: { ears: 'bear', eyes: 'standard', nose: 'bear', misc: 'none', tail: 'bear' },
+                    fox: { ears: 'fox', eyes: 'standard', nose: 'dog', misc: 'fox_cheeks', tail: 'fox' },
+                    pig: { ears: 'pig', eyes: 'standard', nose: 'pig', misc: 'none', tail: 'pig' },
+                    dragon: { ears: 'dragon', eyes: 'dragon', nose: 'dragon', misc: 'dragon_wings', tail: 'dragon' },
+                    mouse: { ears: 'mouse', eyes: 'standard', nose: 'mouse', misc: 'none', tail: 'mouse' },
+                    duck: { ears: 'none', eyes: 'standard', nose: 'duck', misc: 'none', tail: 'duck' },
+                    axolotl: { ears: 'none', eyes: 'standard', nose: 'axolotl', misc: 'axolotl_gills', tail: 'axolotl' },
+                    raccoon: { ears: 'raccoon', eyes: 'standard', nose: 'dog', misc: 'raccoon_mask', tail: 'raccoon' },
+                    koala: { ears: 'koala', eyes: 'standard', nose: 'koala', misc: 'none', tail: 'none' },
+                    lion: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'lion_mane', tail: 'lion' },
+                    cow: { ears: 'cow', eyes: 'standard', nose: 'cow', misc: 'none', tail: 'cat' },
+                    frog: { ears: 'none', eyes: 'frog', nose: 'frog', misc: 'none', tail: 'frog' },
+                    monkey: { ears: 'monkey', eyes: 'standard', nose: 'monkey', misc: 'none', tail: 'monkey' },
+                    penguin: { ears: 'none', eyes: 'standard', nose: 'penguin', misc: 'penguin_belly', tail: 'penguin' },
+                };
+                const parts = speciesMapping[d.species] || speciesMapping.cat;
+                saveState.currentEars = parts.ears;
+                saveState.currentEyes = parts.eyes;
+                saveState.currentNose = parts.nose;
+                saveState.currentMisc = parts.misc;
+                saveState.currentTail = parts.tail;
+            }
+
             // Items
             if (d.baitInventory) saveState.baitInventory = d.baitInventory;
             if (d.hasGlove !== undefined) saveState.hasGlove = d.hasGlove;
@@ -576,11 +664,18 @@ function loadSave() {
     if (sfxGain) sfxGain.gain.value = saveState.sfxVolume;
     if (midiGain) midiGain.gain.value = saveState.midiVolume;
 
-    document.getElementById('username-input').value = saveState.displayName;
-    document.getElementById('fur-color-picker').value = saveState.catColor;
-    document.getElementById('belly-color-picker').value = saveState.bellyColor;
-    document.getElementById('eye-color-picker').value = saveState.eyeColor;
-    document.getElementById('species-select').value = saveState.species;
+    const usernameInput = document.getElementById('username-input');
+    const furPicker = document.getElementById('fur-color-picker');
+    const bellyPicker = document.getElementById('belly-color-picker');
+    const eyePicker = document.getElementById('eye-color-picker');
+
+    if (usernameInput) usernameInput.value = saveState.displayName;
+    if (furPicker) furPicker.value = saveState.catColor;
+    if (bellyPicker) bellyPicker.value = saveState.bellyColor;
+    if (eyePicker) eyePicker.value = saveState.eyeColor;
+
+    // Populate part selectors (new modular system)
+    populatePartSelectors();
 
     const volS = document.getElementById('volume-slider'); if (volS) volS.value = saveState.masterVolume;
     const sfxS = document.getElementById('sfx-slider'); if (sfxS) sfxS.value = saveState.sfxVolume;
@@ -595,8 +690,13 @@ function loadSave() {
     myData.shirt = saveState.currentShirt;
     myData.collar = saveState.currentCollar;
     myData.rod = saveState.currentRod;
-    myData.species = saveState.species;
     myData.pattern = saveState.currentPattern;
+    // Modular parts
+    myData.ears = saveState.currentEars;
+    myData.eyes = saveState.currentEyes;
+    myData.nose = saveState.currentNose;
+    myData.misc = saveState.currentMisc;
+    myData.tail = saveState.currentTail;
 
     updateBaitSelector();
     updateUI();
@@ -606,10 +706,14 @@ function loadSave() {
 
 function saveGame() {
     saveState.displayName = document.getElementById('username-input').value.substring(0, 12) || "Fisher";
-    saveState.species = document.getElementById('species-select').value;
 
     myData.name = saveState.displayName;
-    myData.species = saveState.species;
+    // Update myData with parts
+    myData.ears = saveState.currentEars;
+    myData.eyes = saveState.currentEyes;
+    myData.nose = saveState.currentNose;
+    myData.misc = saveState.currentMisc;
+    myData.tail = saveState.currentTail;
 
     updateUI();
     updateLocalVisuals();
@@ -643,6 +747,28 @@ function updateWeatherVisuals() {
 
     // 3. Handle Audio
     if (typeof RainAudio !== 'undefined') RainAudio.toggle(isRainActive);
+
+    // 4. Fade out sky elements during rain (overcast effect)
+    const targetSkyOpacity = isRainActive ? 0.1 : 1.0;
+
+    if (sunMesh && sunMesh.material) {
+        sunMesh.material.opacity += (targetSkyOpacity - sunMesh.material.opacity) * 0.05;
+    }
+    if (moonMesh && moonMesh.material) {
+        moonMesh.material.opacity += (targetSkyOpacity - moonMesh.material.opacity) * 0.05;
+    }
+    if (window.starSystem && window.starSystem.material) {
+        // Stars fade completely during rain
+        const starTarget = isRainActive ? 0 : (worldTime < 5 || worldTime > 19 ? 1.0 : 0);
+        window.starSystem.material.opacity += (starTarget - window.starSystem.material.opacity) * 0.05;
+    }
+    if (window.cloudSprites) {
+        // Clouds become darker/grayer during rain
+        const cloudTarget = isRainActive ? 0.3 : 0.7;
+        window.cloudSprites.forEach(cloud => {
+            cloud.material.opacity += (cloudTarget - cloud.material.opacity) * 0.05;
+        });
+    }
 
     // Note: Scene background color is handled exclusively by updateDayNightCycle().
 }
@@ -766,10 +892,10 @@ function isFishCatchable(fish, tierId) {
     else if (r === 'Epic') { clicks = 90; time = 3.5; }
     else if (r === 'Legendary') { clicks = 120; time = 3.0; }
 
-    // Tier Modifiers
-    if (tierId === 'glistening') { clicks += 20; time -= 0.2; }
-    else if (tierId === 'shining') { clicks += 50; time -= 0.5; }
-    else if (tierId === 'opalescent') { clicks += 80; time -= 1.0; }
+    // Tier Modifiers (Reduced)
+    if (tierId === 'glistening') { clicks += 5; }
+    else if (tierId === 'shining') { clicks += 10; }
+    else if (tierId === 'opalescent') { clicks += 20; }
 
     // Lava World Modifiers
     if (fish.isLava) {
@@ -878,7 +1004,7 @@ function selectFish() {
     let tierRandom = Math.random() * totalTierChance;
 
     if (bait.tierLuck > 1.0) {
-        if (tierRandom < 70 && Math.random() < (bait.tierLuck - 1.0)) {
+        if (tierRandom < TIERS[0].chance && Math.random() < (bait.tierLuck - 1.0)) {
             tierRandom = Math.random() * totalTierChance;
         }
     }
@@ -889,12 +1015,7 @@ function selectFish() {
         tierRandom -= tier.chance;
     }
 
-    // --- NEW: TIER DOWNGRADE ---
-    // If the rolled tier makes the fish uncatchable, downgrade to Normal
-    if (!isFishCatchable(selectedType, selectedTier.id)) {
-        selectedTier = TIERS.find(t => t.id === 'normal');
-    }
-    // ---------------------------
+    // NOTE: Tier downgrade removed - let players experience tiered fish!
 
     // 5. Size Logic
     let sizeMult = 0.5 + Math.pow(Math.random(), 2) * 2.0;
@@ -1027,20 +1148,110 @@ window.changeVoiceVolume = function (val) {
     saveGame();
 }
 
+// --- MODULAR PART CHANGE FUNCTIONS ---
+window.changeEars = function (val) {
+    saveState.currentEars = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+window.changeEyes = function (val) {
+    saveState.currentEyes = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+window.changeNose = function (val) {
+    saveState.currentNose = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+window.changeMisc = function (val) {
+    saveState.currentMisc = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+window.changeTail = function (val) {
+    saveState.currentTail = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+// --- PART COLOR CHANGE FUNCTIONS ---
+window.changeEarsColor = function (val) {
+    saveState.earsColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+window.changeNoseColor = function (val) {
+    saveState.noseColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+window.changeMiscColor = function (val) {
+    saveState.miscColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+window.changeTailColor = function (val) {
+    saveState.tailColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+// Helper function to populate part selector dropdowns
+function populatePartSelectors() {
+    const populate = (selectId, types, currentVal) => {
+        const sel = document.getElementById(selectId);
+        if (!sel) return;
+        sel.innerHTML = '';
+        types.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            opt.textContent = t.name;
+            if (t.id === currentVal) opt.selected = true;
+            sel.appendChild(opt);
+        });
+    };
+
+    populate('ears-select', EAR_TYPES, saveState.currentEars);
+    populate('eyes-select', EYE_TYPES, saveState.currentEyes);
+    populate('nose-select', NOSE_TYPES, saveState.currentNose);
+    populate('misc-select', MISC_TYPES, saveState.currentMisc);
+    populate('tail-select', TAIL_TYPES, saveState.currentTail);
+
+    // Set part color pickers (default to fur color if not set)
+    const furCol = saveState.catColor || '#ff6347';
+    const earsColorPicker = document.getElementById('ears-color-picker');
+    const noseColorPicker = document.getElementById('nose-color-picker');
+    const miscColorPicker = document.getElementById('misc-color-picker');
+    const tailColorPicker = document.getElementById('tail-color-picker');
+
+    if (earsColorPicker) earsColorPicker.value = saveState.earsColor || furCol;
+    if (noseColorPicker) noseColorPicker.value = saveState.noseColor || furCol;
+    if (miscColorPicker) miscColorPicker.value = saveState.miscColor || furCol;
+    if (tailColorPicker) tailColorPicker.value = saveState.tailColor || furCol;
+}
+
+// Legacy: Keep for NPC/backwards compatibility
 window.changeSpecies = function (species) {
     saveState.species = species;
-    myData.species = species;
-
-
-    if (player) {
-        updateLocalVisuals();
-    }
-
-
-    if (document.getElementById('shop-overlay').style.display === 'flex') {
-        renderShop();
-    }
-
+    if (player) updateLocalVisuals();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
     saveGame();
 }
 
@@ -1125,9 +1336,26 @@ function updateLocalVisuals() {
         if (s.userData.matFront.map) disposeTexture(s.userData.matFront.map);
         if (s.userData.matBack.map) disposeTexture(s.userData.matBack.map);
 
-        // Generate textures based on current save state
-        const texF = createSpeciesTexture(saveState.species, saveState.catColor, saveState.bellyColor, false, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern);
-        const texB = createSpeciesTexture(saveState.species, saveState.catColor, saveState.bellyColor, true, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern);
+        // Create parts object from current saveState
+        const parts = {
+            ears: saveState.currentEars,
+            eyes: saveState.currentEyes,
+            nose: saveState.currentNose,
+            misc: saveState.currentMisc,
+            tail: saveState.currentTail
+        };
+
+        // Build part colors object
+        const partColors = {
+            earsColor: saveState.earsColor || '',
+            noseColor: saveState.noseColor || '',
+            miscColor: saveState.miscColor || '',
+            tailColor: saveState.tailColor || ''
+        };
+
+        // Generate textures based on current save state with modular parts
+        const texF = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, false, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors);
+        const texB = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, true, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors);
 
         s.userData.matFront.map = texF;
         s.userData.matBack.map = texB;
@@ -1237,9 +1465,15 @@ function renderJournal() {
         return a.name.localeCompare(b.name);
     });
 
-    // --- 3. PROGRESS HEADER ---
-    const totalCount = sortedFish.length;
-    const caughtCount = Object.keys(saveState.journal).length;
+    // --- 3. PROGRESS HEADER (Counting Tiers) ---
+    const totalFishCount = sortedFish.length;
+    const totalTierCount = totalFishCount * 4; // 4 tiers per fish
+
+    // Count total tiers caught
+    let caughtTierCount = 0;
+    Object.values(saveState.journal).forEach(tiers => {
+        if (Array.isArray(tiers)) caughtTierCount += tiers.length;
+    });
 
     const header = document.createElement('div');
     header.style.gridColumn = "1 / -1";
@@ -1249,7 +1483,8 @@ function renderJournal() {
     header.style.background = "rgba(0,0,0,0.5)";
     header.style.padding = "10px";
     header.style.borderRadius = "8px";
-    header.innerHTML = `<h3 style="margin:0">Discovery Progress: ${caughtCount} / ${totalCount}</h3>`;
+    header.innerHTML = `<h3 style="margin:0">Discovery Progress: ${caughtTierCount} / ${totalTierCount}</h3>
+        <div style="font-size:12px; color:#888; margin-top:5px;">${Object.keys(saveState.journal).length} species discovered</div>`;
     container.appendChild(header);
 
     // --- 4. RENDER GRID (Using Fragment) ---
@@ -1353,9 +1588,14 @@ function saveCurrentOutfit() {
     if (!name) return;
 
     const outfit = {
-        id: Date.now(), // Unique ID
+        id: Date.now(),
         name: name.substring(0, 12),
-        species: saveState.species,
+        // Modular parts instead of species
+        ears: saveState.currentEars,
+        eyes: saveState.currentEyes,
+        nose: saveState.currentNose,
+        misc: saveState.currentMisc,
+        tail: saveState.currentTail,
         color: saveState.catColor,
         belly: saveState.bellyColor,
         eye: saveState.eyeColor,
@@ -1377,13 +1617,48 @@ function loadOutfit(id) {
     const outfit = saveState.savedOutfits.find(o => o.id === id);
     if (!outfit) return;
 
-    // Apply Settings
-    saveState.species = outfit.species || 'cat';
+    // Apply colors
     saveState.catColor = outfit.color || '#ff0000';
     saveState.bellyColor = outfit.belly || '#ffffff';
     saveState.eyeColor = outfit.eye || '#000000';
 
-    // Check if we still own the items (in case of weird save data), otherwise default to none
+    // Apply modular parts (with fallback migration from old species-based outfits)
+    if (outfit.ears) {
+        saveState.currentEars = outfit.ears;
+        saveState.currentEyes = outfit.eyes;
+        saveState.currentNose = outfit.nose;
+        saveState.currentMisc = outfit.misc;
+        saveState.currentTail = outfit.tail;
+    } else if (outfit.species) {
+        // Migrate old outfit with species
+        const speciesMapping = {
+            cat: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'cat' },
+            bunny: { ears: 'bunny', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'bunny' },
+            dog: { ears: 'dog', eyes: 'standard', nose: 'dog', misc: 'none', tail: 'dog' },
+            bear: { ears: 'bear', eyes: 'standard', nose: 'bear', misc: 'none', tail: 'bear' },
+            fox: { ears: 'fox', eyes: 'standard', nose: 'dog', misc: 'fox_cheeks', tail: 'fox' },
+            pig: { ears: 'pig', eyes: 'standard', nose: 'pig', misc: 'none', tail: 'pig' },
+            dragon: { ears: 'dragon', eyes: 'dragon', nose: 'dragon', misc: 'dragon_wings', tail: 'dragon' },
+            mouse: { ears: 'mouse', eyes: 'standard', nose: 'mouse', misc: 'none', tail: 'mouse' },
+            duck: { ears: 'none', eyes: 'standard', nose: 'duck', misc: 'none', tail: 'duck' },
+            axolotl: { ears: 'none', eyes: 'standard', nose: 'axolotl', misc: 'axolotl_gills', tail: 'axolotl' },
+            raccoon: { ears: 'raccoon', eyes: 'standard', nose: 'dog', misc: 'raccoon_mask', tail: 'raccoon' },
+            koala: { ears: 'koala', eyes: 'standard', nose: 'koala', misc: 'none', tail: 'none' },
+            lion: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'lion_mane', tail: 'lion' },
+            cow: { ears: 'cow', eyes: 'standard', nose: 'cow', misc: 'none', tail: 'cat' },
+            frog: { ears: 'none', eyes: 'frog', nose: 'frog', misc: 'none', tail: 'frog' },
+            monkey: { ears: 'monkey', eyes: 'standard', nose: 'monkey', misc: 'none', tail: 'monkey' },
+            penguin: { ears: 'none', eyes: 'standard', nose: 'penguin', misc: 'penguin_belly', tail: 'penguin' },
+        };
+        const parts = speciesMapping[outfit.species] || speciesMapping.cat;
+        saveState.currentEars = parts.ears;
+        saveState.currentEyes = parts.eyes;
+        saveState.currentNose = parts.nose;
+        saveState.currentMisc = parts.misc;
+        saveState.currentTail = parts.tail;
+    }
+
+    // Apply cosmetics
     saveState.currentHat = saveState.unlockedHats.includes(outfit.hat) ? outfit.hat : 'none';
     saveState.currentShirt = saveState.unlockedShirts.includes(outfit.shirt) ? outfit.shirt : 'none';
     saveState.currentCollar = saveState.unlockedCollars.includes(outfit.collar) ? outfit.collar : 'none';
@@ -1391,15 +1666,15 @@ function loadOutfit(id) {
     saveState.currentTitle = saveState.unlockedTitles.includes(outfit.title) ? outfit.title : 'none';
     saveState.currentPattern = saveState.unlockedPatterns.includes(outfit.pattern) ? outfit.pattern : 'none';
 
-    // Update UI Pickers
-    document.getElementById('species-select').value = saveState.species;
+    // Update UI
+    populatePartSelectors();
     document.getElementById('fur-color-picker').value = saveState.catColor;
     document.getElementById('belly-color-picker').value = saveState.bellyColor;
     document.getElementById('eye-color-picker').value = saveState.eyeColor;
 
     saveGame();
     updateLocalVisuals();
-    renderShop(); // Refreshes the "Equipped" status on buttons
+    renderShop();
     showToast(`Loaded: ${outfit.name}`);
 }
 
@@ -1453,9 +1728,78 @@ function renderOutfitList() {
 
 let shopMode = 'hats';
 
+/**
+ * Updates the character preview canvases in the shop wardrobe sidebar.
+ * Shows front and back views of the player's current outfit.
+ */
+function updateCharacterPreview() {
+    const frontCanvas = document.getElementById('preview-front');
+    const backCanvas = document.getElementById('preview-back');
+
+    if (!frontCanvas || !backCanvas) return;
+
+    const frontCtx = frontCanvas.getContext('2d');
+    const backCtx = backCanvas.getContext('2d');
+
+    // Clear canvases
+    frontCtx.clearRect(0, 0, 96, 96);
+    backCtx.clearRect(0, 0, 96, 96);
+
+    // Disable smoothing for pixel art
+    frontCtx.imageSmoothingEnabled = false;
+    backCtx.imageSmoothingEnabled = false;
+
+    // Create a temp canvas at 64x64 to draw sprite, then scale up
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = 64;
+    tempCanvas.height = 64;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.imageSmoothingEnabled = false;
+
+    // Create parts object from current saveState
+    const parts = {
+        ears: saveState.currentEars,
+        eyes: saveState.currentEyes,
+        nose: saveState.currentNose,
+        misc: saveState.currentMisc,
+        tail: saveState.currentTail
+    };
+
+    // Build part colors object
+    const partColors = {
+        earsColor: saveState.earsColor || '',
+        noseColor: saveState.noseColor || '',
+        miscColor: saveState.miscColor || '',
+        tailColor: saveState.tailColor || ''
+    };
+
+    // Draw front view with modular parts
+    drawSpecies(tempCtx, parts, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false, partColors);
+    drawPattern(tempCtx, saveState.currentPattern, saveState.catColor, false);
+    drawShirt(tempCtx, saveState.currentShirt, false);
+    drawCollar(tempCtx, saveState.currentCollar, false);
+    drawHat(tempCtx, saveState.currentHat, false);
+
+    // Scale to preview canvas (centered, scaled 1.5x)
+    frontCtx.drawImage(tempCanvas, 0, 0, 64, 64, 0, 0, 96, 96);
+
+    // Clear temp and draw back view
+    tempCtx.clearRect(0, 0, 64, 64);
+    drawSpecies(tempCtx, parts, saveState.catColor, saveState.bellyColor, saveState.eyeColor, true, partColors);
+    drawPattern(tempCtx, saveState.currentPattern, saveState.catColor, true);
+    drawShirt(tempCtx, saveState.currentShirt, true);
+    drawCollar(tempCtx, saveState.currentCollar, true);
+    drawHat(tempCtx, saveState.currentHat, true);
+
+    backCtx.drawImage(tempCanvas, 0, 0, 64, 64, 0, 0, 96, 96);
+}
+
 function renderShop() {
     const container = document.getElementById('shop-container');
     container.innerHTML = '';
+
+    // Populate part dropdowns
+    populatePartSelectors();
 
     // --- NAVIGATION TABS ---
     const navDiv = document.createElement('div');
@@ -1814,6 +2158,9 @@ function renderShop() {
 
     // --- IMPORTANT: RENDER OUTFITS EVERY TIME SHOP UPDATES ---
     renderOutfitList();
+
+    // Update the character preview canvases
+    updateCharacterPreview();
 }
 
 function renderBaitShop() {
@@ -1964,6 +2311,18 @@ function renderBaitShop() {
 
         container.appendChild(entry);
     });
+}
+
+// --- HUD VISIBILITY TOGGLE ---
+let isHudHidden = false;
+
+function toggleHud() {
+    isHudHidden = !isHudHidden;
+    const uiLayer = document.getElementById('ui-layer');
+    if (uiLayer) {
+        uiLayer.style.display = isHudHidden ? 'none' : 'block';
+    }
+    if (!isHudHidden) showToast("HUD Visible");
 }
 
 // --- NEW STATE VARIABLE ---

@@ -47,11 +47,11 @@ const FISH_TYPES = [
 const LAVA_FISH = [];
 (function generateLavaFish() {
     const prefixes = [
-        { text: "Charred", rarity: "Common", col: "#2a1d1d", priceMult: 1.5 },
-        { text: "Molten", rarity: "Uncommon", col: "#ff4500", priceMult: 2.0 },
-        { text: "Obsidian", rarity: "Rare", col: "#4a0404", priceMult: 3.5 },
-        { text: "Magma", rarity: "Epic", col: "#ffaa00", priceMult: 5.0 },
-        { text: "Hellfire", rarity: "Legendary", col: "#ffffff", priceMult: 10.0 }
+        { text: "Charred", rarity: "Common", col: "#2a1d1d", priceMult: 0.5 },
+        { text: "Molten", rarity: "Uncommon", col: "#ff4500", priceMult: 0.8 },
+        { text: "Obsidian", rarity: "Rare", col: "#4a0404", priceMult: 1.2 },
+        { text: "Magma", rarity: "Epic", col: "#ffaa00", priceMult: 2.0 },
+        { text: "Hellfire", rarity: "Legendary", col: "#ffffff", priceMult: 4.0 }
     ];
     const bases = [
         "Guppy", "Tetra", "Crab", "Snapper", "Eel", "Ray", "Shark", "Whale", "Kraken", "Dragon",
@@ -141,31 +141,31 @@ const RAIN_FISH = [
 ];
 
 const VOID_FISH = [
-    { name: "Null Guppy", rarity: "Common", chance: 50, color: "#333333", drain: 20, price: 25, condition: 'void' },
-    { name: "Shadow Ray", rarity: "Rare", chance: 30, color: "#4B0082", drain: 50, price: 100, condition: 'void' },
-    { name: "Abyssal Maw", rarity: "Epic", chance: 15, color: "#800080", drain: 75, price: 300, condition: 'void' },
-    { name: "Event Horizon", rarity: "Legendary", chance: 5, color: "#000000", drain: 95, price: 1000, condition: 'void' }
+    { name: "Null Guppy", rarity: "Common", chance: 50, color: "#333333", drain: 20, price: 10, condition: 'void' },
+    { name: "Shadow Ray", rarity: "Rare", chance: 30, color: "#4B0082", drain: 50, price: 35, condition: 'void' },
+    { name: "Abyssal Maw", rarity: "Epic", chance: 15, color: "#800080", drain: 75, price: 75, condition: 'void' },
+    { name: "Event Horizon", rarity: "Legendary", chance: 5, color: "#000000", drain: 95, price: 200, condition: 'void' }
 ];
 
 FISH_TYPES.push(...RAIN_FISH, ...VOID_FISH);
 
 const TIERS = [
     { id: 'normal', name: 'Normal', chance: 70, priceMult: 1, drainMult: 1.0, color: '#fff' },
-    { id: 'glistening', name: 'Glistening', chance: 20, priceMult: 1.5, drainMult: 1.2, color: '#cd7f32' },
-    { id: 'shining', name: 'Shining', chance: 8, priceMult: 2.5, drainMult: 1.4, color: '#c0c0c0' },
-    { id: 'opalescent', name: 'Opalescent', chance: 2, priceMult: 5.0, drainMult: 1.6, color: '#ffd700' }
+    { id: 'glistening', name: 'Glistening', chance: 18, priceMult: 1.5, drainMult: 1.2, color: '#cd7f32' },
+    { id: 'shining', name: 'Shining', chance: 9, priceMult: 2.5, drainMult: 1.4, color: '#c0c0c0' },
+    { id: 'opalescent', name: 'Opalescent', chance: 3, priceMult: 5.0, drainMult: 1.6, color: '#ffd700' }
 ];
 
 const BAIT_TYPES = [
     { id: 'none', name: 'No Bait', price: 0, unlockFish: 0, power: 0, rarityMult: 1.0, tierLuck: 1.0 },
-    { id: 'worm', name: 'Worms', price: 20, unlockFish: 0, power: 3, rarityMult: 1.2, tierLuck: 1.0 },
-    { id: 'cricket', name: 'Crickets', price: 100, unlockFish: 25, power: 6, rarityMult: 1.5, tierLuck: 1.05 },
-    { id: 'squid', name: 'Squid Chunk', price: 500, unlockFish: 75, power: 9, rarityMult: 2.5, tierLuck: 1.1 },
-    { id: 'spinner', name: 'Shiny Spinner', price: 1200, unlockFish: 150, power: 12, rarityMult: 3.5, tierLuck: 1.2 },
-    { id: 'grub', name: 'Mystic Grub', price: 2500, unlockFish: 300, power: 15, rarityMult: 4.5, tierLuck: 1.3 },
-    { id: 'jig', name: 'Squid Jig', price: 5000, unlockFish: 500, power: 18, rarityMult: 6.0, tierLuck: 1.5 },
-    { id: 'shrimp', name: 'Glowing Shrimp', price: 8000, unlockFish: 700, power: 22, rarityMult: 8.0, tierLuck: 2.0 },
-    { id: 'magic', name: 'Magic Lure', price: 15000, unlockFish: 850, power: 25, rarityMult: 10.0, tierLuck: 3.0 }
+    { id: 'worm', name: 'Worms', price: 20, unlockFish: 0, power: 2, rarityMult: 1.2, tierLuck: 1.0 },
+    { id: 'cricket', name: 'Crickets', price: 100, unlockFish: 25, power: 4, rarityMult: 1.5, tierLuck: 1.05 },
+    { id: 'squid', name: 'Squid Chunk', price: 500, unlockFish: 75, power: 6, rarityMult: 2.5, tierLuck: 1.1 },
+    { id: 'spinner', name: 'Shiny Spinner', price: 1200, unlockFish: 150, power: 8, rarityMult: 3.5, tierLuck: 1.2 },
+    { id: 'grub', name: 'Mystic Grub', price: 2500, unlockFish: 300, power: 10, rarityMult: 4.5, tierLuck: 1.3 },
+    { id: 'jig', name: 'Squid Jig', price: 5000, unlockFish: 500, power: 12, rarityMult: 6.0, tierLuck: 1.5 },
+    { id: 'shrimp', name: 'Glowing Shrimp', price: 8000, unlockFish: 700, power: 15, rarityMult: 8.0, tierLuck: 2.0 },
+    { id: 'magic', name: 'Magic Lure', price: 15000, unlockFish: 850, power: 18, rarityMult: 10.0, tierLuck: 3.0 }
 ];
 
 function selectFish(activeBaitId, fishingZone, isRaining) {
@@ -387,7 +387,7 @@ let bannedIPs = new Set();
 let activeProps = []; // { id, type, x, z, owner, timestamp }
 
 let worldTime = 12.0;
-const DAY_DURATION = 600; // 10 Minutes
+const DAY_DURATION = 1200; // 20 Minutes
 setInterval(() => {
     worldTime += (1 / DAY_DURATION) * 24;
     if (worldTime >= 24) worldTime -= 24;
@@ -481,7 +481,13 @@ wss.on('connection', (ws, req) => {
             title: 'none',
             pattern: 'none',
             rod: 'bamboo',
-            bobber: null
+            bobber: null,
+            // Modular parts
+            ears: 'cat',
+            eyes: 'standard',
+            nose: 'cat',
+            misc: 'none',
+            tail: 'cat'
         },
         isJoined: false, // <--- ADDED: Track if we have announced them yet
 
@@ -556,6 +562,12 @@ wss.on('connection', (ws, req) => {
                 if (p.pattern) info.meta.pattern = p.pattern;
                 if (p.rod) info.meta.rod = p.rod;
                 if (p.bobber) info.meta.bobber = p.bobber;
+                // Modular parts
+                if (p.ears) info.meta.ears = p.ears;
+                if (p.eyes) info.meta.eyes = p.eyes;
+                if (p.nose) info.meta.nose = p.nose;
+                if (p.misc) info.meta.misc = p.misc;
+                if (p.tail) info.meta.tail = p.tail;
             }
 
             broadcast({ type: 'update', id: id, payload: msg.payload }, id);

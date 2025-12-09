@@ -90,31 +90,10 @@ function renderPropsUI() {
     items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'grid-entry';
-        div.style.display = 'flex';
-        div.style.flexDirection = 'column';
-        div.style.alignItems = 'center';
-        div.style.justifyContent = 'center';
-        div.style.background = 'rgba(255,255,255,0.1)';
-        div.style.padding = '15px';
-        div.style.borderRadius = '8px';
-        div.style.cursor = 'pointer';
-        div.style.minWidth = '80px';
-        div.style.transition = 'all 0.15s ease';
-
-        div.innerHTML = `<div style="font-size:32px">${item.icon}</div><div style="margin-top:8px; font-weight:bold; font-size:12px;">${item.name}</div>`;
-
-        div.onmouseenter = () => {
-            div.style.background = 'rgba(255,255,255,0.2)';
-            div.style.transform = 'scale(1.05)';
-        };
-        div.onmouseleave = () => {
-            div.style.background = 'rgba(255,255,255,0.1)';
-            div.style.transform = 'scale(1)';
-        };
-
+        div.innerHTML = `<div>${item.icon}</div><div>${item.name}</div>`;
         div.onclick = () => {
             placeProp(item.id);
-            togglePropsUI(); // Close menu after placing
+            togglePropsUI();
         };
         list.appendChild(div);
     });
@@ -406,8 +385,7 @@ function spawnPropMesh(data) {
         pole.position.y = 1.25;
         const canopyMat = new THREE.MeshStandardMaterial({ color: 0xFF6B6B, side: THREE.DoubleSide });
         const canopy = new THREE.Mesh(new THREE.ConeGeometry(1.5, 0.6, 8, 1, true), canopyMat);
-        canopy.position.y = 2.3;
-        canopy.rotation.x = Math.PI;
+        canopy.position.y = 2.5;
         g.add(pole, canopy);
     }
     else if (data.type === 'grill') {

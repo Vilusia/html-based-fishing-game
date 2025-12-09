@@ -1,21 +1,27 @@
-// --- UI & INVENTORY UPDATES ---
+const UICache = { mEl: null, logHeader: null, lEl: null };
+
+function cacheUIElements() {
+    UICache.mEl = document.getElementById('money-display');
+    UICache.logHeader = document.querySelector('#fish-log b');
+    UICache.lEl = document.getElementById('log-content');
+}
+
 function updateUI() {
-    const mEl = document.getElementById('money-display');
-    if (mEl) mEl.innerText = `$${saveState.money}`;
+    if (!UICache.mEl) cacheUIElements();
+
+    if (UICache.mEl) UICache.mEl.innerText = `$${saveState.money}`;
 
     const totalFish = saveState.inventory.length;
-    const logHeader = document.querySelector('#fish-log b');
-    if (logHeader) logHeader.innerText = `Inventory (${totalFish}):`;
+    if (UICache.logHeader) UICache.logHeader.innerText = `Inventory (${totalFish}):`;
 
-    const lEl = document.getElementById('log-content');
-    if (lEl) {
+    if (UICache.lEl) {
         if (totalFish === 0) {
-            lEl.innerHTML = "Empty.";
+            UICache.lEl.innerHTML = "Empty.";
         } else {
-            lEl.innerHTML = "";
+            UICache.lEl.innerHTML = "";
+            const fragment = document.createDocumentFragment();
 
-            // Reverse loop to show newest first
-            for (let i = saveState.inventory.length - 1; i >= 0; i--) {
+            for (let i = totalFish - 1; i >= 0; i--) {
                 const f = saveState.inventory[i];
                 const div = document.createElement('div');
 
@@ -26,8 +32,9 @@ function updateUI() {
                 div.innerText = label;
                 div.style.fontSize = "11px";
                 div.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
-                lEl.appendChild(div);
+                fragment.appendChild(div);
             }
+            UICache.lEl.appendChild(fragment);
         }
     }
 }
@@ -1020,10 +1027,16 @@ function connectToDedicatedServer(customUrl = null) {
 
             // Update Local State (Visuals Only)
             saveState.inventory.push(fish);
+
+            // Update journal with tier (fallback to 'normal' if undefined)
+            const tierId = fish.tierId || 'normal';
+            updateJournal(fish, tierId);
             saveGame();
 
-            // Show UI
-            showToast(`Caught ${fish.name}!`);
+            // Show UI with tier and size info
+            const tierStr = tierId !== 'normal' ? ` (${fish.tierName || 'Special'})` : '';
+            const sizeStr = fish.sizeLabel ? ` [${fish.sizeLabel}]` : '';
+            showToast(`Caught ${fish.name}${tierStr}${sizeStr}!`);
 
             // Play Sound
             Sound.playSpatial('catch');
@@ -1598,7 +1611,13 @@ function sendUpdate() {
     myData.belly = saveState.bellyColor;
     myData.eye = saveState.eyeColor;
     myData.hat = saveState.currentHat;
-    myData.species = saveState.species;
+    myData.species = saveState.species; // Keep for backwards compatibility
+    // Modular parts
+    myData.ears = saveState.currentEars;
+    myData.eyes = saveState.currentEyes;
+    myData.nose = saveState.currentNose;
+    myData.misc = saveState.currentMisc;
+    myData.tail = saveState.currentTail;
     myData.guitar = isGuitarActive;
     myData.glove = isGloveActive;
     myData.title = saveState.currentTitle;
@@ -1672,14 +1691,22 @@ function createRemotePlayer(id, data) {
         data.rod || 'bamboo'
     );
 
-    // Apply specific textures (Shirt, Collar, etc)
+    // Determine if using new parts system or legacy species
+    let speciesOrParts;
+    if (data.ears) {
+        speciesOrParts = { ears: data.ears, eyes: data.eyes, nose: data.nose, misc: data.misc, tail: data.tail };
+    } else {
+        speciesOrParts = data.species || 'cat';
+    }
+
+    // Apply specific textures (Shirt, Collar, Pattern, Parts)
     const s = group.getObjectByName('playerSprite');
     const texF = createSpeciesTexture(
-        data.species || 'cat', data.color, data.belly, false,
+        speciesOrParts, data.color, data.belly, false,
         data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none'
     );
     const texB = createSpeciesTexture(
-        data.species || 'cat', data.color, data.belly, true,
+        speciesOrParts, data.color, data.belly, true,
         data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none'
     );
 
@@ -1749,13 +1776,25 @@ function updateRemotePlayer(id, data) {
         }
     }
 
-    // 3. VISUALS SYNC (Colors, Hat, Shirt, Collar, Pattern)
+    // 3. VISUALS SYNC (Colors, Hat, Shirt, Collar, Pattern, Parts)
+    const partsChanged = (p.lastData.ears !== data.ears || p.lastData.eyes !== data.eyes ||
+        p.lastData.nose !== data.nose || p.lastData.misc !== data.misc ||
+        p.lastData.tail !== data.tail);
     if (p.lastData.color !== data.color || p.lastData.belly !== data.belly || p.lastData.hat !== data.hat ||
-        p.lastData.eye !== data.eye || p.lastData.species !== data.species || p.lastData.shirt !== data.shirt || p.lastData.collar !== data.collar || p.lastData.pattern !== data.pattern) {
+        p.lastData.eye !== data.eye || p.lastData.species !== data.species || p.lastData.shirt !== data.shirt ||
+        p.lastData.collar !== data.collar || p.lastData.pattern !== data.pattern || partsChanged) {
+
+        // Determine if using new parts system or legacy species
+        let speciesOrParts;
+        if (data.ears) {
+            speciesOrParts = { ears: data.ears, eyes: data.eyes, nose: data.nose, misc: data.misc, tail: data.tail };
+        } else {
+            speciesOrParts = data.species || 'cat';
+        }
 
         const s = p.mesh.getObjectByName('playerSprite');
-        const texF = createSpeciesTexture(data.species || 'cat', data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none');
-        const texB = createSpeciesTexture(data.species || 'cat', data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none');
+        const texF = createSpeciesTexture(speciesOrParts, data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none');
+        const texB = createSpeciesTexture(speciesOrParts, data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none');
         s.userData.matFront.map = texF;
         s.userData.matBack.map = texB;
     }
@@ -2474,12 +2513,10 @@ function updateDayNightCycle(dt) {
     if (sunMesh) {
         sunMesh.position.x = Math.cos(angle) * radius;
         sunMesh.position.y = Math.sin(angle) * radius;
-        sunMesh.lookAt(0, 0, 0);
     }
     if (moonMesh) {
         moonMesh.position.x = Math.cos(angle + Math.PI) * radius;
         moonMesh.position.y = Math.sin(angle + Math.PI) * radius;
-        moonMesh.lookAt(0, 0, 0);
     }
 
     // Update Light
@@ -2494,10 +2531,29 @@ function updateDayNightCycle(dt) {
             sunLight.color.setHex(0x4444ff);
         }
     }
+
+    // Stars visibility (fade in at night)
+    if (window.starSystem) {
+        const isNight = worldTime < 5 || worldTime > 19;
+        const targetOpacity = isNight ? 1.0 : 0.0;
+        window.starSystem.material.opacity += (targetOpacity - window.starSystem.material.opacity) * 0.05;
+    }
+
+    // Clouds visibility and movement (visible during day)
+    if (window.cloudSprites) {
+        const isDay = worldTime > 6 && worldTime < 18;
+        window.cloudSprites.forEach(cloud => {
+            const targetOpacity = isDay ? 0.7 : 0.0;
+            cloud.material.opacity += (targetOpacity - cloud.material.opacity) * 0.03;
+            // Move clouds slowly
+            cloud.position.x += cloud.userData.speed * 0.02;
+            if (cloud.position.x > 200) cloud.position.x = -200;
+        });
+    }
 }
 
 function createRainSystem() {
-    const rainCount = 1500;
+    const rainCount = 2000;
     const geom = new THREE.BufferGeometry();
     const positions = [];
     const velocities = [];
@@ -2505,19 +2561,38 @@ function createRainSystem() {
     for (let i = 0; i < rainCount; i++) {
         // Random positions above the island
         positions.push((Math.random() - 0.5) * 200); // x
-        positions.push(Math.random() * 40 + 10);     // y (height)
+        positions.push(Math.random() * 50 + 10);     // y (height)
         positions.push((Math.random() - 0.5) * 200); // z
-        velocities.push(0.5 + Math.random() * 0.5);  // Speed
+        velocities.push(1.5 + Math.random() * 1.0);  // Faster speed for rain
     }
 
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geom.userData = { velocities: velocities };
 
+    // Create thin elongated rain streak texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+
+    // Gradient from top (transparent) to bottom (blue-white)
+    const gradient = ctx.createLinearGradient(0, 0, 0, 64);
+    gradient.addColorStop(0, 'rgba(150, 200, 255, 0)');
+    gradient.addColorStop(0.2, 'rgba(180, 210, 255, 0.4)');
+    gradient.addColorStop(1, 'rgba(220, 235, 255, 0.9)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 1, 64);
+
+    const rainTexture = new THREE.CanvasTexture(canvas);
+
     const mat = new THREE.PointsMaterial({
-        color: 0xaaaaaa,
-        size: 0.5,
+        color: 0xccddff,
+        size: 0.4,
         transparent: true,
-        opacity: 0.6
+        opacity: 0.8,
+        map: rainTexture,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
     });
 
     rainSystem = new THREE.Points(geom, mat);
@@ -2554,20 +2629,91 @@ function setupThreeJS() {
     sunLight.castShadow = true;
     scene.add(sunLight);
 
-    // Sun Mesh (Visual sphere in sky)
-    const sunGeo = new THREE.SphereGeometry(5, 16, 16);
-    const sunMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-    sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    // Sun Sprite (Billboard - always faces camera)
+    const sunCanvas = document.createElement('canvas');
+    sunCanvas.width = 128; sunCanvas.height = 128;
+    const sunCtx = sunCanvas.getContext('2d');
+    const sunGradient = sunCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    sunGradient.addColorStop(0, 'rgba(255, 255, 200, 1)');
+    sunGradient.addColorStop(0.3, 'rgba(255, 220, 100, 1)');
+    sunGradient.addColorStop(0.7, 'rgba(255, 180, 50, 0.6)');
+    sunGradient.addColorStop(1, 'rgba(255, 150, 0, 0)');
+    sunCtx.fillStyle = sunGradient;
+    sunCtx.fillRect(0, 0, 128, 128);
+    const sunTexture = new THREE.CanvasTexture(sunCanvas);
+    const sunSpriteMat = new THREE.SpriteMaterial({ map: sunTexture, transparent: true, fog: false });
+    sunMesh = new THREE.Sprite(sunSpriteMat);
+    sunMesh.scale.set(20, 20, 1);
     scene.add(sunMesh);
 
-    // Moon Mesh
-    const moonGeo = new THREE.SphereGeometry(4, 16, 16);
-    const moonMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    // Moon Sprite (Billboard - always faces camera)
+    const moonCanvas = document.createElement('canvas');
+    moonCanvas.width = 128; moonCanvas.height = 128;
+    const moonCtx = moonCanvas.getContext('2d');
+    const moonGradient = moonCtx.createRadialGradient(64, 64, 0, 64, 64, 60);
+    moonGradient.addColorStop(0, 'rgba(240, 240, 255, 1)');
+    moonGradient.addColorStop(0.5, 'rgba(200, 200, 220, 1)');
+    moonGradient.addColorStop(0.8, 'rgba(150, 150, 180, 0.5)');
+    moonGradient.addColorStop(1, 'rgba(100, 100, 150, 0)');
+    moonCtx.fillStyle = moonGradient;
+    moonCtx.fillRect(0, 0, 128, 128);
+    const moonTexture = new THREE.CanvasTexture(moonCanvas);
+    const moonSpriteMat = new THREE.SpriteMaterial({ map: moonTexture, transparent: true, fog: false });
+    moonMesh = new THREE.Sprite(moonSpriteMat);
+    moonMesh.scale.set(15, 15, 1);
     scene.add(moonMesh);
 
+    // Stars System (visible at night)
+    const starCount = 500;
+    const starGeom = new THREE.BufferGeometry();
+    const starPositions = [];
+    for (let i = 0; i < starCount; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI * 0.4 + 0.1; // Upper hemisphere only
+        const r = 150 + Math.random() * 50;
+        starPositions.push(Math.sin(phi) * Math.cos(theta) * r);
+        starPositions.push(Math.cos(phi) * r);
+        starPositions.push(Math.sin(phi) * Math.sin(theta) * r);
+    }
+    starGeom.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8, transparent: true, opacity: 0, fog: false });
+    window.starSystem = new THREE.Points(starGeom, starMat);
+    scene.add(window.starSystem);
+
+    // Clouds System (visible during day)
+    window.cloudSprites = [];
+    const cloudCanvas = document.createElement('canvas');
+    cloudCanvas.width = 256; cloudCanvas.height = 128;
+    const cloudCtx = cloudCanvas.getContext('2d');
+    cloudCtx.fillStyle = 'rgba(255, 255, 255, 0)';
+    cloudCtx.fillRect(0, 0, 256, 128);
+    // Draw fluffy cloud shape
+    cloudCtx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    cloudCtx.beginPath();
+    cloudCtx.ellipse(80, 70, 50, 35, 0, 0, Math.PI * 2);
+    cloudCtx.ellipse(130, 60, 60, 40, 0, 0, Math.PI * 2);
+    cloudCtx.ellipse(180, 70, 45, 30, 0, 0, Math.PI * 2);
+    cloudCtx.ellipse(105, 50, 35, 25, 0, 0, Math.PI * 2);
+    cloudCtx.ellipse(155, 45, 40, 28, 0, 0, Math.PI * 2);
+    cloudCtx.fill();
+    const cloudTexture = new THREE.CanvasTexture(cloudCanvas);
+
+    for (let i = 0; i < 8; i++) {
+        const cloudMat = new THREE.SpriteMaterial({ map: cloudTexture, transparent: true, opacity: 0.7, fog: false });
+        const cloud = new THREE.Sprite(cloudMat);
+        cloud.scale.set(40 + Math.random() * 30, 20 + Math.random() * 15, 1);
+        cloud.position.set(
+            (Math.random() - 0.5) * 300,
+            60 + Math.random() * 30,
+            (Math.random() - 0.5) * 300
+        );
+        cloud.userData.speed = 0.5 + Math.random() * 0.5;
+        scene.add(cloud);
+        window.cloudSprites.push(cloud);
+    }
+
     // Create HIGH QUALITY Grass Texture
-    const grassTex = createNoiseTexture(256, 256, '#8aab8a', '#4a6b4a', 0.15, Math.random() * 100);
+    const grassTex = createNoiseTexture(256, 256, '#7a9b7a', '#5a7b5a', 0.05, Math.random() * 100);
     grassTex.wrapS = THREE.RepeatWrapping;
     grassTex.wrapT = THREE.RepeatWrapping;
     grassTex.repeat.set(8, 8);
@@ -2576,7 +2722,7 @@ function setupThreeJS() {
     isl.position.y = -2.5; scene.add(isl);
 
     // Create HIGH QUALITY Water Texture
-    const waterTex = createNoiseTexture(128, 128, '#4facfe', '#00f2fe', 0.1, Math.random() * 100);
+    const waterTex = createNoiseTexture(128, 128, '#5fbcfe', '#40acfe', 0.03, Math.random() * 100);
     waterTex.wrapS = THREE.RepeatWrapping;
     waterTex.wrapT = THREE.RepeatWrapping;
     waterTex.repeat.set(6, 6);
@@ -3019,260 +3165,572 @@ function updateMidiUI() {
     }
 }
 
-// Draws the base species model (body, head, ears, eyes, etc.).
-function drawSpecies(ctx, species, col, bellyCol, eyeCol, back) {
-    ctx.clearRect(0, 0, 64, 64);
+// --- MODULAR CHARACTER DRAWING FUNCTIONS ---
 
-    // --- STANDARD BODY (All Species share this) ---
+// Draw the base body and head (shared by all characters)
+function drawBody(ctx, col, bellyCol, back) {
+    // Body Box
     ctx.fillStyle = col;
-    ctx.fillRect(20, 30, 24, 30); // Body Box
+    ctx.fillRect(20, 30, 24, 30);
 
     if (!back) {
         ctx.fillStyle = bellyCol;
         ctx.fillRect(24, 35, 16, 20); // Belly Patch
-    } else {
-        ctx.fillStyle = col;
-        ctx.fillRect(28, 45, 8, 15); // Tail Base (Generic)
     }
 
-    // --- STANDARD HEAD (36x24) ---
-    // Guaranteed same size for everyone
+    // Standard Head (36x24)
     ctx.fillStyle = col;
     ctx.fillRect(14, 10, 36, 24);
+}
 
-    // --- SPECIES SPECIFIC FEATURES ---
+// Draw ears based on selected type
+function drawEars(ctx, earId, col, bellyCol, back) {
+    ctx.fillStyle = col;
 
-    // 1. CAT
-    if (species === 'cat') {
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(14, 0); ctx.lineTo(24, 10); ctx.fill(); // L Ear
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(50, 0); ctx.lineTo(40, 10); ctx.fill(); // R Ear
+    if (earId === 'cat') {
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(14, 0); ctx.lineTo(24, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(50, 0); ctx.lineTo(40, 10); ctx.fill();
+    }
+    else if (earId === 'bunny') {
+        ctx.fillRect(18, -4, 8, 16); ctx.fillRect(38, -4, 8, 16);
         if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = 'pink'; ctx.fillRect(30, 28, 4, 2); // Nose
+            ctx.fillStyle = bellyCol;
+            ctx.fillRect(20, -2, 4, 12); ctx.fillRect(40, -2, 4, 12);
         }
     }
-    // 2. BUNNY
-    else if (species === 'bunny') {
-        ctx.fillStyle = col; ctx.fillRect(18, -4, 8, 16); ctx.fillRect(38, -4, 8, 16); // Long Ears
-        if (!back) {
-            ctx.fillStyle = bellyCol; ctx.fillRect(20, -2, 4, 12); ctx.fillRect(40, -2, 4, 12);
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = 'pink'; ctx.fillRect(30, 26, 4, 3);
-        } else {
-            ctx.fillStyle = bellyCol; ctx.beginPath(); ctx.arc(32, 52, 6, 0, Math.PI * 2); ctx.fill(); // Tail
-        }
+    else if (earId === 'dog') {
+        ctx.fillRect(10, 12, 6, 12); ctx.fillRect(48, 12, 6, 12);
     }
-    // 3. DOG
-    else if (species === 'dog') {
-        ctx.fillStyle = col; ctx.fillRect(10, 12, 6, 12); ctx.fillRect(48, 12, 6, 12); // Floppy Ears
-        if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = 'black'; ctx.fillRect(29, 26, 6, 4); // Nose
-            ctx.strokeStyle = 'black'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(32, 30); ctx.lineTo(32, 33); ctx.stroke();
-        } else {
-            ctx.beginPath(); ctx.moveTo(32, 45); ctx.lineTo(40, 38); ctx.lineTo(32, 50); ctx.fill(); // Tail
-        }
-    }
-    // 4. BEAR
-    else if (species === 'bear') {
-        ctx.beginPath(); ctx.arc(14, 10, 5, 0, Math.PI * 2); ctx.fill(); // Round Ears
+    else if (earId === 'bear') {
+        ctx.beginPath(); ctx.arc(14, 10, 5, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(50, 10, 5, 0, Math.PI * 2); ctx.fill();
-        if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = '#dcb'; ctx.beginPath(); ctx.arc(32, 28, 6, 0, Math.PI * 2); ctx.fill(); // Snout
-            ctx.fillStyle = 'black'; ctx.fillRect(30, 26, 4, 3);
-        } else {
-            ctx.beginPath(); ctx.arc(32, 50, 4, 0, Math.PI * 2); ctx.fill(); // Tail
-        }
     }
-    // 5. FOX
-    else if (species === 'fox') {
+    else if (earId === 'fox') {
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, -5); ctx.lineTo(24, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, -5); ctx.lineTo(40, 10); ctx.fill();
-        if (!back) {
-            ctx.fillStyle = 'white'; // Cheeks
-            ctx.beginPath(); ctx.moveTo(14, 34); ctx.lineTo(32, 34); ctx.lineTo(14, 24); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(50, 34); ctx.lineTo(32, 34); ctx.lineTo(50, 24); ctx.fill();
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = 'black'; ctx.fillRect(30, 28, 4, 3);
-        } else {
-            ctx.beginPath(); ctx.moveTo(32, 45); ctx.lineTo(44, 35); ctx.lineTo(46, 55); ctx.lineTo(32, 55); ctx.fill(); // Tail
-            ctx.fillStyle = 'white'; ctx.beginPath(); ctx.moveTo(44, 35); ctx.lineTo(48, 32); ctx.lineTo(50, 40); ctx.fill();
-        }
     }
-    // 6. PIG
-    else if (species === 'pig') {
+    else if (earId === 'pig') {
         ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(8, 8); ctx.lineTo(18, 16); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 12); ctx.lineTo(56, 8); ctx.lineTo(46, 16); ctx.fill();
-        if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = '#ffaaaa'; ctx.fillRect(26, 26, 12, 6); // Snout
-            ctx.fillStyle = '#cc6666'; ctx.fillRect(28, 28, 2, 2); ctx.fillRect(34, 28, 2, 2);
-        } else {
-            ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(36, 50, 4, 0, Math.PI * 1.5); ctx.stroke();
-        }
     }
-    // 7. DRAGON
-    else if (species === 'dragon') {
-        ctx.fillStyle = '#eee'; // Horns
+    else if (earId === 'dragon') {
+        // Uses custom color (no more hardcoded #eee)
         ctx.beginPath(); ctx.moveTo(18, 10); ctx.lineTo(14, -2); ctx.lineTo(24, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(46, 10); ctx.lineTo(50, -2); ctx.lineTo(40, 10); ctx.fill();
-        ctx.fillStyle = bellyCol; // Wings
-        ctx.beginPath(); ctx.moveTo(22, 35); ctx.lineTo(6, 25); ctx.lineTo(14, 45); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(42, 35); ctx.lineTo(58, 25); ctx.lineTo(50, 45); ctx.fill();
-        if (!back) {
-            ctx.fillStyle = 'white'; ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
-            ctx.fillStyle = eyeCol; ctx.fillRect(24, 18, 4, 8); ctx.fillRect(40, 18, 4, 8); // Slit Eyes
-            ctx.fillStyle = bellyCol; ctx.fillRect(28, 26, 8, 6);
-            ctx.fillStyle = 'black'; ctx.fillRect(29, 28, 2, 2); ctx.fillRect(33, 28, 2, 2);
-        } else {
-            ctx.fillStyle = '#eee'; ctx.beginPath(); ctx.moveTo(32, 45); ctx.lineTo(36, 50); ctx.lineTo(28, 50); ctx.fill(); // Spike Tail
-        }
     }
-
-    // --- NEW SPECIES ---
-
-    // 8. MOUSE
-    else if (species === 'mouse') {
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.arc(14, 8, 8, 0, Math.PI * 2); ctx.fill(); // Big Round Ears
+    else if (earId === 'mouse') {
+        ctx.beginPath(); ctx.arc(14, 8, 8, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(50, 8, 8, 0, Math.PI * 2); ctx.fill();
-        if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = 'pink'; ctx.fillRect(30, 28, 4, 3);
-            ctx.fillStyle = 'black'; ctx.fillRect(24, 28, 6, 1); ctx.fillRect(34, 28, 6, 1); // Whiskers
-        } else {
-            ctx.strokeStyle = 'pink'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(32, 45); ctx.lineTo(32, 60); ctx.stroke();
-        }
     }
-    // 9. DUCK
-    else if (species === 'duck') {
-        if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = 'orange'; // Bill
-            ctx.beginPath(); ctx.ellipse(32, 28, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
-        } else {
-            ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(32, 45); ctx.lineTo(40, 40); ctx.lineTo(24, 40); ctx.fill(); // Tail Feathers
-        }
-    }
-    // 10. AXOLOTL
-    else if (species === 'axolotl') {
-        // Gills
-        ctx.fillStyle = '#ff69b4';
-        ctx.fillRect(8, 14, 6, 2); ctx.fillRect(8, 18, 6, 2); ctx.fillRect(8, 22, 6, 2);
-        ctx.fillRect(50, 14, 6, 2); ctx.fillRect(50, 18, 6, 2); ctx.fillRect(50, 22, 6, 2);
-        if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = eyeCol; ctx.fillRect(30, 28, 4, 1); // Tiny Smile
-        } else {
-            ctx.fillStyle = '#ff69b4'; ctx.fillRect(30, 40, 4, 15); // Fin Tail
-        }
-    }
-    // 11. RACCOON
-
-    else if (species === 'raccoon') {
-        ctx.fillStyle = col;
+    else if (earId === 'raccoon') {
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, 0); ctx.lineTo(24, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, 0); ctx.lineTo(40, 10); ctx.fill();
-        if (!back) {
-            ctx.fillStyle = '#333'; ctx.fillRect(14, 18, 36, 8); // Mask
-
-            // FIX: Changed 'white' to 'eyeCol' so the pupils use the selected color
-            drawStandardFace(ctx, eyeCol);
-
-            ctx.fillStyle = 'black'; ctx.fillRect(30, 28, 4, 3);
-        } else {
-            // Striped Tail
-            ctx.fillStyle = '#333'; ctx.fillRect(30, 45, 4, 12);
-            ctx.fillStyle = '#999'; ctx.fillRect(30, 48, 4, 2); ctx.fillRect(30, 52, 4, 2);
-        }
     }
-    // 12. KOALA
-    else if (species === 'koala') {
-        ctx.fillStyle = '#ddd'; // Inner Ear fluff
+    else if (earId === 'koala') {
+        // Uses custom color (no more hardcoded #ddd)
         ctx.beginPath(); ctx.arc(12, 14, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(52, 14, 6, 0, Math.PI * 2); ctx.fill();
-        if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = '#333';
-            ctx.beginPath(); ctx.ellipse(32, 26, 5, 8, 0, 0, Math.PI * 2); ctx.fill(); // Big Nose
-        }
     }
-    // 13. LION
-    else if (species === 'lion') {
-        ctx.fillStyle = '#d2691e'; // Mane (Behind/Around)
-        if (!back) {
-            ctx.fillRect(10, 8, 4, 28); ctx.fillRect(50, 8, 4, 28); // Side Mane
-            ctx.fillRect(14, 6, 36, 4); // Top Mane
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = 'pink'; ctx.fillRect(30, 28, 4, 3);
-        } else {
-            ctx.fillRect(10, 8, 44, 28); // Full Back Mane
-            ctx.fillStyle = col; ctx.fillRect(30, 45, 4, 12); // Tail
-        }
-    }
-    // 14. COW
-    else if (species === 'cow') {
-        ctx.fillStyle = '#ddd'; // Horns
+    else if (earId === 'cow') {
+        // Horns use custom color
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, 4); ctx.lineTo(18, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, 4); ctx.lineTo(46, 10); ctx.fill();
-        ctx.fillStyle = col; // Ears
         ctx.fillRect(8, 16, 6, 4); ctx.fillRect(50, 16, 6, 4);
-        if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = 'pink'; ctx.fillRect(24, 26, 16, 6); // Snout
-            ctx.fillStyle = 'black'; ctx.fillRect(26, 28, 2, 2); ctx.fillRect(36, 28, 2, 2);
-        }
     }
-    // 15. FROG (Updated: Eyes inside head)
-    else if (species === 'frog') {
-        if (!back) {
-            // Big Bulbous Eyes INSIDE the head (Top corners)
-            // Centered at y=15 so they don't clip above y=10 (where hats sit)
-            ctx.fillStyle = 'white';
-            ctx.beginPath(); ctx.arc(19, 15, 5, 0, Math.PI * 2); ctx.fill(); // Left Sclera
-            ctx.beginPath(); ctx.arc(45, 15, 5, 0, Math.PI * 2); ctx.fill(); // Right Sclera
-
-            ctx.fillStyle = eyeCol;
-            ctx.beginPath(); ctx.arc(19, 15, 2, 0, Math.PI * 2); ctx.fill(); // Left Pupil
-            ctx.beginPath(); ctx.arc(45, 15, 2, 0, Math.PI * 2); ctx.fill(); // Right Pupil
-
-            // Wide mouth
-            ctx.fillStyle = '#003300';
-            ctx.fillRect(22, 26, 20, 2);
-        } else {
-            // Darker spots on back
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.beginPath(); ctx.arc(22, 40, 4, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(42, 50, 3, 0, Math.PI * 2); ctx.fill();
-        }
-    }
-    // 16. MONKEY
-    else if (species === 'monkey') {
-        ctx.fillStyle = col; // Side Ears
+    else if (earId === 'monkey') {
         ctx.beginPath(); ctx.arc(12, 20, 4, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(52, 20, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'protogen') {
+        // Robotic angular ears - uses custom color with darker accent
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, -6); ctx.lineTo(24, 10); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, -6); ctx.lineTo(40, 10); ctx.closePath(); ctx.fill();
+        // Accent stripe (slightly darker)
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(12, 4, 2, 4); ctx.fillRect(50, 4, 2, 4);
+    }
+}
+
+// Draw eyes based on selected type (front only)
+function drawEyes(ctx, eyeId, eyeCol) {
+    if (eyeId === 'standard') {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
+    }
+    else if (eyeId === 'dragon') {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 18, 4, 8); ctx.fillRect(40, 18, 4, 8); // Slit pupils
+    }
+    else if (eyeId === 'frog') {
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(19, 15, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(45, 15, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(19, 15, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(45, 15, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'cute') {
+        // Big round cute eyes
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(25, 21, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(41, 21, 4, 0, Math.PI * 2); ctx.fill();
+        // Shine
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(23, 18, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(39, 18, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'sleepy') {
+        // Half-closed sleepy eyes
+        ctx.fillStyle = 'white';
+        ctx.fillRect(20, 20, 8, 4); ctx.fillRect(36, 20, 8, 4);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(23, 21, 4, 3); ctx.fillRect(39, 21, 4, 3);
+        // Eyelids
+        ctx.fillStyle = '#333';
+        ctx.fillRect(20, 18, 8, 2); ctx.fillRect(36, 18, 8, 2);
+    }
+    else if (eyeId === 'angry') {
+        // Angry eyes with angled brows
+        ctx.fillStyle = 'white';
+        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
+        // Angry brows
+        ctx.fillStyle = '#333';
+        ctx.beginPath(); ctx.moveTo(18, 16); ctx.lineTo(28, 18); ctx.lineTo(28, 16); ctx.lineTo(18, 14); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(46, 16); ctx.lineTo(36, 18); ctx.lineTo(36, 16); ctx.lineTo(46, 14); ctx.fill();
+    }
+    else if (eyeId === 'cat_eyes') {
+        // Vertical slit cat eyes
+        ctx.fillStyle = '#ffffaa'; // Yellow-ish
+        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(23, 16, 2, 8); ctx.fillRect(39, 16, 2, 8);
+    }
+    else if (eyeId === 'sparkle') {
+        // Sparkle/star eyes
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        // Stars
+        const drawStar = (cx, cy) => {
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - 3);
+            ctx.lineTo(cx + 1, cy - 1);
+            ctx.lineTo(cx + 3, cy);
+            ctx.lineTo(cx + 1, cy + 1);
+            ctx.lineTo(cx, cy + 3);
+            ctx.lineTo(cx - 1, cy + 1);
+            ctx.lineTo(cx - 3, cy);
+            ctx.lineTo(cx - 1, cy - 1);
+            ctx.closePath();
+            ctx.fill();
+        };
+        drawStar(24, 20); drawStar(40, 20);
+    }
+    else if (eyeId === 'dizzy') {
+        // Dizzy spiral eyes
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = eyeCol; ctx.lineWidth = 1.5;
+        // Spirals
+        ctx.beginPath(); ctx.arc(24, 20, 2, 0, Math.PI * 3); ctx.stroke();
+        ctx.beginPath(); ctx.arc(40, 20, 2, 0, Math.PI * 3); ctx.stroke();
+    }
+    else if (eyeId === 'heart') {
+        // Heart-shaped pupils
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ff4444';
+        // Hearts
+        const drawHeart = (cx, cy) => {
+            ctx.beginPath();
+            ctx.moveTo(cx, cy + 2);
+            ctx.bezierCurveTo(cx - 3, cy - 1, cx - 3, cy - 3, cx, cy - 1);
+            ctx.bezierCurveTo(cx + 3, cy - 3, cx + 3, cy - 1, cx, cy + 2);
+            ctx.fill();
+        };
+        drawHeart(24, 20); drawHeart(40, 20);
+    }
+    else if (eyeId === 'x_eyes') {
+        // X eyes (knocked out)
+        ctx.strokeStyle = eyeCol; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(20, 16); ctx.lineTo(28, 24); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(28, 16); ctx.lineTo(20, 24); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(36, 16); ctx.lineTo(44, 24); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(44, 16); ctx.lineTo(36, 24); ctx.stroke();
+    }
+    else if (eyeId === 'dot') {
+        // Simple dot eyes
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(24, 20, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (eyeId === 'protogen') {
+        // Glowing visor eyes - angular LED style, uses custom eye color
+        ctx.fillStyle = eyeCol;
+        // Left eye - angular chevron
+        ctx.beginPath(); ctx.moveTo(18, 18); ctx.lineTo(26, 22); ctx.lineTo(18, 26); ctx.lineTo(20, 22); ctx.closePath(); ctx.fill();
+        // Right eye - angular chevron
+        ctx.beginPath(); ctx.moveTo(46, 18); ctx.lineTo(38, 22); ctx.lineTo(46, 26); ctx.lineTo(44, 22); ctx.closePath(); ctx.fill();
+        // Glow effect
+        ctx.shadowColor = eyeCol;
+        ctx.shadowBlur = 4;
+        ctx.fillRect(20, 20, 6, 4);
+        ctx.fillRect(38, 20, 6, 4);
+        ctx.shadowBlur = 0;
+    }
+}
+
+// Draw nose/mouth based on selected type (front only)
+// noseCol is optional - if empty/null, uses per-nose-type defaults
+function drawNose(ctx, noseId, bellyCol, noseCol) {
+    // Helper to get color: use custom if provided, otherwise use default
+    const getCol = (defaultColor) => (noseCol && noseCol !== '') ? noseCol : defaultColor;
+
+    if (noseId === 'cat') {
+        ctx.fillStyle = getCol('pink');
+        ctx.fillRect(30, 28, 4, 2);
+    }
+    else if (noseId === 'dog') {
+        ctx.fillStyle = getCol('black');
+        ctx.fillRect(29, 26, 6, 4);
+        ctx.strokeStyle = 'black'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(32, 30); ctx.lineTo(32, 33); ctx.stroke();
+    }
+    else if (noseId === 'bear') {
+        ctx.fillStyle = getCol('#dcb');
+        ctx.beginPath(); ctx.arc(32, 28, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.fillRect(30, 26, 4, 3);
+    }
+    else if (noseId === 'pig') {
+        ctx.fillStyle = getCol('#ffaaaa');
+        ctx.fillRect(26, 26, 12, 6);
+        ctx.fillStyle = '#cc6666';
+        ctx.fillRect(28, 28, 2, 2); ctx.fillRect(34, 28, 2, 2);
+    }
+    else if (noseId === 'duck') {
+        ctx.fillStyle = getCol('orange');
+        ctx.beginPath(); ctx.ellipse(32, 28, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (noseId === 'dragon') {
+        ctx.fillStyle = getCol(bellyCol || '#fff');
+        ctx.fillRect(28, 26, 8, 6);
+        ctx.fillStyle = 'black';
+        ctx.fillRect(29, 28, 2, 2); ctx.fillRect(33, 28, 2, 2);
+    }
+    else if (noseId === 'mouse') {
+        ctx.fillStyle = getCol('pink');
+        ctx.fillRect(30, 28, 4, 3);
+        ctx.fillStyle = 'black';
+        ctx.fillRect(24, 28, 6, 1); ctx.fillRect(34, 28, 6, 1); // Whiskers
+    }
+    else if (noseId === 'axolotl') {
+        ctx.fillStyle = getCol('black');
+        ctx.fillRect(30, 28, 4, 1); // Tiny smile
+    }
+    else if (noseId === 'koala') {
+        ctx.fillStyle = getCol('#333');
+        ctx.beginPath(); ctx.ellipse(32, 26, 5, 8, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (noseId === 'cow') {
+        ctx.fillStyle = getCol('pink');
+        ctx.fillRect(24, 26, 16, 6);
+        ctx.fillStyle = 'black';
+        ctx.fillRect(26, 28, 2, 2); ctx.fillRect(36, 28, 2, 2);
+    }
+    else if (noseId === 'frog') {
+        ctx.fillStyle = getCol('#003300');
+        ctx.fillRect(22, 26, 20, 2);
+    }
+    else if (noseId === 'penguin') {
+        ctx.fillStyle = getCol('orange');
+        ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(36, 28); ctx.lineTo(32, 34); ctx.fill();
+    }
+    else if (noseId === 'monkey') {
+        ctx.fillStyle = getCol('#eec');
+        ctx.fillRect(26, 26, 12, 6);
+        ctx.fillStyle = 'black';
+        ctx.fillRect(30, 27, 4, 1);
+    }
+    else if (noseId === 'protogen') {
+        // Visor screen mouth - uses custom color or default cyan
+        const col = getCol('#00ffff');
+        ctx.fillStyle = col;
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 3;
+        ctx.fillRect(22, 28, 20, 3);
+        ctx.shadowBlur = 0;
+        // Mouth expression line
+        ctx.fillStyle = '#00aaaa';
+        ctx.fillRect(26, 29, 12, 1);
+    }
+}
+
+// Draw misc extras (wings, gills, mane, mask, etc.)
+// col is the custom misc color
+function drawMisc(ctx, miscId, col, bellyCol, back) {
+    if (miscId === 'none') return;
+
+    if (miscId === 'fox_cheeks') {
         if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = '#eec'; // Face skin
-            ctx.fillRect(26, 26, 12, 6);
-            ctx.fillStyle = 'black'; ctx.fillRect(30, 27, 4, 1); // Nostrils
-        } else {
-            ctx.beginPath(); ctx.moveTo(32, 45); ctx.lineTo(32, 55); ctx.lineTo(40, 60); ctx.stroke(); // Tail
+            ctx.fillStyle = col;
+            ctx.beginPath(); ctx.moveTo(14, 34); ctx.lineTo(32, 34); ctx.lineTo(14, 24); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(50, 34); ctx.lineTo(32, 34); ctx.lineTo(50, 24); ctx.fill();
         }
     }
-    // 17. PENGUIN
-    else if (species === 'penguin') {
+    else if (miscId === 'dragon_wings') {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.moveTo(22, 35); ctx.lineTo(6, 25); ctx.lineTo(14, 45); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(42, 35); ctx.lineTo(58, 25); ctx.lineTo(50, 45); ctx.fill();
+    }
+    else if (miscId === 'axolotl_gills') {
+        ctx.fillStyle = col;
+        ctx.fillRect(8, 14, 6, 2); ctx.fillRect(8, 18, 6, 2); ctx.fillRect(8, 22, 6, 2);
+        ctx.fillRect(50, 14, 6, 2); ctx.fillRect(50, 18, 6, 2); ctx.fillRect(50, 22, 6, 2);
+    }
+    else if (miscId === 'raccoon_mask') {
         if (!back) {
-            drawStandardFace(ctx, eyeCol);
-            ctx.fillStyle = 'orange'; // Beak
-            ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(36, 28); ctx.lineTo(32, 34); ctx.fill();
-            // White Belly override
-            ctx.fillStyle = 'white'; ctx.fillRect(24, 35, 16, 20);
-        } else {
-            ctx.fillStyle = 'black'; ctx.fillRect(20, 30, 24, 30); // Black Back
-            ctx.fillStyle = 'black'; ctx.beginPath(); ctx.moveTo(32, 45); ctx.lineTo(36, 50); ctx.lineTo(28, 50); ctx.fill();
+            ctx.fillStyle = col;
+            ctx.fillRect(14, 18, 36, 8);
         }
+    }
+    else if (miscId === 'lion_mane') {
+        ctx.fillStyle = col;
+        if (!back) {
+            ctx.fillRect(10, 8, 4, 28); ctx.fillRect(50, 8, 4, 28);
+            ctx.fillRect(14, 6, 36, 4);
+        } else {
+            ctx.fillRect(10, 8, 44, 28);
+        }
+    }
+    else if (miscId === 'penguin_belly') {
+        if (!back) {
+            ctx.fillStyle = col;
+            ctx.fillRect(24, 35, 16, 20);
+        } else {
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.fillRect(20, 30, 24, 30);
+        }
+    }
+    else if (miscId === 'protogen_visor') {
+        // The characteristic protogen visor/helmet - uses custom color
+        if (!back) {
+            ctx.fillStyle = col;
+            ctx.fillRect(14, 10, 36, 24);
+            // Visor edge highlights (slightly lighter)
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(14, 10, 36, 24);
+            // Side vents (darker)
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(14, 14, 3, 4);
+            ctx.fillRect(47, 14, 3, 4);
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.fillRect(14, 19, 3, 2);
+            ctx.fillRect(47, 19, 3, 2);
+        } else {
+            // Back of visor/helmet
+            ctx.fillStyle = col;
+            ctx.fillRect(14, 10, 36, 24);
+            // Back panel lines (lighter)
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.fillRect(30, 12, 4, 2);
+            ctx.fillRect(28, 30, 8, 2);
+        }
+    }
+}
+
+// Draw tail (back view only)
+function drawTail(ctx, tailId, col, bellyCol, back) {
+    if (!back || tailId === 'none') return;
+
+    ctx.fillStyle = col;
+    // Add subtle outline to all tails for visibility
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1;
+
+    // Tails draw at back of body (moved up to avoid ground clipping)
+    if (tailId === 'cat') {
+        // Simple straight tail with outline
+        ctx.fillRect(28, 48, 8, 10);
+        ctx.strokeRect(28, 48, 8, 10);
+    }
+    else if (tailId === 'bunny') {
+        // Fluffy puff tail
+        ctx.fillStyle = bellyCol || '#fff';
+        ctx.beginPath(); ctx.arc(32, 52, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'dog') {
+        // Upward wagging tail
+        ctx.beginPath(); ctx.moveTo(28, 50); ctx.lineTo(38, 40); ctx.lineTo(42, 43); ctx.lineTo(32, 55); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'bear') {
+        // Small round nub
+        ctx.beginPath(); ctx.arc(32, 52, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'fox') {
+        // Big fluffy fox tail - iconic bushy shape
+        ctx.beginPath();
+        ctx.moveTo(24, 46);  // Start at body
+        ctx.quadraticCurveTo(10, 40, 8, 48);  // Curve out left
+        ctx.quadraticCurveTo(6, 56, 20, 54);  // Bottom curve
+        ctx.lineTo(24, 50);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // White tip
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.moveTo(8, 46);
+        ctx.quadraticCurveTo(4, 48, 8, 52);
+        ctx.quadraticCurveTo(12, 50, 10, 47);
+        ctx.closePath();
+        ctx.fill();
+    }
+    else if (tailId === 'pig') {
+        // Curly corkscrew tail with outline
+        ctx.strokeStyle = col; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(36, 50, 4, 0, Math.PI * 1.5); ctx.stroke();
+        // Outline
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(36, 50, 5, 0, Math.PI * 1.5); ctx.stroke();
+    }
+    else if (tailId === 'dragon') {
+        // Simple white triangle tail spike
+        ctx.fillStyle = '#eee';
+        ctx.beginPath(); ctx.moveTo(28, 48); ctx.lineTo(32, 60); ctx.lineTo(36, 48); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'mouse') {
+        // Long thin pink tail
+        ctx.strokeStyle = 'pink'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(32, 48); ctx.quadraticCurveTo(40, 56, 32, 62); ctx.stroke();
+    }
+    else if (tailId === 'duck') {
+        // Small feathery tail
+        ctx.beginPath(); ctx.moveTo(26, 50); ctx.lineTo(32, 45); ctx.lineTo(38, 50); ctx.lineTo(32, 53); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'axolotl') {
+        // Fin-like tail
+        ctx.fillStyle = '#ff69b4';
+        ctx.beginPath(); ctx.moveTo(28, 48); ctx.lineTo(26, 58); ctx.lineTo(38, 58); ctx.lineTo(36, 48); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // Stripes
+        ctx.fillStyle = '#ff8da1';
+        ctx.fillRect(30, 50, 4, 6);
+    }
+    else if (tailId === 'raccoon') {
+        // Striped bushy tail
+        ctx.fillStyle = '#999';
+        ctx.fillRect(28, 48, 8, 12);
+        ctx.strokeRect(28, 48, 8, 12);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(28, 50, 8, 3); ctx.fillRect(28, 55, 8, 3);
+    }
+    else if (tailId === 'lion') {
+        // Tail with tuft
+        ctx.fillRect(29, 48, 6, 10);
+        ctx.strokeRect(29, 48, 6, 10);
+        // Tuft at end
+        ctx.fillStyle = '#a0522d';
+        ctx.beginPath(); ctx.arc(32, 60, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'monkey') {
+        // Curly prehensile tail with outline
+        ctx.strokeStyle = col; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(32, 48); ctx.quadraticCurveTo(45, 52, 42, 60); ctx.quadraticCurveTo(40, 65, 46, 62); ctx.stroke();
+        // Darker outline
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(32, 48); ctx.quadraticCurveTo(45, 52, 42, 60); ctx.quadraticCurveTo(40, 65, 46, 62); ctx.stroke();
+    }
+    else if (tailId === 'penguin') {
+        // Small wedge tail
+        ctx.fillStyle = 'black';
+        ctx.beginPath(); ctx.moveTo(28, 50); ctx.lineTo(32, 56); ctx.lineTo(36, 50); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    else if (tailId === 'frog') {
+        // Frog has no tail, draw subtle shadow spots
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.beginPath(); ctx.arc(26, 52, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(38, 52, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (tailId === 'protogen') {
+        // Mechanical segmented tail
+        ctx.fillStyle = '#333';
+        // Segments
+        ctx.fillRect(28, 48, 8, 4);
+        ctx.fillRect(27, 53, 10, 3);
+        ctx.fillRect(26, 57, 12, 3);
+        // Glowing accents
+        ctx.fillStyle = '#00ffff';
+        ctx.fillRect(30, 49, 4, 2);
+        ctx.fillRect(30, 54, 4, 1);
+        ctx.fillRect(30, 58, 4, 1);
+        // Outline
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctx.strokeRect(26, 48, 12, 12);
+    }
+}
+
+// Main drawing function - accepts either species string (legacy) or parts object
+// partColors is optional: { earsColor, noseColor, miscColor, tailColor }
+function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColors) {
+    ctx.clearRect(0, 0, 64, 64);
+
+    // Determine if we're using legacy species or new parts system
+    let parts;
+    if (typeof speciesOrParts === 'string') {
+        // Legacy: map species to parts for NPC compatibility
+        const speciesMapping = {
+            cat: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'cat' },
+            bunny: { ears: 'bunny', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'bunny' },
+            dog: { ears: 'dog', eyes: 'standard', nose: 'dog', misc: 'none', tail: 'dog' },
+            bear: { ears: 'bear', eyes: 'standard', nose: 'bear', misc: 'none', tail: 'bear' },
+            fox: { ears: 'fox', eyes: 'standard', nose: 'dog', misc: 'fox_cheeks', tail: 'fox' },
+            pig: { ears: 'pig', eyes: 'standard', nose: 'pig', misc: 'none', tail: 'pig' },
+            dragon: { ears: 'dragon', eyes: 'dragon', nose: 'dragon', misc: 'dragon_wings', tail: 'dragon' },
+            mouse: { ears: 'mouse', eyes: 'standard', nose: 'mouse', misc: 'none', tail: 'mouse' },
+            duck: { ears: 'none', eyes: 'standard', nose: 'duck', misc: 'none', tail: 'duck' },
+            axolotl: { ears: 'none', eyes: 'standard', nose: 'axolotl', misc: 'axolotl_gills', tail: 'axolotl' },
+            raccoon: { ears: 'raccoon', eyes: 'standard', nose: 'dog', misc: 'raccoon_mask', tail: 'raccoon' },
+            koala: { ears: 'koala', eyes: 'standard', nose: 'koala', misc: 'none', tail: 'none' },
+            lion: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'lion_mane', tail: 'lion' },
+            cow: { ears: 'cow', eyes: 'standard', nose: 'cow', misc: 'none', tail: 'cat' },
+            frog: { ears: 'none', eyes: 'frog', nose: 'frog', misc: 'none', tail: 'frog' },
+            monkey: { ears: 'monkey', eyes: 'standard', nose: 'monkey', misc: 'none', tail: 'monkey' },
+            penguin: { ears: 'none', eyes: 'standard', nose: 'penguin', misc: 'penguin_belly', tail: 'penguin' },
+        };
+        parts = speciesMapping[speciesOrParts] || speciesMapping.cat;
+    } else {
+        parts = speciesOrParts;
+    }
+
+    // Get part-specific colors (fall back to main fur color, except nose which has per-type defaults)
+    const pc = partColors || {};
+    const earsCol = pc.earsColor || col;
+    const noseCol = pc.noseColor || '';  // Empty = use per-nose-type default
+    const miscCol = pc.miscColor || col;
+    const tailCol = pc.tailColor || col;
+
+    // Draw in correct order for proper layering
+    drawBody(ctx, col, bellyCol, back);
+    drawTail(ctx, parts.tail, tailCol, bellyCol, back);
+    drawMisc(ctx, parts.misc, miscCol, bellyCol, back);
+    drawEars(ctx, parts.ears, earsCol, bellyCol, back);
+
+    if (!back) {
+        drawEyes(ctx, parts.eyes, eyeCol);
+        drawNose(ctx, parts.nose, bellyCol, noseCol);
     }
 }
 
@@ -3648,14 +4106,15 @@ function drawPattern(ctx, patternId, col, back) {
 }
 
 // Main texture compositing function. Combines species, colors, and all cosmetics into one texture.
-function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none') {
+// partColors is optional: { earsColor, noseColor, miscColor, tailColor }
+function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none', partColors = null) {
     const c = document.createElement('canvas'); c.width = 64; c.height = 64;
     const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
     const col = new THREE.Color(hex).getStyle();
     const bellyCol = new THREE.Color(bellyHex).getStyle();
     const eyeCol = new THREE.Color(eyeHex).getStyle();
 
-    drawSpecies(ctx, species, col, bellyCol, eyeCol, back);
+    drawSpecies(ctx, species, col, bellyCol, eyeCol, back, partColors);
 
     // Draw fur pattern AFTER species but BEFORE shirt (so it doesn't cover clothes)
     drawPattern(ctx, patternId, col, back);
@@ -4202,9 +4661,9 @@ function setupInputs() {
                 if (saveState.lavaUnlocked) {
                     enterLavaWorld();
                 } else {
-                    if (saveState.money >= 20000) {
-                        if (confirm("Buy Lava World Access for $20,000?")) {
-                            saveState.money -= 20000;
+                    if (saveState.money >= 80000) {
+                        if (confirm("Buy Lava World Access for $80,000?")) {
+                            saveState.money -= 80000;
                             saveState.lavaUnlocked = true;
                             saveGame();
                             Sound.sell();
@@ -4212,7 +4671,7 @@ function setupInputs() {
                             enterLavaWorld();
                         }
                     } else {
-                        showToast("Need $20,000 to unlock!");
+                        showToast("Need $80,000 to unlock!");
                     }
                 }
             }
@@ -4224,6 +4683,7 @@ function setupInputs() {
         if (e.code === k.glove) toggleGlove();
         if (e.code === k.showFish) toggleShowFish();
         if (e.code === 'KeyN') toggleEmptyHands(); // 'N' for Nothing/Empty
+        if (e.code === k.hideHud) toggleHud();
 
         // Meow
         if (e.code === k.meow && !e.repeat) {
@@ -4404,9 +4864,9 @@ function setupInputs() {
             if (saveState.lavaUnlocked) {
                 enterLavaWorld();
             } else {
-                if (saveState.money >= 20000) {
-                    if (confirm("Buy Lava World Access for $20,000?")) {
-                        saveState.money -= 20000;
+                if (saveState.money >= 80000) {
+                    if (confirm("Buy Lava World Access for $80,000?")) {
+                        saveState.money -= 80000;
                         saveState.lavaUnlocked = true;
                         saveGame();
                         Sound.sell();
@@ -4414,7 +4874,7 @@ function setupInputs() {
                         enterLavaWorld();
                     }
                 } else {
-                    showToast("Need $20,000 to unlock!");
+                    showToast("Need $80,000 to unlock!");
                 }
             }
         }
@@ -4592,7 +5052,21 @@ function releaseCast() {
         fishingZone = 'void';
     }
     else if (isInLavaWorld) {
-        fishingZone = 'lava';
+        // Check if cast is in the lava lake (center: -20000, 0, radius: 25)
+        const LAVA_LAKE_CENTER_X = -20000;
+        const LAVA_LAKE_CENTER_Z = 0;
+        const LAVA_LAKE_RADIUS = 25;
+        const distToLavaLake = Math.sqrt(
+            Math.pow(targetPos.x - LAVA_LAKE_CENTER_X, 2) +
+            Math.pow(targetPos.z - LAVA_LAKE_CENTER_Z, 2)
+        );
+
+        if (distToLavaLake < LAVA_LAKE_RADIUS) {
+            fishingZone = 'lava';
+        } else {
+            stopFishing(false, "Cast into the lava lake!");
+            return;
+        }
     }
     else if (distToSecret < 12) {
         fishingZone = 'secret';
@@ -4774,17 +5248,17 @@ function startMinigame() {
     let time = 5.0;
 
     const r = minigame.targetFish.rarity;
-    if (r === 'Common') { clicks = 15; time = 5.0; }
-    else if (r === 'Uncommon') { clicks = 30; time = 4.5; }
-    else if (r === 'Rare') { clicks = 55; time = 4.0; }
-    else if (r === 'Epic') { clicks = 90; time = 3.5; }
-    else if (r === 'Legendary') { clicks = 120; time = 3.0; }
+    if (r === 'Common') { clicks = 12; time = 5.0; }
+    else if (r === 'Uncommon') { clicks = 20; time = 4.5; }
+    else if (r === 'Rare') { clicks = 35; time = 4.5; }
+    else if (r === 'Epic') { clicks = 55; time = 4.0; }
+    else if (r === 'Legendary') { clicks = 80; time = 3.5; }
 
-    // Tier Modifiers (Shiny/Gold)
+    // Tier Modifiers (Reduced penalties for better player experience)
     const tier = minigame.targetFish.tierId;
-    if (tier === 'glistening') { clicks += 20; time -= 0.2; }
-    else if (tier === 'shining') { clicks += 50; time -= 0.5; }
-    else if (tier === 'opalescent') { clicks += 80; time -= 1.0; }
+    if (tier === 'glistening') { clicks += 5; }
+    else if (tier === 'shining') { clicks += 10; }
+    else if (tier === 'opalescent') { clicks += 20; }
 
     // --- NEW: LAVA WORLD DIFFICULTY MODIFIER ---
     if (minigame.targetFish.isLava) {
@@ -4816,7 +5290,7 @@ function startMinigame() {
     // -------------------------------------------
 
     const bait = BAIT_TYPES.find(b => b.id === activeBaitId);
-    const timeBonus = bait ? (bait.power * 0.3) : 0;
+    const timeBonus = bait ? (bait.power * 0.4) : 0;
 
     minigame.clicksNeeded = Math.floor(clicks); // Ensure integer
     minigame.currentClicks = 0;
@@ -5400,7 +5874,7 @@ function animate() {
                     prompt.innerText = "PRESS E TO ENTER LAVA WORLD";
                     if (btn) btn.innerText = "ENTER";
                 } else {
-                    prompt.innerText = "PRESS E TO UNLOCK ($20k)";
+                    prompt.innerText = "PRESS E TO UNLOCK ($80k)";
                     if (btn) btn.innerText = "BUY";
                 }
                 prompt.style.display = 'block';

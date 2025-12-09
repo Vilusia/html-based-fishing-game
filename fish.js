@@ -38,11 +38,11 @@ const LAVA_FISH = [];
 (function generateLavaFish() {
     // 5 Prefixes * 50 Bases = 250 New Fish
     const prefixes = [
-        { text: "Charred", rarity: "Common", col: "#2a1d1d", priceMult: 1.5 },
-        { text: "Molten", rarity: "Uncommon", col: "#ff4500", priceMult: 2.0 },
-        { text: "Obsidian", rarity: "Rare", col: "#4a0404", priceMult: 3.5 },
-        { text: "Magma", rarity: "Epic", col: "#ffaa00", priceMult: 5.0 },
-        { text: "Hellfire", rarity: "Legendary", col: "#ffffff", priceMult: 10.0 }
+        { text: "Charred", rarity: "Common", col: "#2a1d1d", priceMult: 0.5 },
+        { text: "Molten", rarity: "Uncommon", col: "#ff4500", priceMult: 0.8 },
+        { text: "Obsidian", rarity: "Rare", col: "#4a0404", priceMult: 1.2 },
+        { text: "Magma", rarity: "Epic", col: "#ffaa00", priceMult: 2.0 },
+        { text: "Hellfire", rarity: "Legendary", col: "#ffffff", priceMult: 4.0 }
     ];
 
     const bases = [
@@ -179,6 +179,11 @@ const TITLE_TYPES = [
     { id: 'straight', text: 'Straight', price: 999999999, color: '#444444' }
 ];
 
+const TITLE_MAP = new Map(TITLE_TYPES.map(t => [t.id, t]));
+function getTitleById(id) {
+    return TITLE_MAP.get(id) || TITLE_MAP.get('none');
+}
+
 /**
  * Procedurally generates a large number of fish variants by combining prefixes and base names.
  * This self-executing function expands the game's content without manual data entry.
@@ -234,10 +239,12 @@ const TITLE_TYPES = [
             let baseDrain = 10;
             let chance = 20;
 
-            if (prefix.rarity === "Uncommon") { baseDrain = 30; chance = 10; }
-            if (prefix.rarity === "Rare") { baseDrain = 50; chance = 5; }
-            if (prefix.rarity === "Epic") { baseDrain = 70; chance = 2; }
-            if (prefix.rarity === "Legendary") { baseDrain = 95; chance = 0.5; }
+            switch (prefix.rarity) {
+                case "Uncommon": baseDrain = 30; chance = 10; break;
+                case "Rare": baseDrain = 50; chance = 5; break;
+                case "Epic": baseDrain = 70; chance = 2; break;
+                case "Legendary": baseDrain = 95; chance = 0.5; break;
+            }
 
             FISH_TYPES.push({
                 name: `${prefix.text} ${baseName}`,
@@ -260,24 +267,37 @@ const RAIN_FISH = [
 ];
 
 const VOID_FISH = [
-    { name: "Null Guppy", rarity: "Common", chance: 50, color: "#333333", drain: 20, price: 25, condition: 'void' },
-    { name: "Shadow Ray", rarity: "Rare", chance: 30, color: "#4B0082", drain: 50, price: 100, condition: 'void' },
-    { name: "Abyssal Maw", rarity: "Epic", chance: 15, color: "#800080", drain: 75, price: 300, condition: 'void' },
-    { name: "Event Horizon", rarity: "Legendary", chance: 5, color: "#000000", drain: 95, price: 1000, condition: 'void' }
+    { name: "Null Guppy", rarity: "Common", chance: 50, color: "#333333", drain: 20, price: 10, condition: 'void' },
+    { name: "Shadow Ray", rarity: "Rare", chance: 30, color: "#4B0082", drain: 50, price: 35, condition: 'void' },
+    { name: "Abyssal Maw", rarity: "Epic", chance: 15, color: "#800080", drain: 75, price: 75, condition: 'void' },
+    { name: "Event Horizon", rarity: "Legendary", chance: 5, color: "#000000", drain: 95, price: 200, condition: 'void' }
 ];
 
-// Add them to the main pool
 if (typeof FISH_TYPES !== 'undefined') {
     FISH_TYPES.push(...RAIN_FISH, ...VOID_FISH);
+}
+
+const FISH_NAME_MAP = new Map();
+for (const fish of FISH_TYPES) {
+    FISH_NAME_MAP.set(fish.name, fish);
+}
+
+function getFishByName(name) {
+    return FISH_NAME_MAP.get(name);
 }
 
 // --- FISH TIER DEFINITIONS (e.g., Glistening, Shining) ---
 const TIERS = [
     { id: 'normal', name: 'Normal', chance: 70, priceMult: 1, drainMult: 1.0, color: '#fff' },
-    { id: 'glistening', name: 'Glistening', chance: 20, priceMult: 1.5, drainMult: 1.2, color: '#cd7f32' },
-    { id: 'shining', name: 'Shining', chance: 8, priceMult: 2.5, drainMult: 1.4, color: '#c0c0c0' },
-    { id: 'opalescent', name: 'Opalescent', chance: 2, priceMult: 5.0, drainMult: 1.6, color: '#ffd700' }
+    { id: 'glistening', name: 'Glistening', chance: 18, priceMult: 1.5, drainMult: 1.2, color: '#cd7f32' },
+    { id: 'shining', name: 'Shining', chance: 9, priceMult: 2.5, drainMult: 1.4, color: '#c0c0c0' },
+    { id: 'opalescent', name: 'Opalescent', chance: 3, priceMult: 5.0, drainMult: 1.6, color: '#ffd700' }
 ];
+
+const TIER_MAP = new Map(TIERS.map(t => [t.id, t]));
+function getTierById(id) {
+    return TIER_MAP.get(id) || TIER_MAP.get('normal');
+}
 
 // --- COSMETIC ITEM DEFINITIONS ---
 
@@ -411,23 +431,23 @@ const PATTERN_TYPES = [
 ];
 const BAIT_TYPES = [
     // EARLY GAME
-    { id: 'none', name: 'No Bait', price: 0, unlockFish: 0, power: 0, rarityMult: 1.0, tierLuck: 1.0 }, // Power reduced from 1 to 0
-    { id: 'worm', name: 'Worms', price: 20, unlockFish: 0, power: 3, rarityMult: 1.2, tierLuck: 1.0 }, // Power reduced from 5 to 3
+    { id: 'none', name: 'No Bait', price: 0, unlockFish: 0, power: 0, rarityMult: 1.0, tierLuck: 1.0 },
+    { id: 'worm', name: 'Worms', price: 20, unlockFish: 0, power: 2, rarityMult: 1.2, tierLuck: 1.0 },
 
-    // MID GAME (Scaled for 1000 Fish)
-    { id: 'cricket', name: 'Crickets', price: 100, unlockFish: 25, power: 6, rarityMult: 1.5, tierLuck: 1.05 }, // Power reduced from 10 to 6
-    { id: 'squid', name: 'Squid Chunk', price: 500, unlockFish: 75, power: 9, rarityMult: 2.5, tierLuck: 1.1 }, // Power reduced from 15 to 9
+    // MID GAME
+    { id: 'cricket', name: 'Crickets', price: 100, unlockFish: 25, power: 4, rarityMult: 1.5, tierLuck: 1.05 },
+    { id: 'squid', name: 'Squid Chunk', price: 500, unlockFish: 75, power: 6, rarityMult: 2.5, tierLuck: 1.1 },
 
-    // HIGH TIER (The Grind begins)
-    { id: 'spinner', name: 'Shiny Spinner', price: 1200, unlockFish: 150, power: 12, rarityMult: 3.5, tierLuck: 1.2 }, // Power reduced from 20 to 12
-    { id: 'grub', name: 'Mystic Grub', price: 2500, unlockFish: 300, power: 15, rarityMult: 4.5, tierLuck: 1.3 }, // Power reduced from 25 to 15
+    // HIGH TIER
+    { id: 'spinner', name: 'Shiny Spinner', price: 1200, unlockFish: 150, power: 8, rarityMult: 3.5, tierLuck: 1.2 },
+    { id: 'grub', name: 'Mystic Grub', price: 2500, unlockFish: 300, power: 10, rarityMult: 4.5, tierLuck: 1.3 },
 
-    // END GAME (Completionist Milestones)
-    { id: 'jig', name: 'Squid Jig', price: 5000, unlockFish: 500, power: 18, rarityMult: 6.0, tierLuck: 1.5 }, // Power reduced from 30 to 18
-    { id: 'shrimp', name: 'Glowing Shrimp', price: 8000, unlockFish: 700, power: 22, rarityMult: 8.0, tierLuck: 2.0 }, // Power reduced from 40 to 22
+    // END GAME
+    { id: 'jig', name: 'Squid Jig', price: 5000, unlockFish: 500, power: 12, rarityMult: 6.0, tierLuck: 1.5 },
+    { id: 'shrimp', name: 'Glowing Shrimp', price: 8000, unlockFish: 700, power: 15, rarityMult: 8.0, tierLuck: 2.0 },
 
-    // GOD TIER (Requires near-complete Pokedex)
-    { id: 'magic', name: 'Magic Lure', price: 15000, unlockFish: 850, power: 25, rarityMult: 10.0, tierLuck: 3.0 } // Power reduced from 50 to 25
+    // GOD TIER
+    { id: 'magic', name: 'Magic Lure', price: 15000, unlockFish: 850, power: 18, rarityMult: 10.0, tierLuck: 3.0 }
 ];
 
 const ROD_TYPES = [
@@ -571,7 +591,7 @@ let portalCooldown = 0;
 
 // --- DAY/NIGHT CYCLE ---
 let worldTime = 12.0; // 0 to 24 hours (Starts at Noon)
-const DAY_DURATION = 300; // Seconds for a full 24h cycle (5 minutes)
+const DAY_DURATION = 1200; // Seconds for a full 24h cycle (20 minutes)
 let sunLight, sunMesh, moonMesh;
 const NIGHT_COLOR = new THREE.Color(0x000022);
 const DAY_COLOR = new THREE.Color(0x87CEEB);
@@ -582,12 +602,12 @@ let isLeftMouseDown = false;
 let autoClickAccumulator = 0;
 
 // Auto-Reel Upgrade Tiers (REBALANCED)
-const AUTO_CLICK_RATES = [0, 4, 8, 12, 16, 25];
-const AUTO_CLICK_PRICES = [0, 500, 2500, 10000, 50000, 250000];
+const AUTO_CLICK_RATES = [0, 5, 10, 15, 22, 30];
+const AUTO_CLICK_PRICES = [0, 1000, 5000, 20000, 100000, 500000];
 
-// Click Power Upgrade Tiers
-const CLICK_POWER_RATES = [1, 2, 3, 5, 8, 12];
-const CLICK_POWER_PRICES = [0, 2000, 10000, 50000, 250000, 1000000];
+// Click Power Upgrade Tiers (REBALANCED)
+const CLICK_POWER_RATES = [1, 2, 4, 6, 10, 15];
+const CLICK_POWER_PRICES = [0, 3000, 15000, 75000, 400000, 2000000];
 let chargeStart = 0, castMarker, lastCastPos = new THREE.Vector3();
 const MAX_CHARGE_TIME = 1500, MAX_CAST_DISTANCE = 18, MIN_CAST_DISTANCE = 3;
 let lastFootstepTime = 0;
