@@ -988,6 +988,11 @@ function selectFish() {
             }
         }
 
+        // --- STRICT BAIT REQUIREMENTS ---
+        if (fish.rarity === 'Rare' && bait.power < 2) return;       // Need Worms+
+        if (fish.rarity === 'Epic' && bait.power < 4) return;       // Need Crickets+
+        if (fish.rarity === 'Legendary' && bait.power < 8) return;  // Need Spinner+
+
         // --- APPLY RARITY MULTIPLIERS ---
         if (fish.rarity === 'Rare') chance *= (bait.rarityMult * 0.8);
         if (fish.rarity === 'Epic') chance *= (bait.rarityMult * 1.0);
@@ -1617,6 +1622,10 @@ function saveCurrentOutfit() {
         color: saveState.catColor,
         belly: saveState.bellyColor,
         eye: saveState.eyeColor,
+        earsColor: saveState.earsColor,
+        noseColor: saveState.noseColor,
+        miscColor: saveState.miscColor,
+        tailColor: saveState.tailColor,
         hat: saveState.currentHat,
         shirt: saveState.currentShirt,
         collar: saveState.currentCollar,
@@ -1639,6 +1648,12 @@ function loadOutfit(id) {
     saveState.catColor = outfit.color || '#ff0000';
     saveState.bellyColor = outfit.belly || '#ffffff';
     saveState.eyeColor = outfit.eye || '#000000';
+
+    // Part-specific colors
+    saveState.earsColor = outfit.earsColor || '';
+    saveState.noseColor = outfit.noseColor || '';
+    saveState.miscColor = outfit.miscColor || '';
+    saveState.tailColor = outfit.tailColor || '';
 
     // Apply modular parts (with fallback migration from old species-based outfits)
     if (outfit.ears) {
@@ -1689,6 +1704,12 @@ function loadOutfit(id) {
     document.getElementById('fur-color-picker').value = saveState.catColor;
     document.getElementById('belly-color-picker').value = saveState.bellyColor;
     document.getElementById('eye-color-picker').value = saveState.eyeColor;
+
+    // Update part color pickers
+    if (document.getElementById('ears-color-picker')) document.getElementById('ears-color-picker').value = saveState.earsColor || saveState.catColor;
+    if (document.getElementById('nose-color-picker')) document.getElementById('nose-color-picker').value = saveState.noseColor || saveState.catColor;
+    if (document.getElementById('misc-color-picker')) document.getElementById('misc-color-picker').value = saveState.miscColor || saveState.catColor;
+    if (document.getElementById('tail-color-picker')) document.getElementById('tail-color-picker').value = saveState.tailColor || saveState.catColor;
 
     saveGame();
     updateLocalVisuals();

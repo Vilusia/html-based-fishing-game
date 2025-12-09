@@ -17,7 +17,7 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v10.83";
+const GAME_VERSION = "v10.86";
 const MAX_VOICE_DISTANCE = 50;
 
 // --- MODULAR CHARACTER PART TYPES ---

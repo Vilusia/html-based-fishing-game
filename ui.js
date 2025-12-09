@@ -3273,9 +3273,11 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         ctx.beginPath(); ctx.moveTo(12, 10); ctx.lineTo(8, -4); ctx.lineTo(22, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(52, 10); ctx.lineTo(56, -4); ctx.lineTo(42, 10); ctx.fill();
         // Inner ear
-        ctx.fillStyle = bellyCol;
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(12, 2); ctx.lineTo(20, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(52, 2); ctx.lineTo(44, 10); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = bellyCol;
+            ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(12, 2); ctx.lineTo(20, 10); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(52, 2); ctx.lineTo(44, 10); ctx.fill();
+        }
     }
     else if (earId === 'deer') {
         // Antlers
@@ -3294,9 +3296,11 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         ctx.beginPath(); ctx.moveTo(10, 14); ctx.lineTo(6, -6); ctx.lineTo(26, 14); ctx.fill();
         ctx.beginPath(); ctx.moveTo(54, 14); ctx.lineTo(58, -6); ctx.lineTo(38, 14); ctx.fill();
         // Inner ear membrane
-        ctx.fillStyle = bellyCol;
-        ctx.beginPath(); ctx.moveTo(12, 12); ctx.lineTo(10, 0); ctx.lineTo(22, 12); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(52, 12); ctx.lineTo(54, 0); ctx.lineTo(42, 12); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = bellyCol;
+            ctx.beginPath(); ctx.moveTo(12, 12); ctx.lineTo(10, 0); ctx.lineTo(22, 12); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(52, 12); ctx.lineTo(54, 0); ctx.lineTo(42, 12); ctx.fill();
+        }
     }
     else if (earId === 'shark') {
         // Fin-like ears
@@ -3310,9 +3314,11 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         // Round cat-like ears
         ctx.beginPath(); ctx.arc(16, 8, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(48, 8, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = bellyCol;
-        ctx.beginPath(); ctx.arc(16, 8, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(48, 8, 3, 0, Math.PI * 2); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = bellyCol;
+            ctx.beginPath(); ctx.arc(16, 8, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(48, 8, 3, 0, Math.PI * 2); ctx.fill();
+        }
     }
     else if (earId === 'rhino') {
         // Small ears with horn
@@ -3342,8 +3348,10 @@ function drawEars(ctx, earId, col, bellyCol, back) {
     else if (earId === 'zebra') {
         // Upright zebra ears
         ctx.fillRect(14, 0, 6, 12); ctx.fillRect(44, 0, 6, 12);
-        ctx.fillStyle = bellyCol;
-        ctx.fillRect(16, 2, 2, 8); ctx.fillRect(46, 2, 2, 8);
+        if (!back) {
+            ctx.fillStyle = bellyCol;
+            ctx.fillRect(16, 2, 2, 8); ctx.fillRect(46, 2, 2, 8);
+        }
     }
     else if (earId === 'panda') {
         // Round black panda ears
@@ -3355,9 +3363,11 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         // Fluffy red panda ears
         ctx.beginPath(); ctx.arc(14, 8, 7, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(50, 8, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = bellyCol;
-        ctx.beginPath(); ctx.arc(14, 8, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 8, 4, 0, Math.PI * 2); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = bellyCol;
+            ctx.beginPath(); ctx.arc(14, 8, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(50, 8, 4, 0, Math.PI * 2); ctx.fill();
+        }
     }
     else if (earId === 'skunk') {
         // Pointed skunk ears
@@ -3395,9 +3405,11 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         // Large round chinchilla ears
         ctx.beginPath(); ctx.arc(12, 10, 8, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(52, 10, 8, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = bellyCol;
-        ctx.beginPath(); ctx.arc(12, 10, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(52, 10, 5, 0, Math.PI * 2); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = bellyCol;
+            ctx.beginPath(); ctx.arc(12, 10, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(52, 10, 5, 0, Math.PI * 2); ctx.fill();
+        }
     }
     else if (earId === 'ferret') {
         // Small rounded ferret ears

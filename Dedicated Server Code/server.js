@@ -197,6 +197,11 @@ function selectFish(activeBaitId, fishingZone, isRaining) {
                 if (Math.random() > 0.1) return;
             }
         }
+
+        // --- STRICT BAIT REQUIREMENTS ---
+        if (fish.rarity === 'Rare' && bait.power < 2) return;       // Need Worms+
+        if (fish.rarity === 'Epic' && bait.power < 4) return;       // Need Crickets+
+        if (fish.rarity === 'Legendary' && bait.power < 8) return;  // Need Spinner+
         if (fish.rarity === 'Rare') chance *= (bait.rarityMult * 0.8);
         if (fish.rarity === 'Epic') chance *= (bait.rarityMult * 1.0);
         if (fish.rarity === 'Legendary') chance *= (bait.rarityMult * 1.2);
