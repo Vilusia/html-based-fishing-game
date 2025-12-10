@@ -498,6 +498,8 @@ let saveState = {
     inventory: [],
     displayName: "Fisher",
     journal: {},
+    unlockedBobbers: ['classic'],
+    currentBobber: 'classic',
     unlockedHats: ['none'],
     currentHat: 'none',
     catColor: '#ff6347',
@@ -592,6 +594,10 @@ function loadSave() {
             if (d.unlockedHair) saveState.unlockedHair = d.unlockedHair;
             if (d.currentHair) saveState.currentHair = d.currentHair;
             if (d.hairColor !== undefined) saveState.hairColor = d.hairColor;
+
+            // Bobbers
+            if (d.unlockedBobbers) saveState.unlockedBobbers = d.unlockedBobbers;
+            if (d.currentBobber) saveState.currentBobber = d.currentBobber;
 
             // Migration: Convert old species to new parts system
             if (d.species && !d.currentEars) {
@@ -1889,6 +1895,61 @@ function updateCharacterPreview() {
     backCtx.drawImage(tempCanvas, 0, 0, 64, 64, 0, 0, 96, 96);
 }
 
+function drawBobberIcon(ctx, type, size) {
+    const cx = size / 2, cy = size / 2;
+
+    if (type.model === 'duck') {
+        ctx.fillStyle = '#ffdd00';
+        ctx.beginPath(); ctx.arc(cx, cy + 5, 12, 0, Math.PI * 2); ctx.fill(); // Body
+        ctx.beginPath(); ctx.arc(cx - 5, cy - 8, 9, 0, Math.PI * 2); ctx.fill(); // Head
+        ctx.fillStyle = '#ffaa00';
+        // Bigger Beak
+        ctx.beginPath(); ctx.moveTo(cx - 12, cy - 8); ctx.lineTo(cx - 24, cy - 5); ctx.lineTo(cx - 12, cy - 11); ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.beginPath(); ctx.arc(cx - 8, cy - 10, 2, 0, Math.PI * 2); ctx.fill(); // Eye
+    }
+    else if (type.model === 'cube') {
+        ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
+        ctx.fillRect(cx - 12, cy - 12, 24, 24);
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.strokeRect(cx - 12, cy - 12, 24, 24);
+    }
+    else if (type.model === 'heart') {
+        ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
+        ctx.font = '32px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('❤', cx, cy + 2);
+    }
+    else if (type.model === 'star') {
+        ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
+        ctx.font = '32px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('★', cx, cy + 2);
+    }
+    else if (type.model === 'skull') {
+        ctx.fillStyle = '#ddd';
+        ctx.beginPath(); ctx.arc(cx, cy - 4, 11, 0, Math.PI * 2); ctx.fill(); // Head
+        ctx.fillRect(cx - 6, cy + 5, 12, 7); // Jaw
+        ctx.fillStyle = '#111';
+        // Big Sockets
+        ctx.beginPath(); ctx.arc(cx - 4, cy - 4, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + 4, cy - 4, 4, 0, Math.PI * 2); ctx.fill();
+        // Nose
+        ctx.beginPath(); ctx.moveTo(cx, cy + 2); ctx.lineTo(cx - 2, cy + 5); ctx.lineTo(cx + 2, cy + 5); ctx.fill();
+    }
+    else {
+        // Sphere
+        ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
+        ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.fill();
+        // Shine
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.beginPath(); ctx.arc(cx - 5, cy - 5, 5, 0, Math.PI * 2); ctx.fill();
+
+        if (type.metallic) {
+            ctx.strokeStyle = 'rgba(255,255,200,0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI * 2); ctx.stroke();
+        }
+    }
+}
+
 function renderShop() {
     const container = document.getElementById('shop-container');
     container.innerHTML = '';
@@ -1927,6 +1988,7 @@ function renderShop() {
     createTab('patterns', '🐾 Patterns');
     createTab('titles', '🏷️ Titles');
     createTab('misc', '🎸 Misc');
+    createTab('bobbers', '🔴 Bobbers');
     container.appendChild(navDiv);
 
     // --- COLLAR TAB ---
@@ -2256,6 +2318,58 @@ function renderShop() {
             bBtn.onclick = () => { if (saveState.money >= 10000) { saveState.money -= 10000; saveState.hasGlove = true; saveGame(); Sound.sell(); renderShop(); showToast("Bought Glove! Press 'B'!"); } else showToast("Not enough cash!"); };
         }
         bDiv.appendChild(bBtn); container.appendChild(bDiv);
+    }
+
+    // --- BOBBERS TAB ---
+    else if (shopMode === 'bobbers') {
+        const sortedBobbers = [...BOBBER_TYPES].sort((a, b) => a.price - b.price);
+        sortedBobbers.forEach(item => {
+            const entry = document.createElement('div');
+            const isOwned = saveState.unlockedBobbers.includes(item.id);
+            const isEquipped = saveState.currentBobber === item.id;
+            entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+
+            // Draw Preview
+            drawBobberIcon(ctx, item, 64);
+
+            entry.appendChild(canvas);
+
+            const name = document.createElement('div');
+            name.style.fontWeight = 'bold'; name.innerText = item.name;
+            entry.appendChild(name);
+
+            const btn = document.createElement('button');
+            if (isEquipped) {
+                btn.innerText = "Equipped";
+                btn.disabled = true;
+            } else if (isOwned) {
+                btn.innerText = "Equip";
+                btn.onclick = () => {
+                    saveState.currentBobber = item.id;
+                    saveGame();
+                    updateLocalVisuals();
+                    renderShop();
+                };
+            } else {
+                btn.innerText = `$${item.price}`;
+                btn.style.color = saveState.money >= item.price ? '#00cc00' : '#ff4444';
+                btn.onclick = () => {
+                    if (saveState.money >= item.price) {
+                        saveState.money -= item.price;
+                        saveState.unlockedBobbers.push(item.id);
+                        Sound.sell();
+                        saveGame();
+                        renderShop();
+                    } else showToast("Not enough money!");
+                };
+            }
+            entry.appendChild(btn);
+            container.appendChild(entry);
+        });
     }
 
     // --- IMPORTANT: RENDER OUTFITS EVERY TIME SHOP UPDATES ---

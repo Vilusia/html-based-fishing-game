@@ -424,6 +424,8 @@ function getNewPlayerData() {
         currentTitle: 'none',
         unlockedPatterns: ['none'],
         currentPattern: 'none',
+        unlockedBobbers: ['classic'],
+        currentBobber: 'classic',
         unlockedHair: ['none'],
         currentHair: 'none',
         hairColor: '',
@@ -490,6 +492,7 @@ wss.on('connection', (ws, req) => {
             pattern: 'none',
             rod: 'bamboo',
             bobber: null,
+            bobberType: 'classic',
             // Modular parts
             ears: 'cat',
             eyes: 'standard',
@@ -572,6 +575,7 @@ wss.on('connection', (ws, req) => {
                 if (p.pattern) info.meta.pattern = p.pattern;
                 if (p.rod) info.meta.rod = p.rod;
                 if (p.bobber) info.meta.bobber = p.bobber;
+                if (p.bobberType) info.meta.bobberType = p.bobberType;
                 // Modular parts
                 if (p.ears) info.meta.ears = p.ears;
                 if (p.eyes) info.meta.eyes = p.eyes;
@@ -612,6 +616,10 @@ wss.on('connection', (ws, req) => {
                     unlockedHair: Array.isArray(msg.saveState.unlockedHair) ? msg.saveState.unlockedHair : ['none'],
                     currentHair: msg.saveState.currentHair || 'none',
                     hairColor: msg.saveState.hairColor || '',
+
+                    unlockedBobbers: Array.isArray(msg.saveState.unlockedBobbers) ? msg.saveState.unlockedBobbers : ['classic'],
+                    currentBobber: msg.saveState.currentBobber || 'classic',
+
                     currentPattern: msg.saveState.currentPattern || 'none',
                     clickPowerLevel: typeof msg.saveState.clickPowerLevel === 'number' ? msg.saveState.clickPowerLevel : 0
                 };

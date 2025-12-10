@@ -17,7 +17,7 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v10.99";
+const GAME_VERSION = "v11.15";
 const MAX_VOICE_DISTANCE = 50;
 
 // --- MODULAR CHARACTER PART TYPES ---
@@ -260,4 +260,22 @@ const TAIL_TYPES = [
     { id: 'ferret', name: 'Ferret (Long Thin)' },
     { id: 'peacock', name: 'Peacock (Feathers)' },
     { id: 'mermaid', name: 'Mermaid (Fin)' },
+];
+
+const BOBBER_TYPES = [
+    { id: 'classic', name: 'Classic Red', price: 0, color: 0xff0000, model: 'sphere' },
+    { id: 'blue', name: 'Blue', price: 500, color: 0x0000ff, model: 'sphere' },
+    { id: 'green', name: 'Green', price: 500, color: 0x00ff00, model: 'sphere' },
+    { id: 'yellow', name: 'Yellow', price: 500, color: 0xffff00, model: 'sphere' },
+    { id: 'purple', name: 'Purple', price: 500, color: 0x800080, model: 'sphere' },
+    { id: 'black', name: 'Black', price: 750, color: 0x111111, model: 'sphere' },
+    { id: 'white', name: 'White', price: 750, color: 0xffffff, model: 'sphere' },
+    { id: 'duck', name: 'Rubber Duck', price: 5000, color: 0xffdd00, model: 'duck' },
+    { id: 'cube', name: 'Cube', price: 1500, color: 0xff0000, model: 'cube' },
+    { id: 'heart', name: 'Love Bobber', price: 2000, color: 0xff69b4, model: 'heart' },
+    { id: 'star', name: 'Star', price: 2500, color: 0xffd700, model: 'star' },
+    { id: 'skull', name: 'Skull', price: 3000, color: 0xcccccc, model: 'skull' },
+    { id: 'pumpkin', name: 'Pumpkin', price: 1500, color: 0xffa500, model: 'sphere' },
+    { id: 'bomb', name: 'Bomb', price: 2500, color: 0x333333, model: 'sphere' },
+    { id: 'gold', name: 'Golden Orb', price: 10000, color: 0xffd700, model: 'sphere', metallic: true },
 ];

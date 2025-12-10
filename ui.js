@@ -1630,6 +1630,7 @@ function sendUpdate() {
     myData.handsEmpty = isHandsHidden;
     myData.hair = saveState.currentHair;
     myData.hairColor = saveState.hairColor;
+    myData.bobberType = saveState.currentBobber;
 
     myData.version = GAME_VERSION;
 
@@ -1940,11 +1941,39 @@ function updateRemotePlayer(id, data) {
 
     // 6. BOBBER & LINE SYNC
     if (data.bobber) {
-        if (!p.bobberMesh) {
-            p.bobberMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial({ color: 0xff0000 })); scene.add(p.bobberMesh);
-            p.lineMesh = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0xffffff })); p.lineMesh.frustumCulled = false; scene.add(p.lineMesh);
+        if (!p.bobberMesh || p.bobberType !== data.bobberType) {
+            if (p.bobberMesh) scene.remove(p.bobberMesh);
+
+            p.bobberType = data.bobberType || 'classic';
+            p.bobberMesh = createBobberMesh(p.bobberType);
+            scene.add(p.bobberMesh);
         }
+
         p.bobberMesh.position.set(data.bobber.x, data.bobber.y, data.bobber.z);
+
+        if (!p.lineMesh) {
+            const mat = new THREE.LineBasicMaterial({ color: 0x000000 });
+            const pts = [];
+            pts.push(new THREE.Vector3(data.pos.x, data.pos.y + 0.5, data.pos.z)); // Approx rod tip
+            pts.push(new THREE.Vector3(data.bobber.x, data.bobber.y, data.bobber.z));
+            const geo = new THREE.BufferGeometry().setFromPoints(pts);
+            p.lineMesh = new THREE.Line(geo, mat);
+            p.lineMesh.frustumCulled = false;
+            scene.add(p.lineMesh);
+        } else {
+            // Update line positions
+            const posAttribute = p.lineMesh.geometry.getAttribute('position');
+            // Update rod tip (estimation)
+            // We don't have exact rod tip pos for remote players easily without skeleton
+            // So we just use player pos + offset
+            const rodOffset = new THREE.Vector3(0.3, 0.8, 0.5);
+            rodOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), data.rot);
+            rodOffset.add(p.mesh.position);
+
+            posAttribute.setXYZ(0, rodOffset.x, rodOffset.y, rodOffset.z);
+            posAttribute.setXYZ(1, data.bobber.x, data.bobber.y, data.bobber.z);
+            posAttribute.needsUpdate = true;
+        }
 
         const activeRod = p.mesh.getObjectByName("rod");
         if (activeRod) {
@@ -5950,18 +5979,51 @@ function setupInputs() {
 
     // --- MOBILE CAMERA ---
     let cid = null, lcx = 0, lcy = 0;
+    let pinchStartDist = 0;
+    let pinchStartZoom = 0;
+
+    function isUI(t) {
+        return t.target.closest('.touch-zone') || t.target.closest('#room-info-ui') || t.target.closest('.btn') || t.target.tagName === 'INPUT';
+    }
 
     document.body.ontouchstart = e => {
         if (audioCtx.state === 'suspended') audioCtx.resume();
-        if (e.target.closest('.touch-zone') || e.target.closest('#room-info-ui') || e.target.closest('.btn') || e.target.tagName === 'INPUT') return;
+
+        // If the STARTING touch is UI, ignore it for camera/pinch initiation
+        // (Though typically stopPropagation handles this, this is a safety check)
+        if (isUI(e.changedTouches[0])) return;
 
         if (e.cancelable) e.preventDefault();
 
-        if (cid === null && e.changedTouches.length > 0) {
-            const t = e.changedTouches[0];
-            cid = t.identifier;
-            lcx = t.clientX;
-            lcy = t.clientY;
+        // Check for Pinch: Need 2 touches that are BOTH NOT UI
+        let nonUITouches = [];
+        for (let i = 0; i < e.touches.length; i++) {
+            if (!isUI(e.touches[i])) nonUITouches.push(e.touches[i]);
+        }
+
+        if (nonUITouches.length === 2) {
+            pinchStartDist = Math.hypot(
+                nonUITouches[0].pageX - nonUITouches[1].pageX,
+                nonUITouches[0].pageY - nonUITouches[1].pageY
+            );
+            pinchStartZoom = cameraDistance;
+            // Clear cid if we enter pinch mode to stop rotation logic interference
+            cid = null;
+            return;
+        }
+
+        // Single finger: Camera Rotation
+        // Assign cid if not already assigned and we found a valid non-UI touch
+        if (cid === null) {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const t = e.changedTouches[i];
+                if (!isUI(t)) {
+                    cid = t.identifier;
+                    lcx = t.clientX;
+                    lcy = t.clientY;
+                    break;
+                }
+            }
         }
     };
 
@@ -5969,6 +6031,34 @@ function setupInputs() {
         if (e.target.closest('.touch-zone')) return;
         if (e.cancelable) e.preventDefault();
 
+        // 1. PINCH LOGIC
+        if (pinchStartDist > 0) {
+            let nonUITouches = [];
+            for (let i = 0; i < e.touches.length; i++) {
+                if (!isUI(e.touches[i])) nonUITouches.push(e.touches[i]);
+            }
+
+            if (nonUITouches.length === 2) {
+                const dist = Math.hypot(
+                    nonUITouches[0].pageX - nonUITouches[1].pageX,
+                    nonUITouches[0].pageY - nonUITouches[1].pageY
+                );
+
+                const scale = dist / pinchStartDist;
+                let newZoom = pinchStartZoom / scale;
+
+                cameraDistance = Math.min(MAX_ZOOM, Math.max(0.5, newZoom));
+
+                if (cameraDistance < 2.0 && !isFirstPerson) {
+                    isFirstPerson = true;
+                } else if (cameraDistance >= 2.0 && isFirstPerson) {
+                    isFirstPerson = false;
+                }
+            }
+            return; // Stop here if pinching
+        }
+
+        // 2. ROTATION LOGIC (Run if not pinching)
         for (let i = 0; i < e.changedTouches.length; i++) {
             if (e.changedTouches[i].identifier === cid) {
                 const t = e.changedTouches[i];
@@ -5988,6 +6078,16 @@ function setupInputs() {
     };
 
     document.body.ontouchend = e => {
+        // Reset pinch if we drop below 2 non-UI touches
+        let nonUITouches = [];
+        for (let i = 0; i < e.touches.length; i++) {
+            if (!isUI(e.touches[i])) nonUITouches.push(e.touches[i]);
+        }
+        if (nonUITouches.length < 2) {
+            pinchStartDist = 0;
+        }
+
+        // Reset rotation if tracked finger lifts
         for (let i = 0; i < e.changedTouches.length; i++) {
             if (e.changedTouches[i].identifier === cid) {
                 cid = null;
@@ -6048,6 +6148,9 @@ function setupInputs() {
     const btnShowFish = document.getElementById('btn-mobile-show-fish');
     if (btnShowFish) { btnShowFish.ontouchstart = e => { stopCam(e); toggleShowFish(); }; btnShowFish.ontouchmove = stopCam; }
 
+    const btnMeow = document.getElementById('btn-mobile-meow');
+    if (btnMeow) { btnMeow.ontouchstart = e => { stopCam(e); broadcastSound('meow', Math.floor(Math.random() * 3) + 1); }; btnMeow.ontouchmove = stopCam; }
+
     // --- PROP BUTTONS ---
     const btnPlace = document.getElementById('btn-mobile-place');
     if (btnPlace) {
@@ -6091,16 +6194,7 @@ function setupInputs() {
     }
 }
 
-function handleMobileZoom(val) {
-    cameraDistance = MAX_ZOOM - (val * (MAX_ZOOM - MIN_ZOOM));
 
-    // First Person Toggle
-    if (cameraDistance < 2.0 && !isFirstPerson) {
-        isFirstPerson = true;
-    } else if (cameraDistance >= 2.0 && isFirstPerson) {
-        isFirstPerson = false;
-    }
-}
 
 function handleAction(down) {
 
@@ -6252,14 +6346,47 @@ function releaseCast() {
     setTimeout(() => { fishingState = 'waiting'; scheduleBite(); }, 500);
 }
 
+// --- ONE LINE BOBBER HELPER ---
+function createBobberMesh(typeId) {
+    const type = BOBBER_TYPES.find(t => t.id === typeId) || BOBBER_TYPES[0];
+
+    // Create Texture using the Shop Icon drawer
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 128; // Higher res for in-world
+    const ctx = canvas.getContext('2d');
+
+    // Use the shared drawing function
+    if (typeof drawBobberIcon === 'function') {
+        drawBobberIcon(ctx, type, 128);
+    } else {
+        // Fallback if audio.js isn't loaded for some reason
+        ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
+        ctx.beginPath(); ctx.arc(64, 64, 30, 0, Math.PI * 2); ctx.fill();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = THREE.NearestFilter; // Pixelated look
+    texture.minFilter = THREE.NearestFilter;
+
+    // Add alphaTest to fix "transparent square" depth sorting issues
+    const mat = new THREE.SpriteMaterial({
+        map: texture,
+        color: 0xffffff,
+        alphaTest: 0.5
+    });
+    const sprite = new THREE.Sprite(mat);
+
+    // Scale: Reduced to 3.0 per user feedback
+    sprite.scale.set(3.0, 3.0, 3.0);
+
+    return sprite;
+}
+
 function createBobber(targetPos) {
     if (bobber) scene.remove(bobber);
 
-    // Create a simple red sphere
-    bobber = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2),
-        new THREE.MeshBasicMaterial({ color: 0xff0000 })
-    );
+    // Use selected skin
+    bobber = createBobberMesh(saveState.currentBobber);
 
     // Set position
     bobber.position.copy(targetPos);
@@ -6383,7 +6510,27 @@ function animatePunch(mesh) {
     loop();
 }
 
-function scheduleBite() { biteTimer = setTimeout(() => { if (fishingState === 'waiting') { fishingState = 'biting'; bobber.material.color.setHex(0xffff00); bobber.position.y = -0.5; playSnagSound(); setTimeout(() => { if (fishingState === 'biting') stopFishing(false, "Got away!"); }, 1500); } }, 2000 + Math.random() * 3000); }
+function scheduleBite() {
+    biteTimer = setTimeout(() => {
+        if (fishingState === 'waiting') {
+            fishingState = 'biting';
+
+            // Visual Cue: Dip Bobber (Use bobberInitialY to support Void/Lava worlds)
+            if (bobber) {
+                // Dip
+                bobber.position.y = bobberInitialY - 0.5;
+            }
+
+            playSnagSound();
+
+            setTimeout(() => {
+                if (fishingState === 'biting') {
+                    stopFishing(false, "Got away!");
+                }
+            }, 1500);
+        }
+    }, 2000 + Math.random() * 3000);
+}
 function startMinigame() {
     fishingState = 'reeling';
     minigame.active = true;
@@ -6957,11 +7104,7 @@ function animate() {
             camera.lookAt(player.position.x, player.position.y + 1, player.position.z);
         }
 
-        // Update mobile slider
-        if (isMobile) {
-            const slider = document.getElementById('mobile-zoom-slider');
-            if (slider) slider.value = (MAX_ZOOM - cameraDistance) / (MAX_ZOOM - MIN_ZOOM);
-        }
+
 
         // 7. CASTING CHARGE VISUALS
         if (fishingState === 'charging') {
@@ -7100,12 +7243,8 @@ function animate() {
 
     // Bobber Animation (Waiting)
     if (bobber && fishingState === 'waiting') {
-        let floorY = 0;
-        if (isInVoid) floorY = 2000;
-        // Lava/Main floorY is 0, so no offset needed
-
-        // Position bobber to touch water surface (0.2 is bobber radius)
-        bobber.position.y = floorY + 0.2 + Math.sin(Date.now() * 0.003) * 0.05;
+        // Use bobberInitialY for consistent water level relative to cast
+        bobber.position.y = bobberInitialY + Math.sin(Date.now() * 0.003) * 0.05;
     }
 
     // Fishing Line Update
