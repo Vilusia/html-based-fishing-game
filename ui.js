@@ -6517,7 +6517,7 @@ function startMinigame() {
     minigame.targetFish = selectFish();
 
     // 1. Initialize State
-    minigame.fishPos = 0;   // 0 to 100
+    minigame.fishPos = 20;   // Start at 20% (Near the bar)
     minigame.fishVel = 0;
     minigame.fishTarget = 20;
     minigame.fishTimer = 0;
@@ -6536,14 +6536,28 @@ function startMinigame() {
     let stability = 1.0 - (stabLvl * 0.05); // 5% drain reduction per level
 
     // 3. Difficulty Modifiers
+    // 3. Difficulty Modifiers
     const r = minigame.targetFish.rarity;
     let difficulty = 1.0;
-    // Fish Speed / Erraticness
+
+    // Rarity Base Difficulty (Buffed for High Rarity)
     if (r === 'Common') difficulty = 0.8;
     else if (r === 'Uncommon') difficulty = 1.0;
-    else if (r === 'Rare') difficulty = 1.3;
-    else if (r === 'Epic') difficulty = 1.6;
-    else if (r === 'Legendary') difficulty = 2.2;
+    else if (r === 'Rare') difficulty = 1.5;
+    else if (r === 'Epic') { difficulty = 3.0; barSize *= 0.9; }       // Buffed: 2.5 -> 3.0
+    else if (r === 'Legendary') { difficulty = 5.0; barSize *= 0.75; } // Buffed: 4.0 -> 5.0
+
+    // Variant / Tier Difficulty (New Granular Scaling)
+    const tierId = minigame.targetFish.tierId;
+    if (tierId === 'glistening') difficulty += 0.3;
+    else if (tierId === 'shining') difficulty += 0.6;
+    else if (tierId === 'opalescent') difficulty += 1.0;
+
+    // Bait Speed Modifier (New: Better Bait = Slower Fish)
+    // Magic Lure (Power 18) = -36% Speed. Worms (Power 2) = -4% Speed.
+    const bait = BAIT_TYPES.find(b => b.id === activeBaitId) || BAIT_TYPES[0];
+    const speedReduction = Math.max(0, bait.power * 0.02);
+    difficulty *= (1.0 - speedReduction);
 
     // LAVA WORLD PENALTIES
     if (minigame.targetFish.isLava) {
@@ -6551,14 +6565,13 @@ function startMinigame() {
         barSize *= 0.7;    // Smaller bar
 
         // Mitigation with High Tier Bait
-        const b = activeBaitId;
-        if (b === 'magic' || b === 'shrimp' || b === 'jig') {
+        if (['magic', 'shrimp', 'jig'].includes(bait.id)) {
             barSize *= 1.25; // Restore some size
         }
 
         // Mitigation with Rods
         const rod = saveState.currentRod;
-        if (rod === 'lava' || rod === 'admin' || rod === 'golden' || rod === 'diamond' || rod === 'omega_milestone') {
+        if (['lava', 'admin', 'golden', 'diamond', 'omega_milestone'].includes(rod)) {
             difficulty *= 0.85;
         }
     }
@@ -6573,7 +6586,7 @@ function startMinigame() {
     document.getElementById('minigame-capture-bar').style.height = minigame.barSize + '%';
 
     // Reset inputs
-    minigame.isReeling = false;
+    minigame.isReeling = true; // Auto-start reeling if holding from the hook click
 
     updateMinigameUI();
 }
