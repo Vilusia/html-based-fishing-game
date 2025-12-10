@@ -2383,7 +2383,7 @@ function renderBaitShop() {
     const container = document.getElementById('bait-shop-container');
     container.innerHTML = '';
 
-    // --- 1. RENDER AUTO-REEL UPGRADE ---
+    // --- 1. RENDER STABILIZER (formerly Auto-Reel) UPGRADE ---
     const lvl = saveState.autoReelLevel;
     const maxLvl = AUTO_CLICK_RATES.length - 1;
 
@@ -2393,77 +2393,75 @@ function renderBaitShop() {
     upgradeDiv.style.background = '#002233';
 
     const upTitle = document.createElement('div');
-    upTitle.innerHTML = `<b>🎣 Auto-Reel v${lvl}</b>`;
+    upTitle.innerHTML = `<b>⚓ Stabilizer v${lvl}</b>`;
     upgradeDiv.appendChild(upTitle);
 
     const upDesc = document.createElement('div');
     upDesc.style.fontSize = '12px';
-    upDesc.style.color = '#aaa';
     upDesc.style.margin = '5px 0';
+    if (lvl < maxLvl) {
+        upDesc.innerHTML = "Reduces bar drain.<br>Makes catching safer.";
+    } else {
+        upDesc.innerHTML = "Max Level.<br>Perfect stability!";
+    }
+    upgradeDiv.appendChild(upDesc);
 
     if (lvl < maxLvl) {
-        const nextRate = AUTO_CLICK_RATES[lvl + 1];
-        upDesc.innerHTML = `Upgrade to catch faster!<br>Next: ${nextRate} Clicks/Sec`;
-        upgradeDiv.appendChild(upDesc);
-
-        const cost = AUTO_CLICK_PRICES[lvl + 1];
+        const cost = AUTO_CLICK_PRICES[lvl];
         const btn = document.createElement('button');
         btn.innerText = `Upgrade ($${cost})`;
+        btn.style.marginTop = 'auto';
         btn.style.color = saveState.money >= cost ? '#44ff44' : '#ff4444';
         btn.onclick = () => buyAutoReelUpgrade(cost);
         upgradeDiv.appendChild(btn);
     } else {
-        upDesc.innerHTML = `MAX LEVEL<br>${AUTO_CLICK_RATES[lvl]} Clicks/Sec`;
-        upgradeDiv.appendChild(upDesc);
-        const maxed = document.createElement('div');
-        maxed.innerText = "COMPLETED";
-        maxed.style.color = "#00ffff";
-        maxed.style.fontWeight = "bold";
-        upgradeDiv.appendChild(maxed);
+        const lbl = document.createElement('div');
+        lbl.innerText = "MAXED";
+        lbl.style.color = '#ffff00';
+        lbl.style.marginTop = 'auto';
+        upgradeDiv.appendChild(lbl);
     }
     container.appendChild(upgradeDiv);
 
-    // --- 2. RENDER CLICK POWER UPGRADE ---
-    const cpLvl = saveState.clickPowerLevel || 0;
-    const maxCpLvl = CLICK_POWER_RATES.length - 1;
+    // --- 2. RENDER BAR SIZE (formerly Click Power) UPGRADE ---
+    const cLvl = saveState.clickPowerLevel;
+    const cMax = CLICK_POWER_RATES.length - 1;
 
-    const cpDiv = document.createElement('div');
-    cpDiv.className = 'grid-entry';
-    cpDiv.style.borderColor = '#ffaa00';
-    cpDiv.style.background = '#331100';
+    const pDiv = document.createElement('div');
+    pDiv.className = 'grid-entry';
+    pDiv.style.borderColor = '#ff00ff';
+    pDiv.style.background = '#330033';
 
-    const cpTitle = document.createElement('div');
-    cpTitle.innerHTML = `<b>💪 Click Power v${cpLvl}</b>`;
-    cpDiv.appendChild(cpTitle);
+    const pTitle = document.createElement('div');
+    pTitle.innerHTML = `<b>📏 Bar Size v${cLvl}</b>`;
+    pDiv.appendChild(pTitle);
 
-    const cpDesc = document.createElement('div');
-    cpDesc.style.fontSize = '12px';
-    cpDesc.style.color = '#aaa';
-    cpDesc.style.margin = '5px 0';
+    const pDesc = document.createElement('div');
+    pDesc.style.fontSize = '12px';
+    pDesc.style.margin = '5px 0';
+    if (cLvl < cMax) {
+        pDesc.innerHTML = "Increases catch area.<br>Easier validation.";
+    } else {
+        pDesc.innerHTML = "Max Size.<br>Huge bar!";
+    }
+    pDiv.appendChild(pDesc);
 
-    const currentPower = CLICK_POWER_RATES[cpLvl];
-
-    if (cpLvl < maxCpLvl) {
-        const nextPower = CLICK_POWER_RATES[cpLvl + 1];
-        cpDesc.innerHTML = `Current: ${currentPower}x<br>Next: ${nextPower}x Power`;
-        cpDiv.appendChild(cpDesc);
-
-        const cost = CLICK_POWER_PRICES[cpLvl + 1];
+    if (cLvl < cMax) {
+        const cost = CLICK_POWER_PRICES[cLvl];
         const btn = document.createElement('button');
         btn.innerText = `Upgrade ($${cost})`;
+        btn.style.marginTop = 'auto';
         btn.style.color = saveState.money >= cost ? '#44ff44' : '#ff4444';
         btn.onclick = () => buyClickPowerUpgrade(cost);
-        cpDiv.appendChild(btn);
+        pDiv.appendChild(btn);
     } else {
-        cpDesc.innerHTML = `MAX LEVEL<br>${currentPower}x Power`;
-        cpDiv.appendChild(cpDesc);
-        const maxed = document.createElement('div');
-        maxed.innerText = "COMPLETED";
-        maxed.style.color = '#ffaa00';
-        maxed.style.fontWeight = 'bold';
-        cpDiv.appendChild(maxed);
+        const lbl = document.createElement('div');
+        lbl.innerText = "MAXED";
+        lbl.style.color = '#ffff00';
+        lbl.style.marginTop = 'auto';
+        pDiv.appendChild(lbl);
     }
-    container.appendChild(cpDiv);
+    container.appendChild(pDiv);
 
     // --- 2. RENDER BAITS ---
     const uniqueCount = Object.keys(saveState.journal).length;
@@ -2862,7 +2860,7 @@ function buyAutoReelUpgrade(price) {
         saveGame();
         Sound.sell();
         renderBaitShop();
-        showToast(`Upgraded Auto-Reel to Level ${saveState.autoReelLevel}!`);
+        showToast(`Upgraded Stabilizer to Level ${saveState.autoReelLevel}!`);
     } else {
         showToast("Not enough money!");
     }
@@ -2875,7 +2873,7 @@ function buyClickPowerUpgrade(cost) {
         saveGame();
         Sound.sell();
         renderBaitShop();
-        showToast(`Click Power Upgraded to Level ${saveState.clickPowerLevel}!`);
+        showToast(`Bar Size Upgraded to Level ${saveState.clickPowerLevel}!`);
     } else {
         showToast("Not enough money!");
     }

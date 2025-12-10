@@ -6249,39 +6249,18 @@ function handleAction(down) {
         }
 
         else if (fishingState === 'reeling') {
-            // Anti-Cheat / Click Rate Limit
-            const now = Date.now();
-            minigame.clickHistory.push(now);
-            minigame.clickHistory = minigame.clickHistory.filter(t => now - t < 1000);
-
-            if (minigame.clickHistory.length > 24) {
-                stopFishing(false, "⚠ Anti-Cheat: Clicking too fast!");
-                return;
-            }
-
-            broadcastSound('reel');
-
-            // --- APPLY CLICK POWER ---
-            const power = CLICK_POWER_RATES[saveState.clickPowerLevel] || 1;
-            minigame.currentClicks += power;
-            // -------------------------
-
-            if (minigame.currentClicks >= minigame.clicksNeeded) {
-                stopFishing(true);
-            }
-
-            // Shake Effect
-            const ui = document.getElementById('minigame-ui');
-            ui.style.transform = `translate(-50%, -50%) rotate(${Math.random() * 4 - 2}deg) scale(1.05)`;
-            setTimeout(() => ui.style.transform = 'translate(-50%, -50%) scale(1)', 50);
-
-            updateMinigameUI();
+            // TRACKING MINIGAME: START HOLDING
+            minigame.isReeling = true;
         }
 
         else if (fishingState === 'waiting') stopFishing(false, "Too early!");
         else if (fishingState === 'biting') startMinigame();
     } else {
         if (fishingState === 'charging') releaseCast();
+        else if (fishingState === 'reeling') {
+            // TRACKING MINIGAME: STOP HOLDING
+            minigame.isReeling = false;
+        }
     }
 }
 
@@ -6531,68 +6510,71 @@ function scheduleBite() {
         }
     }, 2000 + Math.random() * 3000);
 }
+// --- MINIGAME REWORK (Tension / Tracking) ---
 function startMinigame() {
     fishingState = 'reeling';
     minigame.active = true;
     minigame.targetFish = selectFish();
 
-    minigame.clickHistory = [];
+    // 1. Initialize State
+    minigame.fishPos = 0;   // 0 to 100
+    minigame.fishVel = 0;
+    minigame.fishTarget = 20;
+    minigame.fishTimer = 0;
 
-    // Base Difficulty (Standard World)
-    let clicks = 15;
-    let time = 5.0;
+    minigame.barPos = 10;   // 0 to 100 (Bottom of bar)
+    minigame.barVel = 0;
+    minigame.progress = 25; // Start with some progress buffer
 
+    // 2. Calculate Stats based on Upgrades
+    // BAR SIZE (formerly Click Power): Base 15% + 1.5% per level
+    const powerLvl = saveState.clickPowerLevel || 1;
+    let barSize = 15 + (powerLvl * 1.5);
+
+    // STABILITY (formerly Auto Reel): Reduces drain rate
+    const stabLvl = saveState.autoReelLevel || 0;
+    let stability = 1.0 - (stabLvl * 0.05); // 5% drain reduction per level
+
+    // 3. Difficulty Modifiers
     const r = minigame.targetFish.rarity;
-    if (r === 'Common') { clicks = 12; time = 5.0; }
-    else if (r === 'Uncommon') { clicks = 20; time = 4.5; }
-    else if (r === 'Rare') { clicks = 35; time = 4.5; }
-    else if (r === 'Epic') { clicks = 55; time = 4.0; }
-    else if (r === 'Legendary') { clicks = 80; time = 3.5; }
+    let difficulty = 1.0;
+    // Fish Speed / Erraticness
+    if (r === 'Common') difficulty = 0.8;
+    else if (r === 'Uncommon') difficulty = 1.0;
+    else if (r === 'Rare') difficulty = 1.3;
+    else if (r === 'Epic') difficulty = 1.6;
+    else if (r === 'Legendary') difficulty = 2.2;
 
-    // Tier Modifiers (Reduced penalties for better player experience)
-    const tier = minigame.targetFish.tierId;
-    if (tier === 'glistening') { clicks += 5; }
-    else if (tier === 'shining') { clicks += 10; }
-    else if (tier === 'opalescent') { clicks += 20; }
-
-    // --- NEW: LAVA WORLD DIFFICULTY MODIFIER ---
+    // LAVA WORLD PENALTIES
     if (minigame.targetFish.isLava) {
-        // DEFAULT PENALTY: 
-        // Double the clicks needed and reduce time by 30%.
-        // This makes it extremely hard with basic gear.
-        clicks *= 2.0;
-        time *= 0.7;
+        difficulty *= 1.5; // Faster fish
+        barSize *= 0.7;    // Smaller bar
 
-        // BAIT MITIGATION: 
-        // High tier bait neutralizes the penalty significantly.
-        // 'jig' ($5000), 'shrimp' ($8000), 'magic' ($15000)
+        // Mitigation with High Tier Bait
         const b = activeBaitId;
         if (b === 'magic' || b === 'shrimp' || b === 'jig') {
-            clicks *= 0.6; // Reduces multiplier to ~1.2x (Manageable)
-            time *= 1.2;   // Gathers some time back
-        } else if (b === 'grub' || b === 'spinner') {
-            clicks *= 0.8; // Reduces multiplier to ~1.6x (Still hard)
+            barSize *= 1.25; // Restore some size
         }
 
-        // ROD MITIGATION: 
-        // Having the Magma Rod (or better) helps handle the heat.
+        // Mitigation with Rods
         const rod = saveState.currentRod;
         if (rod === 'lava' || rod === 'admin' || rod === 'golden' || rod === 'diamond' || rod === 'omega_milestone') {
-            clicks *= 0.85;
-            time *= 1.1;
+            difficulty *= 0.85;
         }
     }
-    // -------------------------------------------
 
-    const bait = BAIT_TYPES.find(b => b.id === activeBaitId);
-    const timeBonus = bait ? (bait.power * 0.4) : 0;
+    minigame.barSize = Math.max(5, barSize); // Min 5% height
+    minigame.drainRate = 0.4 * stability * difficulty;
+    minigame.catchRate = 0.6; // Constant fill rate
+    minigame.difficulty = difficulty;
 
-    minigame.clicksNeeded = Math.floor(clicks); // Ensure integer
-    minigame.currentClicks = 0;
-    minigame.maxTime = Math.max(0.5, time + timeBonus);
-    minigame.timeLeft = minigame.maxTime;
-
+    // Show UI
     document.getElementById('minigame-ui').style.display = 'flex';
+    document.getElementById('minigame-capture-bar').style.height = minigame.barSize + '%';
+
+    // Reset inputs
+    minigame.isReeling = false;
+
     updateMinigameUI();
 }
 
@@ -6657,21 +6639,126 @@ function stopFishing(success, msg) {
     else if (msg) showToast(msg);
 }
 
-function updateMinigameUI() {
-    const f = document.getElementById('bar-fill');
-    const t = document.getElementById('minigame-text');
+// --- MINIGAME LOOP ---
+// --- MINIGAME LOOP ---
+function updateMinigameUI(dt) {
+    if (!dt) dt = 0.016; // Fallback
 
+    // Normalize speed reference (1.0 = 100% per second)
+    // Actually dealing with 0-100 range.
 
-    const pct = (minigame.timeLeft / minigame.maxTime) * 100;
-    f.style.width = Math.max(0, pct) + "%";
+    // --- 1. FISH AI ---
+    // Timer is now in seconds
+    minigame.fishTimer += dt;
+    // Move target every 0.5s to 2.0s (based on difficulty)
+    const moveInterval = 0.5 + (1.5 / minigame.difficulty);
 
+    if (minigame.fishTimer > moveInterval) {
+        minigame.fishTimer = 0;
+        // New Target
+        if (Math.random() < 0.6) {
+            // Small move (Smooth)
+            minigame.fishTarget += (Math.random() * 30 - 15);
+        } else {
+            // Large move (Erratic)
+            minigame.fishTarget = Math.random() * 100;
+        }
+        minigame.fishTarget = Math.max(10, Math.min(90, minigame.fishTarget));
+    }
 
-    f.style.background = pct < 30 ? '#ff4444' : '#44ff44';
+    // Move Fish toward target
+    const dist = minigame.fishTarget - minigame.fishPos;
+    // Base Speed: 15 units/sec * Difficulty. Maxes around 40.
+    // WAS: ~60-140 unit/sec. SIGNIFICANTLY SLOWER NOW.
+    const maxSpeed = 15.0 * minigame.difficulty;
 
+    // Smooth movement (frame independent)
+    let moveStep = maxSpeed * dt;
 
-    const remaining = minigame.clicksNeeded - minigame.currentClicks;
-    t.innerText = `CLICK! (${remaining})`;
-    t.style.color = remaining <= 5 ? '#ffff00' : 'white';
+    if (Math.abs(dist) > moveStep) {
+        minigame.fishPos += Math.sign(dist) * moveStep;
+    } else {
+        minigame.fishPos = minigame.fishTarget;
+    }
+
+    // --- 2. BAR PHYSICS ---
+    // Units per Second Squared
+    const GRAVITY = 80; // Falls down
+    const LIFT = 120;   // Pulls up (must overcome gravity)
+
+    if (minigame.isReeling) {
+        minigame.barVel += LIFT * dt;
+    } else {
+        minigame.barVel -= GRAVITY * dt;
+    }
+
+    // Resistance / Terminal Velocity
+    minigame.barVel -= minigame.barVel * 2.0 * dt; // Air resistance
+
+    // Update Position
+    minigame.barPos += minigame.barVel * dt;
+
+    // Bounce / Clamp
+    const maxBarTop = 100 - minigame.barSize;
+
+    if (minigame.barPos < 0) {
+        minigame.barPos = 0;
+        if (minigame.barVel < 0) minigame.barVel = 0;
+    }
+    if (minigame.barPos > maxBarTop) {
+        minigame.barPos = maxBarTop;
+        if (minigame.barVel > 0) minigame.barVel = 0;
+    }
+
+    // --- 3. PROGRESS LOGIC ---
+    const fishCenter = minigame.fishPos + 5;
+    const barBottom = minigame.barPos;
+    const barTop = minigame.barPos + minigame.barSize;
+
+    const isInside = (fishCenter >= barBottom && fishCenter <= barTop);
+    const fishEl = document.getElementById('minigame-fish');
+    const barEl = document.getElementById('minigame-capture-bar');
+
+    // Fill Rate: 15% per second
+    const catchRate = 15 * dt;
+    // Drain Rate: Scaled by upgrades (approx 10-25% per sec)
+    const drainRate = (minigame.drainRate * 50) * dt;
+
+    if (isInside) {
+        minigame.progress += catchRate;
+        barEl.style.backgroundColor = 'rgba(100, 255, 100, 0.8)';
+        barEl.style.border = '2px solid #aaffaa';
+        fishEl.innerText = '🐟';
+    } else {
+        minigame.progress -= drainRate;
+        barEl.style.backgroundColor = 'rgba(150, 255, 100, 0.3)';
+        barEl.style.border = '2px solid #88aa88';
+        fishEl.innerText = '🐡';
+    }
+
+    minigame.progress = Math.max(0, Math.min(100, minigame.progress));
+
+    // --- 4. RENDER ---
+    const fEl = document.getElementById('minigame-fish');
+    const bEl = document.getElementById('minigame-capture-bar');
+    const pFill = document.getElementById('minigame-progress-fill');
+
+    // Use 'toFixed' to prevent sub-pixel jitter in CSS if needed, but standard is fine
+    fEl.style.bottom = minigame.fishPos + '%';
+    bEl.style.bottom = minigame.barPos + '%';
+    pFill.style.height = minigame.progress + '%';
+
+    if (minigame.progress > 80) pFill.style.background = '#00ff00';
+    else if (minigame.progress > 40) pFill.style.background = '#ffff00';
+    else pFill.style.background = '#ff4444';
+
+    // --- 5. CHECK WIN/FAIL ---
+    if (minigame.progress >= 100) {
+        stopFishing(true);
+    }
+    else if (minigame.progress <= 0) {
+        stopFishing(false, "It got away!");
+    }
 }
 function showToast(t) { const d = document.createElement('div'); d.className = 'toast'; d.innerText = t; document.getElementById('notification-area').appendChild(d); setTimeout(() => d.remove(), 3000); }
 
@@ -6892,32 +6979,13 @@ function animate() {
         waterfallMesh.material.map.offset.y += 2 * dt;
     }
 
-    // --- MINIGAME (Auto-Clicker) ---
-    if (minigame.active && isLeftMouseDown && saveState.autoReelLevel > 0) {
-        const cps = AUTO_CLICK_RATES[saveState.autoReelLevel];
-        if (cps > 0) {
-            autoClickAccumulator += dt;
-            const interval = 1.0 / cps;
-            while (autoClickAccumulator >= interval) {
-                autoClickAccumulator -= interval;
-                // Apply Click Power Multiplier to Auto-Reel
-                const power = CLICK_POWER_RATES[saveState.clickPowerLevel] || 1;
-                minigame.currentClicks += power;
-                if (minigame.currentClicks >= minigame.clicksNeeded) {
-                    stopFishing(true);
-                    break;
-                }
-            }
-            if (minigame.active) updateMinigameUI();
-        }
-    } else {
-        autoClickAccumulator = 0;
-    }
+    // (Legacy Auto-Reel Logic Removed for Minigame Rework)
+    autoClickAccumulator = 0;
 
+    // --- MINIGAME ---
     if (minigame.active) {
-        minigame.timeLeft -= dt;
-        updateMinigameUI();
-        if (minigame.timeLeft <= 0) stopFishing(false, "Time's up!");
+        // minigame.timeLeft handled in updateMinigameUI via progress logic now
+        updateMinigameUI(dt);
     }
 
     // --- PHYSICS & MOVEMENT ---

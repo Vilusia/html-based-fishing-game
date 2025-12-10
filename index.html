@@ -727,35 +727,89 @@
             text-align: center;
         }
 
-        /* --- MINIGAME --- */
+        /* --- FISHING MINIGAME (Stardew Style) --- */
         #minigame-ui {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 200px;
-            padding: 15px;
-            background: rgba(0, 0, 0, 0.8);
-            border-radius: 15px;
-            border: 3px solid white;
+            width: 100px;
+            height: 300px;
+            background: #222;
+            border: 4px solid #fff;
             display: none;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            pointer-events: none;
+            /* Flex when active */
+            flex-direction: row;
+            padding: 5px;
+            z-index: 2000;
+            border-radius: 10px;
+            box-shadow: 0 0 20px black;
         }
 
-        #bar-container {
-            width: 100%;
-            height: 20px;
-            background: #333;
-            border-radius: 10px;
+        #minigame-main-col {
+            position: relative;
+            flex: 1;
+            background: linear-gradient(to bottom, #44aaff, #004488);
+            /* Water gradient */
+            border: 2px solid #555;
+            border-radius: 4px;
+            margin-right: 5px;
             overflow: hidden;
         }
 
-        #bar-fill {
-            height: 100%;
-            transition: width 0.1s linear;
+        #minigame-fish {
+            position: absolute;
+            left: 50%;
+            bottom: 10%;
+            /* Will vary 0-90% */
+            transform: translateX(-50%);
+            font-size: 24px;
+            transition: bottom 0.1s linear;
+            /* Smooth visual */
+        }
+
+        #minigame-capture-bar {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 20%;
+            height: 20%;
+            /* Variable based on upgrade */
+            background: rgba(100, 255, 100, 0.6);
+            border: 2px solid #aaffaa;
+            border-radius: 2px;
+            pointer-events: none;
+        }
+
+        #minigame-progress-col {
+            position: relative;
+            width: 20px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column-reverse;
+            /* Fill from bottom */
+        }
+
+        #minigame-progress-fill {
+            width: 100%;
+            height: 50%;
+            /* 0 to 100% */
+            background: linear-gradient(to top, #ffff00, #00ff00);
+            transition: height 0.1s linear;
+        }
+
+        #minigame-overlay-text {
+            position: absolute;
+            top: -40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            white-space: nowrap;
+            font-size: 18px;
         }
 
         /* --- MOBILE CONTROLS --- */
@@ -1991,8 +2045,7 @@
 
     <div id="lobby-screen" style="display: none;">
         <h2>HTML Fishing</h2>
-        <div id="lobby-version" style="color: #888; font-size: 12px; margin-top: -10px; margin-bottom: 10px;">v11.15
-        </div>
+
         <div id="lobby-container">
             <label>Your Name:</label>
             <input type="text" id="username-input" placeholder="Fisher" maxlength="12">
@@ -2016,6 +2069,10 @@
                         ?
                     </button>
                 </div>
+            </div>
+            <div id="lobby-version"
+                style="position: absolute; bottom: 10px; right: 10px; color: rgba(255,255,255,0.5); font-size: 12px;">
+                v11.19
             </div>
             <div id="lobby-status" style="margin-top: 15px; color: #aaa; font-size: 14px;"></div>
             <div id="host-room-info" style="display: none;">
@@ -2338,9 +2395,15 @@
             <input type="text" id="chat-input" placeholder="Chat here...">
         </div>
         <div id="minigame-ui">
-            <div id="minigame-text">TAP! TAP! TAP!</div>
-            <div id="bar-container">
-                <div id="bar-fill"></div>
+            <div id="minigame-overlay-text">HOLD TO REEL!</div>
+
+            <div id="minigame-main-col">
+                <div id="minigame-fish">🐟</div>
+                <div id="minigame-capture-bar"></div>
+            </div>
+
+            <div id="minigame-progress-col">
+                <div id="minigame-progress-fill"></div>
             </div>
         </div>
         <div id="mobile-controls">
@@ -2381,12 +2444,12 @@
 
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
-    <script src="core.js?v=11.15"></script>
-    <script src="fish.js?v=11.15"></script>
-    <script src="networking.js?v=11.15"></script>
-    <script src="audio.js?v=11.15"></script>
-    <script src="ui.js?v=11.15"></script>
-    <script src="props.js?v=11.15"></script>
+    <script src="core.js?v=11.19"></script>
+    <script src="fish.js?v=11.19"></script>
+    <script src="networking.js?v=11.19"></script>
+    <script src="audio.js?v=11.19"></script>
+    <script src="ui.js?v=11.19"></script>
+    <script src="props.js?v=11.19"></script>
 
     <!-- Start Open Web Analytics Tracker -->
     <script type="text/javascript">
