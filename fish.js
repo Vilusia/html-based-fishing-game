@@ -286,6 +286,39 @@ function getFishByName(name) {
     return FISH_NAME_MAP.get(name);
 }
 
+// --- ZONE-SPECIFIC FISH ASSIGNMENT ---
+// Assigns fish to zones based on name keywords
+function getFishZone(fishName) {
+    const name = fishName.toLowerCase();
+
+    // Dark Pond: Dark/mysterious themed fish
+    if (/ghost|void|shadow|abyssal|cursed|dark|phantom|wraith|spectre|null/.test(name)) return 'darkpond';
+
+    // Ocean: Saltwater/large fish
+    if (/shark|whale|tuna|marlin|kraken|swordfish|stingray|jellyfish|squid|crab|lobster|manta|barracuda|sailfish|anchovy|herring|octopus|leviathan|urchin/.test(name)) return 'ocean';
+
+    // Light Pond: Small/pet fish
+    if (/guppy|minnow|tetra|goldfish|koi|molly|betta|discus|oscar|pleco|loach|arowana|cichlid/.test(name)) return 'lightpond';
+
+    // Lake: Default freshwater (bass, trout, carp, catfish, pike, salmon, etc.)
+    return 'lake';
+}
+
+// Returns fish available in a specific zone
+function getFishForZone(zone) {
+    // All zones get Old Boot and rain/void conditions
+    const alwaysAvailable = ['Old Boot'];
+
+    return FISH_TYPES.filter(fish => {
+        // Trash is everywhere
+        if (alwaysAvailable.includes(fish.name)) return true;
+        // Conditional fish (rain/void) handled separately
+        if (fish.condition) return false;
+        // Match zone
+        return getFishZone(fish.name) === zone;
+    });
+}
+
 // --- FISH TIER DEFINITIONS (e.g., Glistening, Shining) ---
 const TIERS = [
     { id: 'normal', name: 'Normal', chance: 70, priceMult: 1, drainMult: 1.0, color: '#fff' },
@@ -338,7 +371,8 @@ const HAT_TYPES = [
     { id: 'goldcrown', name: 'King Crown', price: 1000000, color: '#ffff00', type: 'crown' },
     { id: 'rainbow', name: 'Rainbow Afro', price: 2000000, color: '#ff00ff', type: 'rainbow' },
     { id: 'void', name: 'Void Mask', price: 3500000, color: '#000000', type: 'void' },
-    { id: 'diamond', name: 'Diamond Tiara', price: 5000000, color: '#00ffff', type: 'diamond' }
+    { id: 'diamond', name: 'Diamond Tiara', price: 5000000, color: '#00ffff', type: 'diamond' },
+    { id: 'banana', name: 'Nano Banana', price: 1500, color: '#ffe135', type: 'banana' }
 ];
 
 
@@ -389,6 +423,7 @@ const SHIRT_TYPES = [
     { id: 'smile_tee', name: 'Happy Shirt', price: 5000, color: '#FFFF00', type: 'logo', symbol: '🙂' },
     { id: 'fish_tee', name: 'Fish Shirt', price: 5000, color: '#00CED1', type: 'logo', symbol: '🐟' },
     { id: 'skull_tee', name: 'Skull Shirt', price: 6666, color: '#000000', type: 'logo', symbol: '💀' },
+    { id: 'banana_tee', name: 'Nano Banana Tee', price: 5000, color: '#2b2b2b', type: 'logo', symbol: '🍌' },
 
     // --- PATTERNS ---
     { id: 'camo_green', name: 'Camo Green', price: 7500, color: '#556B2F', type: 'camo' },
@@ -483,6 +518,7 @@ const ROD_TYPES = [
     { id: 'golden', name: 'Golden Rod', price: 100000, color: '#FFD700', reel: '#FFFFFF' },
     { id: 'diamond', name: 'Diamond Rod', price: 250000, color: '#00FFFF', reel: '#FFFFFF' },
     { id: 'rainbow', name: 'Rainbow Rod', price: 500000, color: '#FF00FF', reel: '#00FF00' },
+    { id: 'banana_rod', name: 'Nano Banana Rod', price: 750000, color: '#ffe135', reel: '#8b4513' },
     { id: 'admin', name: 'Ban Hammer', price: 1000000, color: '#FF0000', reel: '#000000' },
     { id: 'invisible', name: 'Ghost Rod', price: 5000000, color: 'rgba(255,255,255,0.2)', reel: 'rgba(255,255,255,0.2)' },
 

@@ -21,6 +21,46 @@ const RATE_LIMITS = {
 
 // --- GAME DATA DEFINITIONS ---
 
+const ORE_TYPES = [
+    { id: 'stone', name: 'Stone', price: 30 },
+    { id: 'copper', name: 'Copper Ore', price: 60 },
+    { id: 'tin', name: 'Tin Ore', price: 100 },
+    { id: 'iron', name: 'Iron Ore', price: 150 },
+    { id: 'coal', name: 'Coal', price: 220 },
+    { id: 'gold', name: 'Gold Ore', price: 350 },
+    { id: 'mithril', name: 'Mithril Ore', price: 500 },
+    { id: 'adamant', name: 'Adamantite', price: 750 },
+    { id: 'runite', name: 'Runite Ore', price: 1200 },
+    { id: 'dragon', name: 'Dragon Ore', price: 2000 }
+];
+
+const WOOD_TYPES = [
+    { id: 'wood', name: 'Wood', price: 20 },
+    { id: 'oak', name: 'Oak', price: 40 },
+    { id: 'willow', name: 'Willow', price: 70 },
+    { id: 'maple', name: 'Maple', price: 110 },
+    { id: 'yew', name: 'Yew', price: 180 },
+    { id: 'magic', name: 'Magic Wood', price: 300 },
+    { id: 'elder', name: 'Elder Wood', price: 450 },
+    { id: 'ancient', name: 'Ancient Wood', price: 650 },
+    { id: 'sacred', name: 'Sacred Wood', price: 900 },
+    { id: 'sacred', name: 'Sacred Wood', price: 900 },
+    { id: 'divine', name: 'Divine Wood', price: 1500 }
+];
+
+const FLOWER_TYPES = [
+    { id: 'daisy', name: 'Daisy', level: 1, price: 1, xp: 5 },
+    { id: 'dandelion', name: 'Dandelion', level: 10, price: 2, xp: 10 },
+    { id: 'tulip', name: 'Tulip', level: 20, price: 4, xp: 18 },
+    { id: 'rose', name: 'Rose', level: 30, price: 6, xp: 28 },
+    { id: 'sunflower', name: 'Sunflower', level: 40, price: 9, xp: 40 },
+    { id: 'lily', name: 'Lily', level: 50, price: 12, xp: 55 },
+    { id: 'orchid', name: 'Orchid', level: 60, price: 15, xp: 75 },
+    { id: 'lotus', name: 'Lotus', level: 70, price: 18, xp: 100 },
+    { id: 'moonflower', name: 'Moonflower', level: 80, price: 22, xp: 130 },
+    { id: 'starbloom', name: 'Starbloom', level: 90, price: 28, xp: 175 }
+];
+
 const FISH_TYPES = [
     { name: "Old Boot", rarity: "Common", chance: 30, color: "#554433", drain: 10, price: 5 },
     { name: "Guppy", rarity: "Common", chance: 25, color: "#ADD8E6", drain: 12, price: 8 },
@@ -430,7 +470,13 @@ function getNewPlayerData() {
         currentHair: 'none',
         hairColor: '',
         lavaUnlocked: false,
-        displayName: "Fisher"
+        displayName: "Fisher",
+        // Resource Inventories
+        woodInventory: {},
+        oreInventory: {},
+        wood: 0,
+        stone: 0,
+        skills: { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 }, floristry: { xp: 0 } }
     };
 }
 
@@ -566,6 +612,7 @@ wss.on('connection', (ws, req) => {
                 // Sync Visuals
                 if (p.species) info.meta.species = p.species;
                 if (p.hat) info.meta.hat = p.hat;
+
                 if (p.color) info.meta.color = p.color;
                 if (p.belly) info.meta.belly = p.belly;
                 if (p.eye) info.meta.eye = p.eye;
@@ -589,9 +636,29 @@ wss.on('connection', (ws, req) => {
                 if (p.miscColor !== undefined) info.meta.miscColor = p.miscColor;
                 if (p.tailColor !== undefined) info.meta.tailColor = p.tailColor;
                 if (p.hairColor !== undefined) info.meta.hairColor = p.hairColor;
-            }
+                if (p.tool) info.meta.tool = p.tool; // Sync Tool
 
-            broadcast({ type: 'update', id: id, payload: msg.payload }, id);
+                broadcast({ type: 'update', id: id, payload: msg.payload }, id);
+            }
+        }
+        else if (msg.type === 'collect_flower') {
+            const flowerId = msg.id;
+            const flower = FLOWER_TYPES.find(f => f.id === flowerId);
+            if (flower && playerData[id]) {
+                const pd = playerData[id];
+                pd.money = (pd.money || 0) + flower.price;
+                if (!pd.skills) pd.skills = {};
+                if (!pd.skills.floristry) pd.skills.floristry = { xp: 0 };
+                pd.skills.floristry.xp += flower.xp;
+
+                ws.send(JSON.stringify({
+                    type: 'resource_success',
+                    kind: 'flower',
+                    id: flowerId,
+                    newMoney: pd.money,
+                    newXP: pd.skills.floristry.xp
+                }));
+            }
         }
 
         else if (msg.type === 'setName') {
@@ -621,7 +688,13 @@ wss.on('connection', (ws, req) => {
                     currentBobber: msg.saveState.currentBobber || 'classic',
 
                     currentPattern: msg.saveState.currentPattern || 'none',
-                    clickPowerLevel: typeof msg.saveState.clickPowerLevel === 'number' ? msg.saveState.clickPowerLevel : 0
+                    clickPowerLevel: typeof msg.saveState.clickPowerLevel === 'number' ? msg.saveState.clickPowerLevel : 0,
+                    // Resource Inventories
+                    woodInventory: typeof msg.saveState.woodInventory === 'object' ? msg.saveState.woodInventory : {},
+                    oreInventory: typeof msg.saveState.oreInventory === 'object' ? msg.saveState.oreInventory : {},
+                    wood: typeof msg.saveState.wood === 'number' ? msg.saveState.wood : 0,
+                    stone: typeof msg.saveState.stone === 'number' ? msg.saveState.stone : 0,
+                    skills: typeof msg.saveState.skills === 'object' ? msg.saveState.skills : { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 } }
                 };
 
                 // Sync Visuals
@@ -803,6 +876,113 @@ wss.on('connection', (ws, req) => {
                 soldCount: count,
                 soldValue: totalValue
             }));
+        }
+
+
+        else if (msg.type === 'sellWood') {
+            if (!playerData[id]) return;
+            const player = playerData[id];
+            const name = info.meta.name || "Fisher";
+            if (!player.woodInventory) player.woodInventory = {};
+
+            let totalValue = 0;
+            let count = 0;
+
+            Object.keys(player.woodInventory).forEach(woodId => {
+                const amt = player.woodInventory[woodId] || 0;
+                const woodType = WOOD_TYPES.find(w => w.id === woodId);
+                const price = woodType ? woodType.price : 20;
+                if (amt > 0) {
+                    totalValue += amt * price;
+                    count += amt;
+                }
+            });
+            // Legacy wood
+            if (player.wood && player.wood > 0) {
+                totalValue += player.wood * 20;
+                count += player.wood;
+            }
+
+            console.log(`[SELL] ${name} attempting to sell ${count} wood for $${totalValue}`);
+
+            if (count <= 0) {
+                console.log(`[SELL] ${name} has no wood to sell.`);
+                return;
+            }
+
+            player.money += totalValue;
+            player.woodInventory = {};
+            player.wood = 0;
+
+            ws.send(JSON.stringify({
+                type: 'stateUpdate',
+                money: player.money,
+                woodInventory: player.woodInventory,
+                wood: 0,
+                soldCount: count,
+                soldValue: totalValue,
+                soldType: 'wood'
+            }));
+            console.log(`[SELL] ${name} sold ${count} wood for $${totalValue}. New Balance: $${player.money}`);
+        }
+
+        else if (msg.type === 'sellOre') {
+            if (!playerData[id]) return;
+            const player = playerData[id];
+            const name = info.meta.name || "Fisher";
+            if (!player.oreInventory) player.oreInventory = {};
+
+            let totalValue = 0;
+            let count = 0;
+
+            Object.keys(player.oreInventory).forEach(oreId => {
+                const amt = player.oreInventory[oreId] || 0;
+                const oreType = ORE_TYPES.find(o => o.id === oreId);
+                const price = oreType ? oreType.price : 30;
+                if (amt > 0) {
+                    totalValue += amt * price;
+                    count += amt;
+                }
+            });
+            // Legacy stone
+            if (player.stone && player.stone > 0) {
+                totalValue += player.stone * 30;
+                count += player.stone;
+            }
+
+            console.log(`[SELL] ${name} attempting to sell ${count} ore for $${totalValue}`);
+
+            if (count <= 0) {
+                console.log(`[SELL] ${name} has no ore to sell.`);
+                return;
+            }
+
+            player.money += totalValue;
+            player.oreInventory = {};
+            player.stone = 0;
+
+            ws.send(JSON.stringify({
+                type: 'stateUpdate',
+                money: player.money,
+                oreInventory: player.oreInventory,
+                stone: 0,
+                soldCount: count,
+                soldValue: totalValue,
+                soldType: 'ore'
+            }));
+            console.log(`[SELL] ${name} sold ${count} ore for $${totalValue}. New Balance: $${player.money}`);
+        }
+
+        // --- NEW: Sync Resources from Client (after mining/chopping) ---
+        else if (msg.type === 'syncResources') {
+            if (!playerData[id]) return;
+            const name = info.meta.name || "Fisher";
+            console.log(`[SYNC] ${name} syncing resources...`);
+            if (typeof msg.woodInventory === 'object') playerData[id].woodInventory = msg.woodInventory;
+            if (typeof msg.oreInventory === 'object') playerData[id].oreInventory = msg.oreInventory;
+            if (typeof msg.wood === 'number') playerData[id].wood = msg.wood;
+            if (typeof msg.stone === 'number') playerData[id].stone = msg.stone;
+            if (typeof msg.skills === 'object') playerData[id].skills = msg.skills;
         }
 
         // --- NEW: Sync Money from Client (after shop purchases) ---
