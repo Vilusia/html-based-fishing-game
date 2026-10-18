@@ -1867,6 +1867,13 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
     if (typeof isInVoid !== 'undefined' && isInVoid) return 0;
     if (typeof isInLavaWorld !== 'undefined' && isInLavaWorld) return 0;
 
+    // --- CUSTOM LEVEL MODE ---
+    // A level built in editor.html fully replaces the procedural island, so the
+    // whole playing surface comes straight from the level's height grid.
+    if (window.CUSTOM_LEVEL && window.Level) {
+        return window.Level.sampleHeight(window.CUSTOM_LEVEL, x, z);
+    }
+
     // --- -1. DOCK (Absolute Priority) ---
     // Dock at X=0, Z=90-170, Y=0.3 (slightly above ground to prevent z-fighting)
     if (x > -6 && x < 6 && z > 85 && z < 170) {
@@ -1996,6 +2003,14 @@ function generateWorld(seedStr) {
     treeMeshes = []; treeColliders = [];
     pickableFlowers = []; // Track pickable flowers separately
     lavaColliders = [];
+
+    // --- CUSTOM LEVEL MODE ---
+    // Spawn the props authored in the level editor rather than the procedural
+    // scatter below.
+    if (window.CUSTOM_LEVEL && window.WorldGen) {
+        WorldGen.addLevelProps(scene, window.CUSTOM_LEVEL, { trees: treeMeshes, colliders: treeColliders });
+        return;
+    }
 
     const seed = xmur3(seedStr.toLowerCase())();
     const rand = mulberry32(seed);
@@ -3766,7 +3781,7 @@ function setupThreeJS() {
     // Configure Shadow Properties
     sunLight.shadow.mapSize.width = 2048;
     sunLight.shadow.mapSize.height = 2048;
-    const d = 150; // Cover entire island
+    const d = window.CUSTOM_LEVEL ? Math.min(600, window.CUSTOM_LEVEL.size * 0.6 + 40) : 150; // Cover the island / custom level
     sunLight.shadow.camera.left = -d;
     sunLight.shadow.camera.right = d;
     sunLight.shadow.camera.top = d;
@@ -3858,6 +3873,20 @@ function setupThreeJS() {
         scene.add(cloud);
         window.cloudSprites.push(cloud);
     }
+
+    // --- CUSTOM LEVEL MODE ---
+    // A saved level replaces the whole procedural island: a single ocean, the
+    // painted terrain, and the trees / rocks / NPCs placed in the editor.
+    if (window.CUSTOM_LEVEL && window.WorldGen) {
+        window.pondCollider = null;
+        window.darkPondCollider = null;
+        window.dockCollider = null;
+        window.customWorld = WorldGen.buildCustomWorld(scene, window.CUSTOM_LEVEL);
+        generateWorld("custom-level");
+        createNPCs();
+        createLocalPlayer();
+        createRainSystem();
+    } else {
 
     // Create HIGH QUALITY Grass Texture (Warmer/Vibrant Green)
     const grassTex = createNoiseTexture(256, 256, '#8FB38F', '#6B8E5F', 0.05, Math.random() * 100);
@@ -4043,6 +4072,8 @@ function setupThreeJS() {
     createWaterfallZone();
     createRainSystem();
     createLavaWorld();
+
+    } // end procedural island / custom-level branch
 
     fishingLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0xffffff }));
     fishingLine.frustumCulled = false; fishingLine.visible = false; scene.add(fishingLine);
@@ -4278,6 +4309,19 @@ function createNPCs() {
     addIcon(npcLavaMerchant, '$');
     addIcon(npcLavaStylist, '👕');
     addIcon(npcLavaBait, '🪱');
+
+    // --- CUSTOM LEVEL OVERRIDES ---
+    // Move the NPCs to wherever the level editor placed them.
+    if (window.CUSTOM_LEVEL && window.Level) {
+        const lv = window.CUSTOM_LEVEL;
+        const byType = { merchant: npcMerchant, stylist: npcStylist, bait: npcBait, tutorial: npcTutorial, lava: npcLavaKeeper };
+        lv.npcs.forEach((n) => {
+            const mesh = byType[n.type];
+            if (!mesh) return;
+            mesh.position.set(n.x, window.Level.sampleHeight(lv, n.x, n.z), n.z);
+            mesh.lookAt(0, mesh.position.y, 0);
+        });
+    }
 }
 
 function addIcon(parent, text) {
@@ -7821,7 +7865,31 @@ function createLocalPlayer() {
     if (talkingIcon) talkingIcon.renderOrder = 202;
 
     updateLocalVisuals();
-    player.position.set(25, 0, 0); scene.add(player);
+    if (window.CUSTOM_LEVEL && window.Level) {
+        // Spawn on the first patch of land found near the middle of the level.
+        const spot = findCustomSpawn(window.CUSTOM_LEVEL);
+        player.position.set(spot.x, window.Level.sampleHeight(window.CUSTOM_LEVEL, spot.x, spot.z), spot.z);
+    } else {
+        player.position.set(25, 0, 0);
+    }
+    scene.add(player);
+}
+
+// Finds a walkable land cell close to the centre of a custom level.
+function findCustomSpawn(lv) {
+    const g = lv.grid;
+    const mid = Math.floor(g / 2);
+    for (let ring = 0; ring < g; ring++) {
+        for (let dz = -ring; dz <= ring; dz++) {
+            for (let dx = -ring; dx <= ring; dx++) {
+                if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+                const gx = mid + dx, gz = mid + dz;
+                if (gx < 0 || gz < 0 || gx >= g || gz >= g) continue;
+                if (lv.heights[gz * g + gx] > lv.seaLevel + 0.5) return Level.cellCenter(lv, gx, gz);
+            }
+        }
+    }
+    return { x: 0, z: 0 };
 }
 
 function renderKeybinds() {
@@ -8530,6 +8598,15 @@ function releaseCast() {
             fishingZone = 'lava';
         } else {
             stopFishing(false, "Cast into the lava lake!");
+            return;
+        }
+    }
+    else if (window.CUSTOM_LEVEL && window.Level) {
+        // Custom levels: any water in the level is fishable. Treated as ocean.
+        if (window.Level.isWater(window.CUSTOM_LEVEL, targetPos.x, targetPos.z)) {
+            fishingZone = 'ocean';
+        } else {
+            stopFishing(false, "Cast into the water!");
             return;
         }
     }
@@ -9371,7 +9448,11 @@ function animate() {
                     if (testPos.x > b.minX - 0.5 && testPos.x < b.maxX + 0.5 &&
                         testPos.z > b.minZ - 0.5 && testPos.z < b.maxZ + 0.5) hitWall = true;
                 }
-                if (testPos.length() < LAKE_RADIUS + 0.5) hitWall = true;
+                if (window.CUSTOM_LEVEL && window.Level) {
+                    // Custom levels: block walking into water or off the map.
+                    if (window.Level.isWater(window.CUSTOM_LEVEL, testPos.x, testPos.z) ||
+                        !window.Level.inBounds(window.CUSTOM_LEVEL, testPos.x, testPos.z)) hitWall = true;
+                } else if (testPos.length() < LAKE_RADIUS + 0.5) hitWall = true;
 
                 // Pond collision
                 if (window.pondCollider) {
@@ -9452,7 +9533,10 @@ function animate() {
                         np.z > b.minZ - 0.5 && np.z < b.maxZ + 0.5) col = true;
                 }
                 // Water Collision (Lake, Pond, Dark Pond)
-                if (np.length() < LAKE_RADIUS + 0.5) col = true; // Main Lake
+                if (window.CUSTOM_LEVEL && window.Level) {
+                    if (window.Level.isWater(window.CUSTOM_LEVEL, np.x, np.z) ||
+                        !window.Level.inBounds(window.CUSTOM_LEVEL, np.x, np.z)) col = true;
+                } else if (np.length() < LAKE_RADIUS + 0.5) col = true; // Main Lake
 
                 if (window.pondCollider) {
                     if (np.distanceTo(_optVec3.set(window.pondCollider.x, 0, window.pondCollider.z)) < window.pondCollider.radius + 0.5) col = true;
@@ -9532,11 +9616,18 @@ function animate() {
             }
         }
         else if (!isInVoid) {
-            // Main Island Boundaries
-            // Exception: Allow walking past edge if on the dock (Z > 85, X close to 0)
-            const onDock = (player.position.z > 85 && player.position.z < 170 && Math.abs(player.position.x) < 6);
-            if (!onDock && player.position.length() > ISLAND_RADIUS - 1) player.position.setLength(ISLAND_RADIUS - 1);
-            if (player.position.length() < LAKE_RADIUS + 0.5) player.position.setLength(LAKE_RADIUS + 0.5);
+            if (window.CUSTOM_LEVEL && window.Level) {
+                // Custom levels: keep the player inside the level bounds.
+                const lim = window.CUSTOM_LEVEL.size / 2 - 1;
+                player.position.x = Math.max(-lim, Math.min(lim, player.position.x));
+                player.position.z = Math.max(-lim, Math.min(lim, player.position.z));
+            } else {
+                // Main Island Boundaries
+                // Exception: Allow walking past edge if on the dock (Z > 85, X close to 0)
+                const onDock = (player.position.z > 85 && player.position.z < 170 && Math.abs(player.position.x) < 6);
+                if (!onDock && player.position.length() > ISLAND_RADIUS - 1) player.position.setLength(ISLAND_RADIUS - 1);
+                if (player.position.length() < LAKE_RADIUS + 0.5) player.position.setLength(LAKE_RADIUS + 0.5);
+            }
         }
 
         if (isFirstPerson) {

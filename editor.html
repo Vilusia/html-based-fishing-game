@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Level Editor &mdash; HTML Fishing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root{
+  --p-face:#232636; --p-face-2:#2e3245; --p-face-3:#3b4057;
+  --p-sunken:#191b26; --p-line:#0c0d13; --p-bevel:#565d7d; --p-bevel-dark:#171a26;
+  --p-text:#e8ecf7; --p-text-dim:#9aa3c0; --p-text-mute:#6f7794;
+  --p-water:#3d7fb8; --p-water-dark:#24557f; --p-sand:#d9b26a;
+  --p-gold:#f2c14e; --p-good:#6fb54a; --p-bad:#c8534b; --p-warn:#d08a2e;
+  --font-head:'Silkscreen',monospace; --font-body:'VT323',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;background:#0b0d14;color:var(--p-text);
+  font-family:var(--font-body);font-size:17px;-webkit-font-smoothing:none;}
+canvas{display:block;}
+#ed-viewport{position:fixed;inset:0;z-index:0;}
+#ed-viewport canvas{outline:none;}
+
+/* --- generic pixel surface --- */
+.px-panel{
+  background:var(--p-face); border:2px solid var(--p-line);
+  box-shadow:inset 1px 1px 0 var(--p-bevel), inset -1px -1px 0 var(--p-bevel-dark), 0 3px 0 rgba(0,0,0,.5);
+  border-radius:0;
+}
+.px-btn{
+  font-family:var(--font-head);font-size:11px;line-height:1;letter-spacing:.5px;
+  color:var(--p-text);background:var(--p-face-2);border:2px solid var(--p-line);
+  box-shadow:inset 1px 1px 0 var(--p-bevel), inset -1px -1px 0 var(--p-bevel-dark), 0 2px 0 rgba(0,0,0,.5);
+  padding:8px 10px;cursor:pointer;border-radius:0;user-select:none;white-space:nowrap;
+}
+.px-btn:hover{background:var(--p-face-3);}
+.px-btn:active{transform:translateY(1px);box-shadow:inset 1px 1px 0 var(--p-bevel-dark), inset -1px -1px 0 var(--p-bevel);}
+.px-btn.is-on{background:var(--p-good);color:#0d1a08;box-shadow:inset 1px 1px 0 rgba(255,255,255,.35), inset -1px -1px 0 rgba(0,0,0,.4), 0 2px 0 rgba(0,0,0,.5);}
+.px-btn.danger{background:var(--p-bad);color:#fff;}
+.px-btn.gold{background:var(--p-gold);color:#231a00;}
+
+/* --- top bar --- */
+#ed-topbar{
+  position:fixed;top:0;left:0;right:0;height:44px;z-index:20;
+  display:flex;align-items:center;gap:10px;padding:0 10px;
+  background:var(--p-face);border-bottom:2px solid var(--p-line);
+  box-shadow:0 3px 0 rgba(0,0,0,.5);
+}
+#ed-topbar .brand{font-family:var(--font-head);font-size:13px;color:var(--p-gold);letter-spacing:1px;white-space:nowrap;}
+#ed-topbar .name-wrap{display:flex;align-items:center;gap:6px;margin-left:6px;}
+#ed-topbar input[type=text]{
+  font-family:var(--font-body);font-size:17px;color:var(--p-text);
+  background:var(--p-sunken);border:2px solid var(--p-line);
+  box-shadow:inset 1px 1px 0 var(--p-bevel-dark);padding:4px 8px;width:190px;border-radius:0;
+}
+#ed-topbar .spacer{flex:1;}
+.tbar-group{display:flex;gap:6px;align-items:center;}
+
+/* --- left tool column --- */
+#ed-tools{
+  position:fixed;top:54px;left:10px;z-index:20;width:62px;padding:6px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.tool{
+  width:100%;height:44px;display:flex;align-items:center;justify-content:center;
+  background:var(--p-face-2);border:2px solid var(--p-line);cursor:pointer;color:var(--p-text-dim);
+  box-shadow:inset 1px 1px 0 var(--p-bevel), inset -1px -1px 0 var(--p-bevel-dark);
+}
+.tool:hover{background:var(--p-face-3);color:var(--p-text);}
+.tool.is-on{background:var(--p-good);color:#0d1a08;box-shadow:inset 1px 1px 0 rgba(255,255,255,.35), inset -1px -1px 0 rgba(0,0,0,.4);}
+.tool svg{width:22px;height:22px;}
+.tool-sep{height:2px;background:var(--p-line);margin:2px 0;}
+
+/* --- right side panel --- */
+#ed-side{
+  position:fixed;top:54px;right:10px;bottom:44px;z-index:20;width:274px;
+  padding:10px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;
+}
+#ed-side::-webkit-scrollbar{width:10px;}
+#ed-side::-webkit-scrollbar-track{background:var(--p-sunken);}
+#ed-side::-webkit-scrollbar-thumb{background:var(--p-bevel);border:2px solid var(--p-line);}
+.sec{display:flex;flex-direction:column;gap:7px;}
+.sec h3{font-family:var(--font-head);font-size:11px;color:var(--p-gold);letter-spacing:1px;
+  border-bottom:2px solid var(--p-line);padding-bottom:4px;}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:16px;color:var(--p-text-dim);}
+.row label{flex:1;}
+input[type=number],select{
+  font-family:var(--font-body);font-size:16px;color:var(--p-text);background:var(--p-sunken);
+  border:2px solid var(--p-line);box-shadow:inset 1px 1px 0 var(--p-bevel-dark);
+  padding:3px 6px;width:96px;border-radius:0;
+}
+input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;cursor:pointer;}
+.val{font-family:var(--font-head);font-size:11px;color:var(--p-text);min-width:34px;text-align:right;}
+.hint{font-size:15px;color:var(--p-text-mute);line-height:1.25;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.grid2 .px-btn{width:100%;text-align:center;}
+.stat{display:flex;justify-content:space-between;font-size:16px;color:var(--p-text-dim);}
+.stat b{color:var(--p-text);font-family:var(--font-head);font-size:12px;}
+.npc-pick{display:flex;align-items:center;gap:8px;padding:5px 6px;border:2px solid var(--p-line);
+  background:var(--p-sunken);cursor:pointer;}
+.npc-pick:hover{background:var(--p-face-2);}
+.npc-pick.is-on{background:var(--p-face-3);box-shadow:inset 2px 2px 0 var(--p-good);}
+.npc-dot{width:14px;height:14px;border:2px solid var(--p-line);flex:0 0 auto;}
+.npc-pick span{font-size:16px;color:var(--p-text);}
+
+/* --- bottom status --- */
+#ed-status{
+  position:fixed;left:0;right:0;bottom:0;height:34px;z-index:20;
+  display:flex;align-items:center;gap:16px;padding:0 12px;
+  background:var(--p-face);border-top:2px solid var(--p-line);
+  font-family:var(--font-body);font-size:16px;color:var(--p-text-dim);
+}
+#ed-status b{color:var(--p-text);}
+
+/* --- overlays --- */
+.overlay{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(8,10,16,.78);}
+.overlay.on{display:flex;}
+.dialog{max-width:560px;padding:20px 22px;display:flex;flex-direction:column;gap:14px;}
+.dialog h2{font-family:var(--font-head);font-size:15px;color:var(--p-gold);letter-spacing:1px;}
+.dialog .keys{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:16px;}
+.dialog .keys kbd{font-family:var(--font-head);font-size:11px;background:var(--p-sunken);
+  border:2px solid var(--p-line);padding:3px 6px;color:var(--p-gold);white-space:nowrap;}
+.dialog .keys span{color:var(--p-text-dim);}
+.dialog .actions{display:flex;gap:8px;justify-content:flex-end;}
+#toast{position:fixed;left:50%;top:60px;transform:translateX(-50%);z-index:50;
+  background:var(--p-face);border:2px solid var(--p-line);padding:8px 16px;
+  box-shadow:inset 1px 1px 0 var(--p-bevel), inset -1px -1px 0 var(--p-bevel-dark), 0 3px 0 rgba(0,0,0,.5);
+  font-size:17px;color:var(--p-text);opacity:0;transition:opacity .2s;pointer-events:none;}
+#toast.on{opacity:1;}
+</style>
+</head>
+<body>
+
+<div id="ed-viewport"></div>
+
+<header id="ed-topbar">
+  <div class="brand">⌗ LEVEL EDITOR</div>
+  <div class="name-wrap">
+    <input type="text" id="level-name" maxlength="60" value="Untitled Level" spellcheck="false">
+  </div>
+  <div class="tbar-group">
+    <button class="px-btn" id="btn-new">NEW</button>
+    <button class="px-btn" id="btn-save">SAVE</button>
+    <button class="px-btn" id="btn-load">LOAD</button>
+    <button class="px-btn" id="btn-download">EXPORT</button>
+    <button class="px-btn" id="btn-upload">IMPORT</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="tbar-group">
+    <button class="px-btn" id="btn-undo">UNDO</button>
+    <button class="px-btn" id="btn-redo">REDO</button>
+    <button class="px-btn gold" id="btn-play">▶ PLAY IN GAME</button>
+    <button class="px-btn" id="btn-help">?</button>
+  </div>
+</header>
+
+<aside id="ed-tools" class="px-panel"></aside>
+
+<aside id="ed-side" class="px-panel">
+  <div class="sec">
+    <h3>BRUSH</h3>
+    <div class="row"><label>Size</label><input type="range" id="brush-radius" min="1" max="30" step="1" value="6"><span class="val" id="brush-radius-v">6</span></div>
+    <div class="row"><label>Strength</label><input type="range" id="brush-strength" min="0.5" max="4" step="0.5" value="1"><span class="val" id="brush-strength-v">1</span></div>
+    <div class="row"><label>Height</label><input type="number" id="brush-height" min="-6" max="40" step="0.5" value="2"></div>
+    <div class="hint" id="brush-tip"></div>
+  </div>
+
+  <div class="sec" id="sec-npc">
+    <h3>NPC TYPE</h3>
+    <div id="npc-list" style="display:flex;flex-direction:column;gap:5px;"></div>
+  </div>
+
+  <div class="sec">
+    <h3>LEVEL</h3>
+    <div class="row"><label>Terrain grid</label><input type="number" id="set-grid" min="8" max="256" step="1" value="64"></div>
+    <div class="row"><label>World size</label><input type="number" id="set-size" min="32" max="2048" step="16" value="256"></div>
+    <div class="row"><label>Sea level</label><input type="number" id="set-sea" min="-40" max="40" step="0.5" value="0"></div>
+    <div class="row"><label>Sea floor</label><input type="number" id="set-floor" min="-60" max="0" step="0.5" value="-6"></div>
+    <div class="grid2">
+      <button class="px-btn" id="btn-apply">APPLY GRID</button>
+      <button class="px-btn" id="btn-fill-land">FILL LAND</button>
+      <button class="px-btn" id="btn-fill-water">FILL WATER</button>
+      <button class="px-btn" id="btn-flat">FLATTEN ALL</button>
+    </div>
+    <div class="hint" id="apply-tip">Grid changes resample the existing terrain.</div>
+  </div>
+
+  <div class="sec">
+    <h3>VIEW</h3>
+    <div class="row"><label>Show grid</label><input type="checkbox" id="chk-grid" checked></div>
+    <div class="row"><label>Water</label><input type="checkbox" id="chk-water" checked></div>
+    <div class="row"><label>Camera speed</label><input type="range" id="cam-speed" min="6" max="90" step="1" value="26"><span class="val" id="cam-speed-v">26</span></div>
+    <div class="row"><label>Look sensitivity</label><input type="range" id="cam-sens" min="1" max="10" step="1" value="5"><span class="val" id="cam-sens-v">5</span></div>
+  </div>
+
+  <div class="sec">
+    <h3>SCENE</h3>
+    <div class="stat"><span>Land tiles</span><b id="st-land">0</b></div>
+    <div class="stat"><span>Water tiles</span><b id="st-water">0</b></div>
+    <div class="stat"><span>Trees</span><b id="st-trees">0</b></div>
+    <div class="stat"><span>Rocks</span><b id="st-rocks">0</b></div>
+    <div class="stat"><span>NPCs</span><b id="st-npcs">0</b></div>
+    <div class="grid2">
+      <button class="px-btn danger" id="btn-clear-props">CLEAR PROPS</button>
+      <button class="px-btn danger" id="btn-clear-npcs">CLEAR NPCs</button>
+    </div>
+  </div>
+</aside>
+
+<div id="ed-status">
+  <span>POS <b id="st-pos">–</b></span>
+  <span>HEIGHT <b id="st-height">–</b></span>
+  <span id="st-tool"><b>Land</b></span>
+  <span style="flex:1"></span>
+  <span class="hint">Right-drag to look · Wheel = brush size · Middle-drag = pan</span>
+</div>
+
+<div class="overlay" id="ov-help">
+  <div class="dialog px-panel">
+    <h2>HOW TO USE</h2>
+    <div class="keys">
+      <kbd>W A S D</kbd><span>Fly the camera (relative to where you look)</span>
+      <kbd>SPACE / CTRL</kbd><span>Fly up / down</span>
+      <kbd>SHIFT</kbd><span>Move faster</span>
+      <kbd>RIGHT DRAG</kbd><span>Look around</span>
+      <kbd>LEFT CLICK</kbd><span>Use the current tool (paint / place); drag to keep painting</span>
+      <kbd>RIGHT CLICK</kbd><span>Secondary: erase to ocean / delete object</span>
+      <kbd>WHEEL</kbd><span>Change the brush size</span>
+      <kbd>SHIFT+WHEEL</kbd><span>Dolly the camera forward / back</span>
+      <kbd>MIDDLE DRAG</kbd><span>Pan the camera</span>
+      <kbd>1 – 9</kbd><span>Quick-select a tool</span>
+      <kbd>G</kbd><span>Toggle the grid</span>
+      <kbd>CTRL+Z / CTRL+Y</kbd><span>Undo / redo</span>
+      <kbd>F</kbd><span>Frame the whole level</span>
+    </div>
+    <div class="actions"><button class="px-btn gold" id="help-close">GOT IT</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="file-input" accept=".json,application/json" style="display:none">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="icons.js?v=4"></script>
+<script src="worldgen.js?v=1"></script>
+<script src="editor.js?v=1"></script>
+</body>
+</html>
