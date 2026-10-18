@@ -60,37 +60,38 @@ function renderPropsUI() {
     list.innerHTML = '';
 
     const items = [
-        { id: 'campfire', icon: '🔥', name: 'Campfire' },
-        { id: 'tent', icon: '⛺', name: 'Tent' },
-        { id: 'blanket', icon: '🟥', name: 'Picnic Mat' },
-        { id: 'chair', icon: '🪑', name: 'Chair' },
-        { id: 'table', icon: '🪵', name: 'Picnic Table' },
-        { id: 'cooler', icon: '🧊', name: 'Cooler' },
-        { id: 'basket', icon: '🧺', name: 'Basket' },
-        { id: 'radio', icon: '📻', name: 'Radio' },
-        { id: 'lantern', icon: '🏮', name: 'Lantern' },
+        { id: 'campfire', icon: 'campfire', name: 'Campfire' },
+        { id: 'tent', icon: 'tent', name: 'Tent' },
+        { id: 'blanket', icon: 'blanket', name: 'Picnic Mat' },
+        { id: 'chair', icon: 'chair', name: 'Chair' },
+        { id: 'table', icon: 'table', name: 'Picnic Table' },
+        { id: 'cooler', icon: 'cooler', name: 'Cooler' },
+        { id: 'basket', icon: 'basket', name: 'Basket' },
+        { id: 'radio', icon: 'radio', name: 'Radio' },
+        { id: 'lantern', icon: 'lantern', name: 'Lantern' },
         // NEW PROPS
-        { id: 'umbrella', icon: '☂️', name: 'Beach Umbrella' },
-        { id: 'grill', icon: '🍖', name: 'BBQ Grill' },
-        { id: 'hammock', icon: '🛏️', name: 'Hammock' },
-        { id: 'logbench', icon: '🪵', name: 'Log Bench' },
-        { id: 'fishsign', icon: '🪧', name: 'Fishing Sign' },
-        { id: 'crate', icon: '📦', name: 'Dock Crate' },
-        { id: 'buoy', icon: '🔴', name: 'Buoy' },
-        { id: 'anchor', icon: '⚓', name: 'Anchor' },
-        { id: 'flowerpot', icon: '🌷', name: 'Flower Pot' },
-        { id: 'torch', icon: '🔦', name: 'Tiki Torch' },
-        { id: 'boat', icon: '🚣', name: 'Rowboat' },
-        { id: 'tireswing', icon: '🛞', name: 'Tire Swing' },
-        { id: 'hotspring', icon: '♨️', name: 'Hot Spring' },
-        { id: 'windchime', icon: '🎐', name: 'Wind Chime' },
-        { id: 'surfboard', icon: '🏄', name: 'Surfboard' }
+        { id: 'umbrella', icon: 'umbrella', name: 'Beach Umbrella' },
+        { id: 'grill', icon: 'grill', name: 'BBQ Grill' },
+        { id: 'hammock', icon: 'hammock', name: 'Hammock' },
+        { id: 'logbench', icon: 'logbench', name: 'Log Bench' },
+        { id: 'fishsign', icon: 'fishsign', name: 'Fishing Sign' },
+        { id: 'crate', icon: 'crate', name: 'Dock Crate' },
+        { id: 'buoy', icon: 'buoy', name: 'Buoy' },
+        { id: 'anchor', icon: 'anchor', name: 'Anchor' },
+        { id: 'flowerpot', icon: 'flowerpot', name: 'Flower Pot' },
+        { id: 'torch', icon: 'torch', name: 'Tiki Torch' },
+        { id: 'boat', icon: 'boat', name: 'Rowboat' },
+        { id: 'tireswing', icon: 'tireswing', name: 'Tire Swing' },
+        { id: 'hotspring', icon: 'hotspring', name: 'Hot Spring' },
+        { id: 'windchime', icon: 'windchime', name: 'Wind Chime' },
+        { id: 'surfboard', icon: 'surfboard', name: 'Surfboard' }
     ];
 
     items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'grid-entry';
-        div.innerHTML = `<div>${item.icon}</div><div>${item.name}</div>`;
+        const ic = window.PX ? PX.icon(item.icon, 30) : '';
+        div.innerHTML = `<div>${ic}</div><div>${item.name}</div>`;
         div.onclick = () => {
             placeProp(item.id);
             togglePropsUI();
@@ -702,7 +703,9 @@ function spawnPropMesh(data) {
     }
 
     mesh = g;
-    mesh.position.set(data.x, 0, data.z);
+    // Get terrain height for proper Y positioning
+    const terrainY = (typeof window.getTerrainHeight === 'function') ? window.getTerrainHeight(data.x, data.z) : 0;
+    mesh.position.set(data.x, terrainY, data.z);
 
     // Use rotation from network data if provided, otherwise use local player rotation
     if (typeof data.rot === 'number') {

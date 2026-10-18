@@ -14,7 +14,7 @@ function addSkillXP(skillName, xpAmount) {
 
     // Level up notification
     if (newLevel > oldLevel) {
-        showToast(`🎉 ${skillName.charAt(0).toUpperCase() + skillName.slice(1)} Level ${newLevel}!`, 'success');
+        showToast(`${skillName.charAt(0).toUpperCase() + skillName.slice(1)} Level ${newLevel}!`, 'success');
         Sound.sell(); // Play level up sound
     }
 }
@@ -75,7 +75,7 @@ function updateUI() {
                     const wDiv = document.createElement('div');
                     wDiv.innerText = `${woodType.name} x${count}`;
                     wDiv.style.color = woodType.color;
-                    wDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                    wDiv.style.borderBottom = "2px solid var(--p-line)";
                     wDiv.style.fontWeight = 'bold';
                     fragment.appendChild(wDiv);
                 }
@@ -84,8 +84,8 @@ function updateUI() {
             if (saveState.wood && saveState.wood > 0) {
                 const wDiv = document.createElement('div');
                 wDiv.innerText = `Wood x${saveState.wood}`;
-                wDiv.style.color = '#deb887';
-                wDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                wDiv.style.color = 'var(--p-sand)';
+                wDiv.style.borderBottom = "2px solid var(--p-line)";
                 wDiv.style.fontWeight = 'bold';
                 fragment.appendChild(wDiv);
             }
@@ -98,7 +98,7 @@ function updateUI() {
                     const oDiv = document.createElement('div');
                     oDiv.innerText = `${oreType.name} x${count}`;
                     oDiv.style.color = oreType.color;
-                    oDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                    oDiv.style.borderBottom = "2px solid var(--p-line)";
                     oDiv.style.fontWeight = 'bold';
                     fragment.appendChild(oDiv);
                 }
@@ -107,8 +107,8 @@ function updateUI() {
             if (saveState.stone && saveState.stone > 0) {
                 const sDiv = document.createElement('div');
                 sDiv.innerText = `Stone x${saveState.stone}`;
-                sDiv.style.color = '#aaa';
-                sDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                sDiv.style.color = 'var(--p-text-dim)';
+                sDiv.style.borderBottom = "2px solid var(--p-line)";
                 sDiv.style.fontWeight = 'bold';
                 fragment.appendChild(sDiv);
             }
@@ -119,9 +119,9 @@ function updateUI() {
                 const count = saveState.flowerInventory[flowerType.id] || 0;
                 if (count > 0) {
                     const fDiv = document.createElement('div');
-                    fDiv.innerText = `🌸 ${flowerType.name} x${count}`;
+                    fDiv.innerText = `${flowerType.name} x${count}`;
                     fDiv.style.color = flowerType.color;
-                    fDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                    fDiv.style.borderBottom = "2px solid var(--p-line)";
                     fDiv.style.fontWeight = 'bold';
                     fragment.appendChild(fDiv);
                 }
@@ -136,8 +136,8 @@ function updateUI() {
                 if (f.sizeLabel && f.sizeLabel !== 'Normal') label += ` [${f.sizeLabel}]`;
 
                 div.innerText = label;
-                div.style.fontSize = "11px";
-                div.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                div.style.fontSize = "15px";
+                div.style.borderBottom = "2px solid var(--p-line)";
                 fragment.appendChild(div);
             }
             UICache.lEl.appendChild(fragment);
@@ -227,7 +227,7 @@ function updateMerchantUI(container) {
     if (axeTool) {
         const hasAxe = saveState.unlockedTools.includes('axe');
         if (hasAxe) {
-            axeBtn = `<button class="btn-lg" disabled style="background:#224422; border-color:#448844; color:#8f8; width:100%;">Axe Owned</button>`;
+            axeBtn = `<button class="btn-lg btn-green" disabled style="width:100%;">Axe Owned</button>`;
         } else {
             const canAfford = saveState.money >= axeTool.price;
             const style = canAfford ? 'width:100%;' : 'width:100%; opacity:0.5; cursor:not-allowed;';
@@ -241,7 +241,7 @@ function updateMerchantUI(container) {
     if (pickTool) {
         const hasPick = (saveState.unlockedTools || []).includes('pickaxe');
         if (hasPick) {
-            pickBtn = `<button class="btn-lg" disabled style="background:#224422; border-color:#448844; color:#8f8; width:100%;">Pickaxe Owned</button>`;
+            pickBtn = `<button class="btn-lg btn-green" disabled style="width:100%;">Pickaxe Owned</button>`;
         } else {
             const canAfford = saveState.money >= pickTool.price;
             const style = canAfford ? 'width:100%;' : 'width:100%; opacity:0.5; cursor:not-allowed;';
@@ -253,35 +253,36 @@ function updateMerchantUI(container) {
     }
 
     container.innerHTML = `
-        <div style="background:#5D4037; padding:30px; border-radius:16px; border:4px solid #3E2723; 
-                    box-shadow:0 10px 0 rgba(0,0,0,0.5); width:350px; text-align:center; position:relative; max-width:90%; 
-                    max-height: 90vh; overflow-y: auto; text-shadow: 1px 1px 0 #000;">
-            
-            <h2 style="color:#FFD54F; margin-top:0; font-size: 28px;">MERCHANT</h2>
-            <div style="font-size:28px; color:#81C784; margin-bottom:20px; font-weight: bold;">$${saveState.money}</div>
+        <div style="background:var(--p-face); padding:30px; border-radius:0; border:2px solid var(--p-line);
+                    box-shadow: inset 1px 1px 0 var(--p-bevel), inset -1px -1px 0 var(--p-bevel-dark), 0 4px 0 rgba(0,0,0,0.5);
+                    width:350px; text-align:center; position:relative; max-width:90%;
+                    max-height: 90vh; overflow-y: auto;">
 
-            <h3 style="color:#FFF; border-bottom:3px solid #3E2723; padding-bottom:5px; margin-top:0; background: #4E342E; border-radius: 8px;">SELL</h3>
-            
+            <h2 style="margin-top:0; font-size: 16px;">Merchant</h2>
+            <div style="font-family:var(--font-display); font-size:16px; color:var(--p-gold); margin-bottom:20px;">$${saveState.money}</div>
+
+            <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell</h3>
+
             <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px; margin-top: 10px;">
-                <button class="btn-lg" onclick="actionSellFish()" ${totalFishValue === 0 ? 'disabled style="filter: grayscale(1); opacity:0.6"' : ''}>
+                <button class="btn-lg" onclick="actionSellFish()" ${totalFishValue === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
                     Sell Fish ($${totalFishValue})
                 </button>
-                <button class="btn-lg" onclick="actionSellWood()" ${totalWoodCount === 0 ? 'disabled style="filter: grayscale(1); opacity:0.6"' : ''}>
+                <button class="btn-lg" onclick="actionSellWood()" ${totalWoodCount === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
                     Sell Wood (${totalWoodCount}x = $${totalWoodValue})
                 </button>
-                <button class="btn-lg" onclick="actionSellOre()" ${totalOreCount === 0 ? 'disabled style="filter: grayscale(1); opacity:0.6"' : ''}>
+                <button class="btn-lg" onclick="actionSellOre()" ${totalOreCount === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
                     Sell Ore (${totalOreCount}x = $${totalOreValue})
                 </button>
-                <button class="btn-lg" onclick="actionSellFlowers()" ${totalFlowerCount === 0 ? 'disabled style="filter: grayscale(1); opacity:0.6"' : ''}>
-                    🌸 Sell Flowers (${totalFlowerCount}x = $${totalFlowerValue})
+                <button class="btn-lg" onclick="actionSellFlowers()" ${totalFlowerCount === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
+                    Sell Flowers (${totalFlowerCount}x = $${totalFlowerValue})
                 </button>
             </div>
 
-            <h3 style="color:#FFF; border-bottom:3px solid #3E2723; padding-bottom:5px; background: #4E342E; border-radius: 8px;">TOOLS</h3>
-            
+            <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px;">Tools</h3>
+
             <div style="display:flex; flex-direction:column; gap:10px; margin-bottom: 20px; margin-top: 10px;">
-                ${axeBtn.replace('style="', 'style="border-bottom: 4px solid #1B5E20; ')}
-                ${pickBtn.replace('style="', 'style="border-bottom: 4px solid #1B5E20; ')}
+                ${axeBtn}
+                ${pickBtn}
             </div>
 
             <button class="close-x-btn" onclick="document.getElementById('merchant-ui').style.display='none'">×</button>
@@ -436,7 +437,7 @@ window.actionSellFlowers = function () {
     saveState.money += total;
     saveGame();
     Sound.sell();
-    showToast(`🌸 Sold ${count} flowers for $${total}!`);
+    showToast(`Sold ${count} flowers for $${total}!`);
     updateMerchantUI(document.getElementById('merchant-ui'));
     updateUI(); // Refresh inventory display
 };
@@ -767,13 +768,13 @@ function updateMicUI() {
     const el = document.getElementById('mic-status');
     const mobEl = document.getElementById('mic-toggle-mobile');
     const txt = isMicMuted ? '🔇' : '🎤';
-    const col = isMicMuted ? '#ff4444' : '#44ff44';
+    const col = isMicMuted ? 'var(--p-bad)' : 'var(--p-good)';
     if (localStream) {
         if (el) { el.innerText = txt; el.style.color = col; }
         if (mobEl) { mobEl.innerText = txt; mobEl.style.color = col; }
     } else {
-        if (el) { el.innerText = '🚫'; el.style.color = '#888'; }
-        if (mobEl) { mobEl.innerText = '🚫'; mobEl.style.color = '#888'; }
+        if (el) { el.innerText = '🚫'; el.style.color = 'var(--p-text-mute)'; }
+        if (mobEl) { mobEl.innerText = '🚫'; mobEl.style.color = 'var(--p-text-mute)'; }
     }
 }
 
@@ -1588,22 +1589,21 @@ async function openServerBrowser() {
 
         servers.forEach(s => {
             const row = document.createElement('div');
-            row.style.background = 'rgba(255,255,255,0.1)';
+            row.style.background = 'var(--p-face-2)';
+            row.style.border = '2px solid var(--p-line)';
             row.style.marginBottom = '5px';
             row.style.padding = '10px';
-            row.style.borderRadius = '8px';
+            row.style.borderRadius = '0';
             row.style.display = 'flex';
             row.style.justifyContent = 'space-between';
             row.style.alignItems = 'center';
 
             const info = document.createElement('div');
-            info.innerHTML = `<b>${s.name}</b><br><span style="font-size:12px;color:#aaa;">${s.players} Players</span>`;
+            info.innerHTML = `<b>${s.name}</b><br><span style="font-size:15px;color:var(--p-text-dim);">${s.players} Players</span>`;
 
             const btn = document.createElement('button');
-            btn.className = 'btn-sm';
+            btn.className = 'btn-sm btn-green';
             btn.innerText = "JOIN";
-            btn.style.background = '#44ff44';
-            btn.style.color = 'black';
 
             btn.onclick = () => {
                 // --- FIX START: Save Name Before Connecting ---
@@ -3051,7 +3051,7 @@ function displayChatMessage(name, text, id) {
     const safeText = escapeHTML(rawText);
 
     if (id === 'system') {
-        line.innerHTML = `<span style="color:#ffd700; font-style:italic; font-weight:bold; font-size:12px;">${safeName} ${safeText}</span>`;
+        line.innerHTML = `<span style="color:var(--p-sand); font-style:italic; font-size:15px;">${safeName} ${safeText}</span>`;
     } else {
 
         // --- SECURITY LOGIC ---
@@ -3220,12 +3220,12 @@ async function refreshServerCount() {
         if (!response.ok) throw new Error("Server Offline");
 
         const data = await response.json();
-        el.innerText = `🟢 ${data.players} Online`;
-        el.style.color = '#44ff44';
+        el.innerText = `${data.players} Online`;
+        el.style.color = 'var(--p-good)';
     } catch (err) {
         console.warn("Server Check Failed:", err);
-        el.innerText = "🔴 Offline";
-        el.style.color = '#ff4444';
+        el.innerText = "Offline";
+        el.style.color = 'var(--p-bad)';
     }
 }
 
@@ -4872,8 +4872,8 @@ window.toggleMidiMute = function () {
 function updateMidiUI() {
     const btn = document.getElementById('btn-midi-toggle');
     if (btn) {
-        btn.innerText = saveState.midiMuted ? "🎸 MIDI: OFF" : "🎸 MIDI: ON";
-        btn.style.color = saveState.midiMuted ? '#ff4444' : '#44ff44';
+        btn.innerText = saveState.midiMuted ? "MIDI: OFF" : "MIDI: ON";
+        btn.style.color = saveState.midiMuted ? 'var(--p-bad)' : 'var(--p-good)';
     }
 }
 
@@ -4887,8 +4887,8 @@ window.toggleDebugMode = function () {
 function updateDebugUI() {
     const btn = document.getElementById('btn-debug-toggle');
     if (btn) {
-        btn.innerText = saveState.debugMode ? "🐛 Debug: ON" : "🐛 Debug: OFF";
-        btn.style.color = saveState.debugMode ? '#44ff44' : '#ff4444';
+        btn.innerText = saveState.debugMode ? "Debug: ON" : "Debug: OFF";
+        btn.style.color = saveState.debugMode ? 'var(--p-good)' : 'var(--p-bad)';
     }
 }
 // --- MODULAR CHARACTER DRAWING FUNCTIONS ---
@@ -5125,8 +5125,8 @@ window.toggleMidiMute = function () {
 function updateMidiUI() {
     const btn = document.getElementById('btn-midi-toggle');
     if (btn) {
-        btn.innerText = saveState.midiMuted ? "🎸 MIDI: OFF" : "🎸 MIDI: ON";
-        btn.style.color = saveState.midiMuted ? '#ff4444' : '#44ff44';
+        btn.innerText = saveState.midiMuted ? "MIDI: OFF" : "MIDI: ON";
+        btn.style.color = saveState.midiMuted ? 'var(--p-bad)' : 'var(--p-good)';
     }
 }
 
@@ -8766,7 +8766,7 @@ function handleHit(data) {
         knockbackVelocity.z = data.force.z;
         knockbackVelocity.y = 5;
 
-        showToast("💥 OOF! You got punched!");
+        showToast("OOF! You got punched!");
         broadcastSound('punch');
     }
 
@@ -9100,9 +9100,9 @@ function updateMinigameUI(dt) {
     bEl.style.bottom = minigame.barPos + '%';
     pFill.style.height = minigame.progress + '%';
 
-    if (minigame.progress > 80) pFill.style.background = '#00ff00';
-    else if (minigame.progress > 40) pFill.style.background = '#ffff00';
-    else pFill.style.background = '#ff4444';
+    if (minigame.progress > 80) pFill.style.background = 'var(--p-good)';
+    else if (minigame.progress > 40) pFill.style.background = 'var(--p-gold)';
+    else pFill.style.background = 'var(--p-bad)';
 
     // --- 5. CHECK WIN/FAIL ---
     if (minigame.progress >= 100) {
@@ -9962,10 +9962,10 @@ function renderSkillsUI() {
     if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 }, floristry: { xp: 0 } };
 
     const skillData = [
-        { id: 'fishing', name: 'Fishing', icon: '🎣', color: '#4a90d9' },
-        { id: 'lumberjack', name: 'Lumberjack', icon: '🪓', color: '#8B4513' },
-        { id: 'mining', name: 'Mining', icon: '⛏️', color: '#808080' },
-        { id: 'floristry', name: 'Floristry', icon: '🌸', color: '#FF69B4' }
+        { id: 'fishing', name: 'Fishing', icon: 'rod', color: '#4a90d9' },
+        { id: 'lumberjack', name: 'Lumberjack', icon: 'axe', color: '#a9763f' },
+        { id: 'mining', name: 'Mining', icon: 'pickaxe', color: '#9aa3c0' },
+        { id: 'floristry', name: 'Floristry', icon: 'flower', color: '#e58fb8' }
     ];
 
     skillData.forEach(skill => {
@@ -9976,16 +9976,16 @@ function renderSkillsUI() {
         const xpProgress = level >= 99 ? 100 : ((xp - xpForCurrent) / (xpForNext - xpForCurrent)) * 100;
 
         const div = document.createElement('div');
-        div.style.cssText = 'background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;';
+        div.style.cssText = 'background: var(--p-face-2); border: 2px solid var(--p-line); padding: 12px;';
         div.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="font-size: 18px;">${skill.icon} ${skill.name}</span>
-                <span style="font-size: 20px; font-weight: bold; color: ${skill.color};">Level ${level}</span>
+                <span style="font-size: 17px; color: var(--p-text);">${window.PX ? PX.icon(skill.icon, 17) : ''} ${skill.name}</span>
+                <span style="font-size: 17px; color: var(--p-sand);">Level ${level}</span>
             </div>
-            <div style="background: #333; border-radius: 4px; height: 12px; overflow: hidden;">
-                <div style="width: ${xpProgress.toFixed(1)}%; height: 100%; background: ${skill.color}; transition: width 0.3s;"></div>
+            <div style="background: var(--p-sunken); border: 2px solid var(--p-line); height: 14px; overflow: hidden;">
+                <div style="width: ${xpProgress.toFixed(1)}%; height: 100%; background: ${skill.color}; transition: width 0.3s steps(4);"></div>
             </div>
-            <div style="font-size: 11px; color: #888; margin-top: 4px; text-align: right;">
+            <div style="font-size: 15px; color: var(--p-text-mute); margin-top: 4px; text-align: right;">
                 ${level >= 99 ? 'MAX LEVEL' : `${xp.toLocaleString()} / ${xpForNext.toLocaleString()} XP`}
             </div>
         `;
@@ -10038,10 +10038,10 @@ function updateHotbarVisuals() {
 
         if (isUnlocked) {
             const tool = TOOLS.find(t => t.id === toolId);
-            iconEl.innerText = tool ? tool.icon : '?';
+            iconEl.innerHTML = (window.PX && PX.has(toolId)) ? PX.icon(toolId, 30) : (tool ? tool.icon : '?');
             slotEl.style.opacity = 1;
         } else {
-            iconEl.innerText = '🔒';
+            iconEl.innerHTML = window.PX ? PX.icon('lock', 30) : '🔒';
             slotEl.style.opacity = 0.5;
         }
 
@@ -10775,8 +10775,8 @@ window.toggleShowTitles = function () {
 function updateTitleUI() {
     const btn = document.getElementById('btn-titles-toggle');
     if (btn) {
-        btn.innerText = saveState.showTitles ? "🏷️ Titles: ON" : "🏷️ Titles: OFF";
-        btn.style.color = saveState.showTitles ? '#44ff44' : '#ff4444';
+        btn.innerText = saveState.showTitles ? "Titles: ON" : "Titles: OFF";
+        btn.style.color = saveState.showTitles ? 'var(--p-good)' : 'var(--p-bad)';
     }
 }
 
@@ -11359,7 +11359,7 @@ window.toggleMusic = function () {
 }
 
 window.deleteSave = function () {
-    if (confirm("⚠️ ARE YOU SURE? ⚠️\n\nThis will PERMANENTLY delete your money, items, and unlocks.\n\nPress OK to wipe your save and restart.")) {
+    if (confirm("ARE YOU SURE?\n\nThis will PERMANENTLY delete your money, items, and unlocks.\n\nPress OK to wipe your save and restart.")) {
         localStorage.removeItem('islandFisherSave');
         location.reload();
     }
@@ -11418,8 +11418,8 @@ window.changeEyeColor = function (c) {
 function updateMusicUI() {
     const btn = document.getElementById('btn-music-toggle');
     if (btn) {
-        btn.innerText = saveState.musicMuted ? "🎵 Music: OFF" : "🎵 Music: ON";
-        btn.style.color = saveState.musicMuted ? '#ff4444' : '#44ff44';
+        btn.innerText = saveState.musicMuted ? "Music: OFF" : "Music: ON";
+        btn.style.color = saveState.musicMuted ? 'var(--p-bad)' : 'var(--p-good)';
     }
 }
 
@@ -11543,19 +11543,20 @@ function updateLocalVisuals() {
         tabsDiv.style.cssText = 'grid-column: 1 / -1; display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px;';
 
         const zones = [
-            { id: 'all', name: '🌍 All', color: '#666' },
-            { id: 'lake', name: '💧 Lake', color: '#4488ff' },
-            { id: 'lightpond', name: '☀️ Light Pond', color: '#88cc44' },
-            { id: 'darkpond', name: '🌙 Dark Pond', color: '#6644aa' },
-            { id: 'ocean', name: '🌊 Ocean', color: '#0066aa' },
-            { id: 'lava', name: '🔥 Lava', color: '#ff4400' },
-            { id: 'special', name: '⭐ Special', color: '#ffaa00' }
+            { id: 'all', name: 'All', icon: 'globe', color: '#6f7794' },
+            { id: 'lake', name: 'Lake', icon: 'droplet', color: '#3d7fb8' },
+            { id: 'lightpond', name: 'Light Pond', icon: 'sun', color: '#6fb54a' },
+            { id: 'darkpond', name: 'Dark Pond', icon: 'moon', color: '#6b5aa8' },
+            { id: 'ocean', name: 'Ocean', icon: 'wave', color: '#24557f' },
+            { id: 'lava', name: 'Lava', icon: 'warn', color: '#c8534b' },
+            { id: 'special', name: 'Special', icon: 'star', color: '#f2c14e' }
         ];
 
         zones.forEach(zone => {
             const btn = document.createElement('button');
-            btn.textContent = zone.name;
-            btn.style.cssText = `padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; background: ${zoneFilter === zone.id ? zone.color : '#333'}; color: ${zoneFilter === zone.id ? '#fff' : '#aaa'};`;
+            const active = zoneFilter === zone.id;
+            btn.innerHTML = (window.PX ? PX.icon(zone.icon, 14) : '') + ' ' + zone.name;
+            btn.style.cssText = `font-family: var(--font-display); padding: 6px 10px; border: 2px solid var(--p-line); border-radius: 0; cursor: pointer; font-size: 10px; background: ${active ? zone.color : 'var(--p-face-2)'}; color: ${active ? '#0c0d13' : 'var(--p-text-dim)'};`;
             btn.onclick = () => renderJournal(zone.id);
             tabsDiv.appendChild(btn);
         });
@@ -11619,12 +11620,13 @@ function updateLocalVisuals() {
         header.style.gridColumn = "1 / -1";
         header.style.textAlign = "center";
         header.style.marginBottom = "15px";
-        header.style.color = "#fff";
-        header.style.background = "rgba(0,0,0,0.5)";
+        header.style.color = "var(--p-text)";
+        header.style.background = "var(--p-sunken)";
+        header.style.border = "2px solid var(--p-line)";
         header.style.padding = "10px";
-        header.style.borderRadius = "8px";
+        header.style.borderRadius = "0";
         header.innerHTML = `<h3 style="margin:0">Discovery Progress: ${caughtTierCount} / ${totalTierCount}</h3>
-        <div style="font-size:12px; color:#888; margin-top:5px;">${caughtSpeciesCount} / ${totalFishCount} species discovered</div>`;
+        <div style="font-size:15px; color:var(--p-text-dim); margin-top:5px;">${caughtSpeciesCount} / ${totalFishCount} species discovered</div>`;
         container.appendChild(header);
 
         // --- 4. RENDER GRID ---
@@ -11658,14 +11660,14 @@ function updateLocalVisuals() {
                 placeholder.style.alignItems = 'center';
                 placeholder.style.justifyContent = 'center';
                 placeholder.style.fontSize = '32px';
-                placeholder.style.color = '#333';
+                placeholder.style.color = 'var(--p-face-3)';
                 placeholder.style.fontWeight = 'bold';
                 placeholder.innerText = '?';
                 entry.appendChild(placeholder);
             }
 
-            let html = `<div class="journal-name" style="color:${isCaught ? fish.color : '#555'}; font-weight:bold; font-size:12px; text-shadow: 1px 1px 0 #000; text-align:center;">${isCaught ? fish.name : "???"}</div>`;
-            html += `<div class="journal-rarity" style="font-size:10px; color:#888;">${fish.rarity}</div>`;
+            let html = `<div class="journal-name" style="color:${isCaught ? fish.color : 'var(--p-text-mute)'}; font-size:15px; text-align:center;">${isCaught ? fish.name : "???"}</div>`;
+            html += `<div class="journal-rarity" style="font-size:14px; color:var(--p-text-mute);">${fish.rarity}</div>`;
 
             const textContainer = document.createElement('div');
             textContainer.innerHTML = html;
@@ -11856,7 +11858,7 @@ function updateLocalVisuals() {
         container.innerHTML = '';
 
         if (saveState.savedOutfits.length === 0) {
-            container.innerHTML = '<div style="color:#888; text-align:center; font-size:12px; margin-top:20px;">No saved outfits.</div>';
+            container.innerHTML = '<div style="color:var(--p-text-dim); text-align:center; font-size:15px; margin-top:20px;">No saved outfits.</div>';
             return;
         }
 
@@ -11864,8 +11866,9 @@ function updateLocalVisuals() {
             const row = document.createElement('div');
             row.style.display = 'flex';
             row.style.alignItems = 'center';
-            row.style.background = 'rgba(255,255,255,0.1)';
-            row.style.borderRadius = '6px';
+            row.style.background = 'var(--p-face-2)';
+            row.style.border = '2px solid var(--p-line)';
+            row.style.borderRadius = '0';
             row.style.padding = '5px';
             row.style.gap = '5px';
 
@@ -12042,26 +12045,26 @@ function updateLocalVisuals() {
         const createTab = (id, label) => {
             const btn = document.createElement('button');
             btn.className = 'btn-lg';
-            btn.style.fontSize = '12px';
+            btn.style.fontSize = '10px';
             btn.style.padding = '8px 10px';
             btn.style.flex = '1';
             const isActive = shopMode === id;
-            btn.style.background = isActive ? '#44ff44' : '#444';
-            btn.style.color = isActive ? '#000' : '#fff';
-            btn.style.border = isActive ? '2px solid #fff' : '1px solid #555';
+            btn.style.background = isActive ? 'var(--p-sand)' : 'var(--p-face-2)';
+            btn.style.color = isActive ? '#1a1206' : 'var(--p-text-dim)';
+            btn.style.border = '2px solid var(--p-line)';
             btn.innerText = label;
             btn.onclick = () => { shopMode = id; renderShop(); };
             navDiv.appendChild(btn);
         };
 
-        createTab('hats', '🎩 Hats');
-        createTab('rods', '🎣 Rods');
-        createTab('shirts', '👕 Shirts');
-        createTab('collars', '🔔 Collars');
-        createTab('patterns', '🐾 Patterns');
-        createTab('titles', '🏷️ Titles');
-        createTab('misc', '🎸 Misc');
-        createTab('bobbers', '🔴 Bobbers');
+        createTab('hats', 'Hats');
+        createTab('rods', 'Rods');
+        createTab('shirts', 'Shirts');
+        createTab('collars', 'Collars');
+        createTab('patterns', 'Patterns');
+        createTab('titles', 'Titles');
+        createTab('misc', 'Misc');
+        createTab('bobbers', 'Bobbers');
         container.appendChild(navDiv);
 
         // --- COLLAR TAB ---
@@ -12102,7 +12105,7 @@ function updateLocalVisuals() {
                     };
                 } else {
                     btn.innerText = `$${item.price}`;
-                    btn.style.color = saveState.money >= item.price ? '#00cc00' : '#ff4444';
+                    btn.style.color = saveState.money >= item.price ? 'var(--p-good)' : 'var(--p-bad)';
                     btn.onclick = () => {
                         if (saveState.money >= item.price) {
                             saveState.money -= item.price;
@@ -12157,7 +12160,7 @@ function updateLocalVisuals() {
                     };
                 } else {
                     btn.innerText = `$${pattern.price}`;
-                    btn.style.color = saveState.money >= pattern.price ? '#00cc00' : '#ff4444';
+                    btn.style.color = saveState.money >= pattern.price ? 'var(--p-good)' : 'var(--p-bad)';
                     btn.onclick = () => {
                         if (saveState.money >= pattern.price) {
                             saveState.money -= pattern.price;
@@ -12210,7 +12213,7 @@ function updateLocalVisuals() {
                     };
                 } else {
                     btn.innerText = `$${shirt.price}`;
-                    btn.style.color = saveState.money >= shirt.price ? '#00cc00' : '#ff4444';
+                    btn.style.color = saveState.money >= shirt.price ? 'var(--p-good)' : 'var(--p-bad)';
                     btn.onclick = () => {
                         if (saveState.money >= shirt.price) {
                             saveState.money -= shirt.price;
@@ -12256,7 +12259,7 @@ function updateLocalVisuals() {
                 else if (isOwned) { btn.innerText = "Equip"; btn.onclick = () => equipHat(hat.id); }
                 else {
                     btn.innerText = `$${hat.price}`;
-                    btn.style.color = saveState.money >= hat.price ? '#00cc00' : '#ff4444';
+                    btn.style.color = saveState.money >= hat.price ? 'var(--p-good)' : 'var(--p-bad)';
                     btn.onclick = () => buyHat(hat);
                 }
                 entry.appendChild(btn);
@@ -12308,7 +12311,7 @@ function updateLocalVisuals() {
                     if (item.unlockCount) {
                         if (uniqueFishCount >= item.unlockCount) {
                             btn.innerText = "Claim Reward!";
-                            btn.style.color = '#00ffff';
+                            btn.style.color = 'var(--p-gold)';
                             btn.onclick = () => {
                                 saveState.unlockedRods.push(item.id);
                                 Sound.sell();
@@ -12318,17 +12321,17 @@ function updateLocalVisuals() {
                             };
                         } else {
                             btn.innerText = `Need ${item.unlockCount} Fish`;
-                            btn.style.fontSize = '10px';
-                            btn.style.color = '#888';
+                            btn.style.fontSize = '15px';
+                            btn.style.color = 'var(--p-text-dim)';
                             btn.disabled = true;
                             const prog = document.createElement('div');
-                            prog.style.fontSize = '9px'; prog.style.color = '#666';
+                            prog.style.fontSize = '14px'; prog.style.color = 'var(--p-text-mute)';
                             prog.innerText = `(${uniqueFishCount} / ${item.unlockCount})`;
                             entry.appendChild(prog);
                         }
                     } else {
                         btn.innerText = `$${item.price}`;
-                        btn.style.color = saveState.money >= item.price ? '#00cc00' : '#ff4444';
+                        btn.style.color = saveState.money >= item.price ? 'var(--p-good)' : 'var(--p-bad)';
                         btn.onclick = () => {
                             if (saveState.money >= item.price) {
                                 saveState.money -= item.price;
@@ -12410,7 +12413,7 @@ function updateLocalVisuals() {
                     };
                 } else {
                     btn.innerText = `$${item.price}`;
-                    btn.style.color = saveState.money >= item.price ? '#00cc00' : '#ff4444';
+                    btn.style.color = saveState.money >= item.price ? 'var(--p-good)' : 'var(--p-bad)';
                     btn.onclick = () => {
                         if (saveState.money >= item.price) {
                             saveState.money -= item.price;
@@ -12431,7 +12434,7 @@ function updateLocalVisuals() {
             const hasGuitar = saveState.unlockedTools.includes('guitar');
 
             const gTitle = document.createElement('div');
-            gTitle.innerHTML = "<b>🎸 Acoustic Guitar</b>";
+            gTitle.innerHTML = (window.PX ? PX.icon('guitar', 16) : '') + " <b>Acoustic Guitar</b>";
             guitarDiv.appendChild(gTitle);
 
             const gDesc = document.createElement('div');
@@ -12447,7 +12450,7 @@ function updateLocalVisuals() {
             } else {
                 const btn = document.createElement('button');
                 btn.innerText = "Buy ($500)";
-                btn.style.color = saveState.money >= 500 ? '#44ff44' : '#ff4444';
+                btn.style.color = saveState.money >= 500 ? 'var(--p-good)' : 'var(--p-bad)';
                 btn.onclick = () => {
                     if (saveState.money >= 500) {
                         saveState.money -= 500;
@@ -12469,7 +12472,7 @@ function updateLocalVisuals() {
             const hasAxe = saveState.unlockedTools.includes('axe');
 
             const aTitle = document.createElement('div');
-            aTitle.innerHTML = "<b>🪓 Woodcutter's Axe</b>";
+            aTitle.innerHTML = (window.PX ? PX.icon('axe', 16) : '') + " <b>Woodcutter's Axe</b>";
             axeDiv.appendChild(aTitle);
 
             const aDesc = document.createElement('div');
@@ -12485,7 +12488,7 @@ function updateLocalVisuals() {
             } else {
                 const btn = document.createElement('button');
                 btn.innerText = "Buy ($150)";
-                btn.style.color = saveState.money >= 150 ? '#44ff44' : '#ff4444';
+                btn.style.color = saveState.money >= 150 ? 'var(--p-good)' : 'var(--p-bad)';
                 btn.onclick = () => {
                     if (saveState.money >= 150) {
                         saveState.money -= 150;
@@ -12506,7 +12509,7 @@ function updateLocalVisuals() {
             const hasGlove = saveState.unlockedTools.includes('glove');
 
             const glTitle = document.createElement('div');
-            glTitle.innerHTML = "<b>🥊 PvP Glove</b>";
+            glTitle.innerHTML = (window.PX ? PX.icon('glove', 16) : '') + " <b>PvP Glove</b>";
             gloveDiv.appendChild(glTitle);
 
             const glDesc = document.createElement('div');
@@ -12522,7 +12525,7 @@ function updateLocalVisuals() {
             } else {
                 const btn = document.createElement('button');
                 btn.innerText = "Buy ($1000)";
-                btn.style.color = saveState.money >= 1000 ? '#44ff44' : '#ff4444';
+                btn.style.color = saveState.money >= 1000 ? 'var(--p-good)' : 'var(--p-bad)';
                 btn.onclick = () => {
                     if (saveState.money >= 1000) {
                         saveState.money -= 1000;
@@ -12544,7 +12547,7 @@ function updateLocalVisuals() {
             const hasPick = saveState.unlockedTools.includes('pickaxe');
 
             const pTitle = document.createElement('div');
-            pTitle.innerHTML = "<b>⛏️ Pickaxe</b>";
+            pTitle.innerHTML = (window.PX ? PX.icon('pickaxe', 16) : '') + " <b>Pickaxe</b>";
             pickDiv.appendChild(pTitle);
 
             const pDesc = document.createElement('div');
@@ -12560,7 +12563,7 @@ function updateLocalVisuals() {
             } else {
                 const btn = document.createElement('button');
                 btn.innerText = "Buy ($800)";
-                btn.style.color = saveState.money >= 800 ? '#44ff44' : '#ff4444';
+                btn.style.color = saveState.money >= 800 ? 'var(--p-good)' : 'var(--p-bad)';
                 btn.onclick = () => {
                     if (saveState.money >= 800) {
                         saveState.money -= 800;
@@ -12594,15 +12597,14 @@ function updateLocalVisuals() {
 
         const upgradeDiv = document.createElement('div');
         upgradeDiv.className = 'grid-entry';
-        upgradeDiv.style.borderColor = '#00ffff';
-        upgradeDiv.style.background = '#002233';
+        upgradeDiv.style.borderColor = 'var(--p-water)';
 
         const upTitle = document.createElement('div');
-        upTitle.innerHTML = `<b>⚓ Stabilizer v${lvl}</b>`;
+        upTitle.innerHTML = `<b>Stabilizer v${lvl}</b>`;
         upgradeDiv.appendChild(upTitle);
 
         const upDesc = document.createElement('div');
-        upDesc.style.fontSize = '12px';
+        upDesc.style.fontSize = '15px';
         upDesc.style.margin = '5px 0';
         if (lvl < maxLvl) {
             upDesc.innerHTML = "Reduces bar drain.<br>Makes catching safer.";
@@ -12616,13 +12618,13 @@ function updateLocalVisuals() {
             const btn = document.createElement('button');
             btn.innerText = `Upgrade ($${cost})`;
             btn.style.marginTop = 'auto';
-            btn.style.color = saveState.money >= cost ? '#44ff44' : '#ff4444';
+            btn.style.color = saveState.money >= cost ? 'var(--p-good)' : 'var(--p-bad)';
             btn.onclick = () => buyAutoReelUpgrade(cost);
             upgradeDiv.appendChild(btn);
         } else {
             const lbl = document.createElement('div');
             lbl.innerText = "MAXED";
-            lbl.style.color = '#ffff00';
+            lbl.style.color = 'var(--p-gold)';
             lbl.style.marginTop = 'auto';
             upgradeDiv.appendChild(lbl);
         }
@@ -12634,15 +12636,14 @@ function updateLocalVisuals() {
 
         const pDiv = document.createElement('div');
         pDiv.className = 'grid-entry';
-        pDiv.style.borderColor = '#ff00ff';
-        pDiv.style.background = '#330033';
+        pDiv.style.borderColor = 'var(--p-sand)';
 
         const pTitle = document.createElement('div');
-        pTitle.innerHTML = `<b>📏 Bar Size v${cLvl}</b>`;
+        pTitle.innerHTML = `<b>Bar Size v${cLvl}</b>`;
         pDiv.appendChild(pTitle);
 
         const pDesc = document.createElement('div');
-        pDesc.style.fontSize = '12px';
+        pDesc.style.fontSize = '15px';
         pDesc.style.margin = '5px 0';
         if (cLvl < cMax) {
             pDesc.innerHTML = "Increases catch area.<br>Easier validation.";
@@ -12656,13 +12657,13 @@ function updateLocalVisuals() {
             const btn = document.createElement('button');
             btn.innerText = `Upgrade ($${cost})`;
             btn.style.marginTop = 'auto';
-            btn.style.color = saveState.money >= cost ? '#44ff44' : '#ff4444';
+            btn.style.color = saveState.money >= cost ? 'var(--p-good)' : 'var(--p-bad)';
             btn.onclick = () => buyClickPowerUpgrade(cost);
             pDiv.appendChild(btn);
         } else {
             const lbl = document.createElement('div');
             lbl.innerText = "MAXED";
-            lbl.style.color = '#ffff00';
+            lbl.style.color = 'var(--p-gold)';
             lbl.style.marginTop = 'auto';
             pDiv.appendChild(lbl);
         }
@@ -12685,8 +12686,8 @@ function updateLocalVisuals() {
 
             // Stats
             const info = document.createElement('div');
-            info.style.fontSize = '12px';
-            info.style.color = '#aaa';
+            info.style.fontSize = '15px';
+            info.style.color = 'var(--p-text-dim)';
             info.innerText = `Pwr: ${bait.power} | Luck: ${bait.rarityMult}x`;
             entry.appendChild(info);
 
@@ -12696,17 +12697,17 @@ function updateLocalVisuals() {
             if (locked) {
                 // Locked UI
                 const overlay = document.createElement('div');
-                overlay.style.color = '#ff4444';
+                overlay.style.color = 'var(--p-bad)';
                 overlay.style.fontWeight = 'bold';
                 overlay.style.marginTop = '10px';
-                overlay.style.fontSize = '13px';
-                overlay.innerText = `🔒 Need ${bait.unlockFish} Fish`;
+                overlay.style.fontSize = '15px';
+                overlay.innerText = `Locked - Need ${bait.unlockFish} Fish`;
                 entry.appendChild(overlay);
 
                 // Add progress text
                 const progress = document.createElement('div');
-                progress.style.fontSize = '10px';
-                progress.style.color = '#666';
+                progress.style.fontSize = '14px';
+                progress.style.color = 'var(--p-text-mute)';
                 progress.innerText = `(${uniqueCount} / ${bait.unlockFish})`;
                 entry.appendChild(progress);
             } else {
@@ -12715,16 +12716,16 @@ function updateLocalVisuals() {
                 const cost = bait.price;
                 btn.innerText = `Buy 10 ($${cost})`;
                 btn.style.marginTop = '8px';
-                btn.style.color = saveState.money >= cost ? '#44ff44' : '#ff4444';
+                btn.style.color = saveState.money >= cost ? 'var(--p-good)' : 'var(--p-bad)';
                 btn.onclick = () => buyBait(bait);
                 entry.appendChild(btn);
             }
 
             // Owned Count
             const owned = document.createElement('div');
-            owned.style.fontSize = '11px';
+            owned.style.fontSize = '15px';
             owned.style.marginTop = '5px';
-            owned.style.color = '#fff';
+            owned.style.color = 'var(--p-text)';
             owned.innerText = `Owned: ${saveState.baitInventory[bait.id] || 0}`;
             entry.appendChild(owned);
 
@@ -13192,7 +13193,7 @@ function spawnPortal(x, z, fromNetwork = false) {
 
     portalDespawnTime = Date.now() + 120000;
 
-    showToast("🌌 A Void Portal has opened!");
+    showToast("A Void Portal has opened!");
     broadcastSound('magic', { x: x, y: 0, z: z });
 
     // FIX: Send to Dedicated Server if connected
@@ -13222,7 +13223,7 @@ function enterLavaWorld() {
     scene.background = new THREE.Color(0x220000); // Dark Red Sky
     scene.fog = new THREE.Fog(0x220000, 10, 80);
 
-    showToast("🔥 Welcome to the Lava World!");
+    showToast("Welcome to the Lava World!");
     updateWeatherVisuals();
 }
 
@@ -13349,9 +13350,10 @@ function renderPlayerList() {
 
     // 1. Add Self (Information only)
     const myRow = document.createElement('div');
-    myRow.style.background = 'rgba(255, 255, 255, 0.1)';
-    myRow.style.padding = '10px'; myRow.style.borderRadius = '8px';
-    myRow.style.color = '#44ff44'; myRow.style.fontWeight = 'bold';
+    myRow.style.background = 'var(--p-face-2)';
+    myRow.style.border = '2px solid var(--p-line)';
+    myRow.style.padding = '10px'; myRow.style.borderRadius = '0';
+    myRow.style.color = 'var(--p-good)'; myRow.style.fontWeight = 'bold';
     myRow.innerText = `${saveState.displayName} (You)`;
     container.appendChild(myRow);
 
@@ -13359,9 +13361,11 @@ function renderPlayerList() {
     Object.keys(otherPlayers).forEach(pid => {
         const p = otherPlayers[pid];
         const row = document.createElement('div');
-        row.style.background = 'rgba(255, 255, 255, 0.05)';
+        row.style.background = 'var(--p-face-2)';
+        row.style.border = '2px solid var(--p-line)';
+        row.style.marginBottom = '5px';
         row.style.padding = '10px';
-        row.style.borderRadius = '8px';
+        row.style.borderRadius = '0';
         row.style.display = 'flex';
         row.style.justifyContent = 'space-between';
         row.style.alignItems = 'center';
@@ -13379,23 +13383,23 @@ function renderPlayerList() {
         const isVoiceMuted = localMutedVoice.includes(pid);
         const btnVoice = document.createElement('button');
         btnVoice.className = 'btn-sm';
-        btnVoice.style.backgroundColor = isVoiceMuted ? '#cc0000' : '#444';
-        btnVoice.innerText = isVoiceMuted ? "🔇 Voice" : "🎙️ Voice";
+        btnVoice.style.backgroundColor = isVoiceMuted ? 'var(--p-bad)' : 'var(--p-face-3)';
+        btnVoice.innerText = isVoiceMuted ? "Voice: Off" : "Voice: On";
         btnVoice.onclick = () => toggleLocalMute(pid, 'voice');
 
         // Chat Mute Button
         const isChatMuted = localMutedChat.includes(pid);
         const btnChat = document.createElement('button');
         btnChat.className = 'btn-sm';
-        btnChat.style.backgroundColor = isChatMuted ? '#cc0000' : '#444';
-        btnChat.innerText = isChatMuted ? "🚫 Chat" : "💬 Chat";
+        btnChat.style.backgroundColor = isChatMuted ? 'var(--p-bad)' : 'var(--p-face-3)';
+        btnChat.innerText = isChatMuted ? "Chat: Off" : "Chat: On";
         btnChat.onclick = () => toggleLocalMute(pid, 'chat');
 
         const isMidiMuted = localMutedMidi.includes(pid);
         const btnMidi = document.createElement('button');
         btnMidi.className = 'btn-sm';
-        btnMidi.style.backgroundColor = isMidiMuted ? '#cc0000' : '#444';
-        btnMidi.innerText = isMidiMuted ? "🔇 MIDI" : "🎸 MIDI";
+        btnMidi.style.backgroundColor = isMidiMuted ? 'var(--p-bad)' : 'var(--p-face-3)';
+        btnMidi.innerText = isMidiMuted ? "MIDI: Off" : "MIDI: On";
         btnMidi.onclick = () => toggleLocalMute(pid, 'midi');
         // ----------------------------------
 
@@ -13411,7 +13415,7 @@ function renderPlayerList() {
     if (Object.keys(otherPlayers).length === 0) {
         const empty = document.createElement('div');
         empty.innerText = "No other fishers here.";
-        empty.style.color = '#888'; empty.style.fontStyle = 'italic';
+        empty.style.color = 'var(--p-text-dim)'; empty.style.fontStyle = 'italic';
         container.appendChild(empty);
     }
 }
@@ -13442,13 +13446,12 @@ function updateHostPanel() {
         const adminDiv = document.createElement('div');
         adminDiv.style.marginBottom = '15px';
         adminDiv.style.paddingBottom = '10px';
-        adminDiv.style.borderBottom = '1px solid #444';
+        adminDiv.style.borderBottom = '2px solid var(--p-line)';
         adminDiv.style.textAlign = 'center';
 
         const btnMoney = document.createElement('button');
         btnMoney.className = 'btn-lg btn-green';
-        btnMoney.innerText = "💰 Give Self $1000";
-        btnMoney.style.fontSize = "14px";
+        btnMoney.innerText = "Give Self $1000";
         btnMoney.style.width = "100%";
         btnMoney.onclick = () => {
             saveState.money += 1000;
@@ -13461,9 +13464,9 @@ function updateHostPanel() {
 
         const btnPortal = document.createElement('button');
         btnPortal.className = 'btn-lg';
-        btnPortal.style.background = '#4b0082';
+        btnPortal.style.background = 'var(--p-face-3)';
         btnPortal.style.marginTop = '5px';
-        btnPortal.innerText = "🌀 Spawn Portal";
+        btnPortal.innerText = "Spawn Portal";
         btnPortal.onclick = () => {
             // Check network mode
             if (isConnectedToDedicated && isAdminOnDedicated) {
@@ -13480,9 +13483,9 @@ function updateHostPanel() {
         if (isConnectedToDedicated && isAdminOnDedicated) {
             const btnUnban = document.createElement('button');
             btnUnban.className = 'btn-lg';
-            btnUnban.style.background = '#006400';
+            btnUnban.style.background = '#2f6b33';
             btnUnban.style.marginTop = '5px';
-            btnUnban.innerText = "🔓 Unban IP";
+            btnUnban.innerText = "Unban IP";
             btnUnban.onclick = promptUnbanIP;
             adminDiv.appendChild(btnUnban);
         }
@@ -13506,37 +13509,37 @@ function updateHostPanel() {
 
         const btnGhost = document.createElement('button');
         btnGhost.className = 'btn-sm';
-        btnGhost.style.background = '#4b0082';
-        btnGhost.innerText = "👻 Haunt";
+        btnGhost.style.background = 'var(--p-face-3)';
+        btnGhost.innerText = "Haunt";
         btnGhost.onclick = () => triggerHaunt(pid);
 
         const isVM = mutedVoicePeers.includes(pid);
         const btnVoice = document.createElement('button');
         btnVoice.className = isVM ? 'btn-sm btn-danger' : 'btn-sm';
-        btnVoice.innerText = isVM ? "🔇 No Voice" : "🎙️ Mute Voice";
+        btnVoice.innerText = isVM ? "Voice Off" : "Mute Voice";
         btnVoice.onclick = () => toggleGlobalMute(pid, 'voice');
 
         const isCM = mutedChatPeers.includes(pid);
         const btnChat = document.createElement('button');
         btnChat.className = isCM ? 'btn-sm btn-danger' : 'btn-sm';
-        btnChat.innerText = isCM ? "🚫 No Chat" : "💬 Mute Chat";
+        btnChat.innerText = isCM ? "Chat Off" : "Mute Chat";
         btnChat.onclick = () => toggleGlobalMute(pid, 'chat');
 
         const isGlobalMidiMuted = p.lastData && p.lastData.isMidiMuted;
 
         const btnMidi = document.createElement('button');
         btnMidi.className = isGlobalMidiMuted ? 'btn-sm btn-danger' : 'btn-sm';
-        btnMidi.innerText = isGlobalMidiMuted ? "🔇 No MIDI" : "🎸 Mute MIDI";
+        btnMidi.innerText = isGlobalMidiMuted ? "MIDI Off" : "Mute MIDI";
         btnMidi.onclick = () => toggleGlobalMute(pid, 'midi');
 
         const btnKick = document.createElement('button');
         btnKick.className = 'btn-sm btn-warn';
-        btnKick.innerText = "👢 Kick";
+        btnKick.innerText = "Kick";
         btnKick.onclick = () => kickPeer(pid);
 
         const btnBan = document.createElement('button');
         btnBan.className = 'btn-sm btn-danger';
-        btnBan.innerText = "🔨 Ban";
+        btnBan.innerText = "Ban";
         btnBan.onclick = () => banPeer(pid);
 
         actions.appendChild(btnGhost);
@@ -13807,7 +13810,7 @@ function pickFlower(index, fromNetwork = false) {
         addSkillXP('floristry', flowerType.xp);
 
         saveGame();
-        showToast(`🌸 +1 ${flowerType.name} (+${flowerType.xp} XP)`);
+        showToast(`+1 ${flowerType.name} (+${flowerType.xp} XP)`);
 
         // Broadcast to others
         const msg = { type: 'pick_flower', index: index };
