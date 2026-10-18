@@ -21,6 +21,9 @@
         level: null,
         tool: "land",
         npcType: "merchant",
+        buildingType: "hut",
+        propType: "bush",
+        caveSize: "medium",
         zoneId: 1,
         radius: 6,
         strength: 1,
@@ -52,7 +55,10 @@
         { id: "tree", name: "Trees", icon: "tree", key: "6", tip: "Place trees on land. Right-click removes the nearest." },
         { id: "rock", name: "Rocks", icon: "rock", key: "7", tip: "Place rocks on land. Right-click removes the nearest." },
         { id: "npc", name: "NPCs", icon: "users", key: "8", tip: "Place the selected NPC on land. Right-click removes it." },
-        { id: "erase", name: "Erase", icon: "trash", key: "9", tip: "Remove the prop or NPC under the cursor." },
+        { id: "building", name: "Buildings", icon: "home", key: "B", tip: "Place the selected building on land (docks can go on water). Doors face you. Right-click removes the nearest." },
+        { id: "prop", name: "Props", icon: "lantern", key: "X", tip: "Place the selected prop. Drag to scatter. Reeds and rowboats can go on water. Right-click removes the nearest." },
+        { id: "cave", name: "Caves", icon: "cave", key: "E", tip: "Place the selected cave entrance on land — the mouth faces you. Scenic only; tag nearby water as Cave for secret fish." },
+        { id: "erase", name: "Erase", icon: "trash", key: "9", tip: "Remove the prop, building or NPC under the cursor." },
         { id: "spawn", name: "Spawn", icon: "tent", key: "P", tip: "Set where players start (one per level). Click on land to move it; right-click clears it so the game picks the middle of the map." }
     ];
 
@@ -206,6 +212,31 @@
             r.userData.propKind = "rock";
             world.propGroup.add(r);
         });
+        lv.buildings.forEach((data) => {
+            const info = WorldGen.buildingInfo(data.type);
+            const m = WorldGen.makeBuilding(data);
+            m.position.set(data.x, Level.propBaseY(lv, data.x, data.z, info.water), data.z);
+            m.userData.ref = data;
+            m.userData.propKind = "building";
+            world.propGroup.add(m);
+        });
+        lv.props.forEach((data) => {
+            const info = WorldGen.propInfo(data.type);
+            const h = Level.sampleHeight(lv, data.x, data.z);
+            const y = (info.water && h < lv.seaLevel - 0.01) ? lv.seaLevel - 0.08 : h;
+            const m = WorldGen.makeProp(data);
+            m.position.set(data.x, y, data.z);
+            m.userData.ref = data;
+            m.userData.propKind = "prop";
+            world.propGroup.add(m);
+        });
+        lv.caves.forEach((data) => {
+            const m = WorldGen.makeCave(data);
+            m.position.set(data.x, Level.sampleHeight(lv, data.x, data.z), data.z);
+            m.userData.ref = data;
+            m.userData.propKind = "cave";
+            world.propGroup.add(m);
+        });
         lv.npcs.forEach((data) => {
             const n = WorldGen.makeNpcPreview(data.type);
             n.position.set(data.x, Level.sampleHeight(lv, data.x, data.z), data.z);
@@ -250,7 +281,13 @@
             const d = m.userData.ref;
             if (!d) return;
             const s = d.scale || 1;
-            const y = Level.sampleHeight(lv, d.x, d.z) + (m.userData.propKind === "rock" ? s * 0.3 : 0);
+            let y = Level.sampleHeight(lv, d.x, d.z);
+            if (m.userData.propKind === "rock") y += s * 0.3;
+            else if (m.userData.propKind === "building") {
+                y = Level.propBaseY(lv, d.x, d.z, WorldGen.buildingInfo(d.type).water);
+            } else if (m.userData.propKind === "prop") {
+                if (WorldGen.propInfo(d.type).water && y < lv.seaLevel - 0.01) y = lv.seaLevel - 0.08;
+            }
             m.position.y = y;
         });
         world.npcGroup.children.forEach((m) => {
@@ -368,6 +405,9 @@
         if (state.tool === "tree") return removeNearest(point, "tree");
         if (state.tool === "rock") return removeNearest(point, "rock");
         if (state.tool === "npc") return removeNearest(point, "npc");
+        if (state.tool === "building") return removeNearest(point, "building");
+        if (state.tool === "prop") return removeNearest(point, "prop");
+        if (state.tool === "cave") return removeNearest(point, "cave");
         if (state.tool === "spawn") return clearSpawn();
         if (TERRAIN_TOOLS[state.tool]) return; // handled by the brush itself
         removeNearest(point, "any");
@@ -385,6 +425,7 @@
             });
         };
         scan(lv.trees, "tree"); scan(lv.rocks, "rock"); scan(lv.npcs, "npc");
+        scan(lv.buildings, "building"); scan(lv.props, "prop"); scan(lv.caves, "cave");
         if (!best) return false;
         bestList.splice(bestList.indexOf(best), 1);
         rebuildProps();
@@ -392,17 +433,29 @@
         return true;
     }
 
+    // Facing angle so building doors and cave mouths point back at the
+    // editor camera, snapped to 45° so rows of buildings stay tidy.
+    function cameraFacing(point) {
+        const a = Math.atan2(camera.position.x - point.x, camera.position.z - point.z);
+        return +(Math.round(a / (Math.PI / 4)) * (Math.PI / 4)).toFixed(3);
+    }
+
     function placeProp(point) {
         const lv = state.level;
         const h = Level.sampleHeight(lv, point.x, point.z);
         const inBounds = Math.abs(point.x) <= lv.size / 2 && Math.abs(point.z) <= lv.size / 2;
         if (!inBounds) { toast("Outside the level bounds"); return false; }
-        if (h <= lv.seaLevel + 0.15) { toast("Place on land — paint terrain first"); return false; }
+
+        const bInfo = state.tool === "building" ? WorldGen.buildingInfo(state.buildingType) : null;
+        const pInfo = state.tool === "prop" ? WorldGen.propInfo(state.propType) : null;
+        const waterOk = !!(bInfo && bInfo.water) || !!(pInfo && pInfo.water);
+        if (!waterOk && h <= lv.seaLevel + 0.15) { toast("Place on land — paint terrain first"); return false; }
 
         // Nice, non-overlapping scatter.
+        const spacing = state.tool === "prop" ? 1.1 : 2.6;
         if (state.lastPropPos) {
             const dd = (point.x - state.lastPropPos.x) ** 2 + (point.z - state.lastPropPos.z) ** 2;
-            if (dd < 2.6 * 2.6) return false;
+            if (dd < spacing * spacing) return false;
         }
         const clash = (arr) => arr.some((d) => (d.x - point.x) ** 2 + (d.z - point.z) ** 2 < 1.1 * 1.1);
 
@@ -416,6 +469,24 @@
             const existing = lv.npcs.findIndex((n) => n.type === state.npcType);
             const data = { type: state.npcType, x: +point.x.toFixed(2), z: +point.z.toFixed(2), rot: 0 };
             if (existing >= 0) lv.npcs[existing] = data; else lv.npcs.push(data);
+        } else if (state.tool === "building") {
+            const r = bInfo.radius;
+            const overlap = lv.buildings.some((d) =>
+                Math.hypot(d.x - point.x, d.z - point.z) < (r + WorldGen.buildingInfo(d.type).radius) * 0.8);
+            const near = (arr) => arr.some((d) => Math.hypot(d.x - point.x, d.z - point.z) < r + 0.5);
+            if (overlap || near(lv.trees) || near(lv.rocks) || near(lv.caves)) return false;
+            lv.buildings.push({ type: state.buildingType, x: +point.x.toFixed(2), z: +point.z.toFixed(2), rot: cameraFacing(point), scale: 1 });
+        } else if (state.tool === "prop") {
+            // Small decor may cluster, but never inside a solid footprint.
+            if (clash(lv.props)) return false;
+            if (lv.buildings.some((d) => Math.hypot(d.x - point.x, d.z - point.z) < WorldGen.buildingInfo(d.type).radius + 0.5)) return false;
+            if (lv.caves.some((d) => Math.hypot(d.x - point.x, d.z - point.z) < WorldGen.caveInfo(d.size).radius * 0.8 + 0.5)) return false;
+            lv.props.push({ type: state.propType, x: +point.x.toFixed(2), z: +point.z.toFixed(2), rot: Math.random() * Math.PI * 2, scale: +(0.85 + Math.random() * 0.3).toFixed(2) });
+        } else if (state.tool === "cave") {
+            const r = WorldGen.caveInfo(state.caveSize).radius;
+            const blocked = (arr, factor) => arr.some((d) => Math.hypot(d.x - point.x, d.z - point.z) < r * (factor || 1));
+            if (blocked(lv.buildings) || blocked(lv.trees) || blocked(lv.rocks) || blocked(lv.caves)) return false;
+            lv.caves.push({ size: state.caveSize, x: +point.x.toFixed(2), z: +point.z.toFixed(2), rot: cameraFacing(point) });
         }
         state.lastPropPos = { x: point.x, z: point.z };
         rebuildProps();
@@ -591,6 +662,9 @@
             trees: state.level.trees,
             rocks: state.level.rocks,
             npcs: state.level.npcs,
+            buildings: state.level.buildings,
+            props: state.level.props,
+            caves: state.level.caves,
             spawn: state.level.spawn || null
         });
     }
@@ -609,6 +683,9 @@
         state.level.trees = data.trees;
         state.level.rocks = data.rocks;
         state.level.npcs = data.npcs;
+        state.level.buildings = data.buildings || [];
+        state.level.props = data.props || [];
+        state.level.caves = data.caves || [];
         state.level.spawn = data.spawn || null;
         refreshTerrain();
         rebuildProps();
@@ -648,6 +725,9 @@
         $("st-trees").textContent = lv.trees.length;
         $("st-rocks").textContent = lv.rocks.length;
         $("st-npcs").textContent = lv.npcs.length;
+        if ($("st-buildings")) $("st-buildings").textContent = lv.buildings.length;
+        if ($("st-props")) $("st-props").textContent = lv.props.length;
+        if ($("st-caves")) $("st-caves").textContent = lv.caves.length;
 
         const sp = $("st-spawn");
         if (sp) {
@@ -707,6 +787,9 @@
         $("st-tool").innerHTML = "<b>" + (t ? t.name : id) + "</b>";
         $("sec-npc").style.display = id === "npc" ? "flex" : "none";
         $("sec-zone").style.display = id === "zone" ? "flex" : "none";
+        $("sec-building").style.display = id === "building" ? "flex" : "none";
+        $("sec-prop").style.display = id === "prop" ? "flex" : "none";
+        $("sec-cave").style.display = id === "cave" ? "flex" : "none";
         // Terrain brushes benefit from a radius; single-object tools do not.
         $("brush-radius").parentElement.style.opacity = isBrushTool(id) || id === "erase" ? "1" : ".45";
     }
@@ -722,6 +805,24 @@
             d.onclick = () => {
                 state.npcType = t.id;
                 [...el.children].forEach((c) => c.classList.toggle("is-on", c.dataset.npc === t.id));
+            };
+            el.appendChild(d);
+        });
+    }
+
+    // Generic colour-dot picker used by the NPC, building, prop and cave lists.
+    function buildPickList(elId, items, get, set) {
+        const el = $(elId);
+        el.innerHTML = "";
+        items.forEach((t) => {
+            const d = document.createElement("div");
+            d.className = "npc-pick" + (t.id === get() ? " is-on" : "");
+            d.dataset.pick = t.id;
+            d.title = t.name + (t.water ? " — can be placed on water" : "");
+            d.innerHTML = '<i class="npc-dot" style="background:#' + new THREE.Color(t.color).getHexString() + '"></i><span>' + t.name + "</span>";
+            d.onclick = () => {
+                set(t.id);
+                [...el.children].forEach((c) => c.classList.toggle("is-on", c.dataset.pick === t.id));
             };
             el.appendChild(d);
         });
@@ -775,6 +876,9 @@
         next.trees = old.trees.filter(inB);
         next.rocks = old.rocks.filter(inB);
         next.npcs = old.npcs.filter(inB);
+        next.buildings = old.buildings.filter(inB);
+        next.props = old.props.filter(inB);
+        next.caves = old.caves.filter(inB);
         next.spawn = old.spawn && inB(old.spawn) ? old.spawn : null;
         state.level = Level.normalize(next);
         buildWorld();
@@ -883,6 +987,7 @@
         $("btn-clear-props").onclick = () => {
             pushUndo();
             state.level.trees = []; state.level.rocks = [];
+            state.level.buildings = []; state.level.props = []; state.level.caves = [];
             rebuildProps(); markDirty(); refreshStats();
             toast("Props cleared");
         };
@@ -988,7 +1093,7 @@
                     markDirty();
                 }
             }
-        } else if (state.painting && (state.tool === "tree" || state.tool === "rock" || state.tool === "npc")) {
+        } else if (state.painting && (state.tool === "tree" || state.tool === "rock" || state.tool === "npc" || state.tool === "prop")) {
             updatePick();
             if (state.pick) placeProp(state.pick);
         }
@@ -1065,6 +1170,9 @@
 
         buildTools();
         buildNpcList();
+        buildPickList("building-list", WorldGen.BUILDING_TYPES, () => state.buildingType, (v) => { state.buildingType = v; });
+        buildPickList("prop-list", WorldGen.PROP_TYPES, () => state.propType, (v) => { state.propType = v; });
+        buildPickList("cave-list", WorldGen.CAVE_SIZES, () => state.caveSize, (v) => { state.caveSize = v; });
         buildZoneList();
         bindUI();
         bindInput();
@@ -1122,7 +1230,12 @@
         newLevel: () => loadLevel(Level.createDefault(), true),
         frameLevel: frameLevel,
         pick: () => state.pick,
-        tools: TOOLS
+        tools: TOOLS,
+        catalogs: {
+            buildings: WorldGen.BUILDING_TYPES,
+            props: WorldGen.PROP_TYPES,
+            caves: WorldGen.CAVE_SIZES
+        }
     };
 
     init();

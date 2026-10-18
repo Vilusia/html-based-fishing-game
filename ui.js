@@ -2171,17 +2171,36 @@ function isInCaveEntranceZone(x, z) {
     return (Math.abs(x) < 24 && z > -120 && z < -70);
 }
 
+// The decor group (buildings, props, cave entrances) that addLevelProps builds
+// for a custom level, kept so world rebuilds can clear it in one step.
+let customLevelDecor = null;
+
+function disposeDecorGroup(group) {
+    if (!group) return;
+    group.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(m => m.dispose());
+        }
+    });
+    scene.remove(group);
+}
+
 function generateWorld(seedStr) {
     treeMeshes.forEach(t => scene.remove(t));
     treeMeshes = []; treeColliders = [];
     pickableFlowers = []; // Track pickable flowers separately
     lavaColliders = [];
+    disposeDecorGroup(customLevelDecor);
+    customLevelDecor = null;
 
     // --- CUSTOM LEVEL MODE ---
     // Spawn the props authored in the level editor rather than the procedural
     // scatter below.
     if (window.CUSTOM_LEVEL && window.WorldGen) {
-        WorldGen.addLevelProps(scene, window.CUSTOM_LEVEL, { trees: treeMeshes, colliders: treeColliders });
+        const res = WorldGen.addLevelProps(scene, window.CUSTOM_LEVEL, { trees: treeMeshes, colliders: treeColliders });
+        if (res && res.decor) customLevelDecor = res.decor;
         return;
     }
 

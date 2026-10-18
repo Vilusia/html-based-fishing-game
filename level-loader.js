@@ -43,6 +43,9 @@
             Object.keys(counts).forEach(function (k) { if (+k !== 0) zoned += counts[k]; });
             nameEl.textContent = lv.name + "  ·  " + lv.trees.length + " trees, " +
                 lv.rocks.length + " rocks, " + lv.npcs.length + " NPCs" +
+                ((lv.buildings && lv.buildings.length) ? ", " + lv.buildings.length + " buildings" : "") +
+                ((lv.props && lv.props.length) ? ", " + lv.props.length + " props" : "") +
+                ((lv.caves && lv.caves.length) ? ", " + lv.caves.length + " caves" : "") +
                 (zoned ? ", " + zoned + " zoned tiles" : "") +
                 (window.CUSTOM_LEVEL ? "  (active)" : "");
             nameEl.style.color = window.CUSTOM_LEVEL ? "var(--p-good)" : "var(--p-text-dim)";

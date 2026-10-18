@@ -16,7 +16,10 @@
 //   zoneMap: "0011223...",// grid*grid fishing-zone ids as a digit string (optional)
 //   trees: [{x,z,scale,rot,tint}],
 //   rocks: [{x,z,scale,rx,ry,rz}],
-//   npcs:  [{type,x,z,rot}]
+//   npcs:  [{type,x,z,rot}],
+//   buildings: [{type,x,z,rot,scale}],  // scenery (hut, house, lighthouse, ...)
+//   props:     [{type,x,z,rot,scale}],  // small decor (barrel, bench, reeds, ...)
+//   caves:     [{size,x,z,rot}]         // cave entrances: small/medium/large/huge
 // }
 //
 // Fishing zones: every water cell can be tagged with a zone id so the game
@@ -175,6 +178,9 @@
         out.trees = Array.isArray(out.trees) ? out.trees.filter(validObj).map(normTree).slice(0, 3000) : [];
         out.rocks = Array.isArray(out.rocks) ? out.rocks.filter(validObj).map(normRock).slice(0, 2000) : [];
         out.npcs = Array.isArray(out.npcs) ? out.npcs.filter(validObj).map(normNpc).slice(0, 100) : [];
+        out.buildings = Array.isArray(out.buildings) ? out.buildings.filter(validObj).map(normBuilding).slice(0, 400) : [];
+        out.props = Array.isArray(out.props) ? out.props.filter(validObj).map(normProp).slice(0, 2500) : [];
+        out.caves = Array.isArray(out.caves) ? out.caves.filter(validObj).map(normCave).slice(0, 60) : [];
         // Optional hand-placed player spawn: a single {x, z} or nothing.
         out.spawn = validObj(out.spawn) ? { x: +out.spawn.x, z: +out.spawn.z } : null;
         return out;
@@ -188,6 +194,15 @@
     }
     function normNpc(n) {
         return { type: String(n.type || "merchant"), x: +n.x, z: +n.z, rot: Number(n.rot) || 0 };
+    }
+    function normBuilding(b) {
+        return { type: String(b.type || "hut").slice(0, 24), x: +b.x, z: +b.z, rot: Number(b.rot) || 0, scale: clamp(Number(b.scale) || 1, 0.5, 4) };
+    }
+    function normProp(p) {
+        return { type: String(p.type || "bush").slice(0, 24), x: +p.x, z: +p.z, rot: Number(p.rot) || 0, scale: clamp(Number(p.scale) || 1, 0.4, 4) };
+    }
+    function normCave(c) {
+        return { size: CAVE_BY_ID[String(c.size)] ? String(c.size) : "medium", x: +c.x, z: +c.z, rot: Number(c.rot) || 0 };
     }
 
     // Plain, JSON-safe copy of a level. Zones are stored as a compact digit
@@ -207,6 +222,9 @@
             trees: lv.trees,
             rocks: lv.rocks,
             npcs: lv.npcs,
+            buildings: lv.buildings,
+            props: lv.props,
+            caves: lv.caves,
             spawn: lv.spawn || null
         };
     }
@@ -611,8 +629,432 @@
         return mesh;
     }
 
-    // Spawn the level's trees + rocks into a scene.
-    // out = { trees: [], colliders: [] } (arrays are mutated, matching the game)
+    // ------------------------------------------------- Scenery catalogs
+    // Buildings, small props and cave entrances dress a level. Every entry
+    // carries a collider radius (0 = walk-through decor) and an optional
+    // `water` flag that lets the editor place it on the sea surface instead
+    // of requiring dry land.
+
+    const BUILDING_TYPES = [
+        { id: "hut", name: "Straw Hut", radius: 2.3, color: 0xE0BE8C },
+        { id: "house", name: "House", radius: 2.8, color: 0xF2E8D5 },
+        { id: "cabin", name: "Log Cabin", radius: 2.8, color: 0x8A5A33 },
+        { id: "shed", name: "Shed", radius: 2.0, color: 0x9C7A4F },
+        { id: "lighthouse", name: "Lighthouse", radius: 2.2, color: 0xC8503C },
+        { id: "windmill", name: "Windmill", radius: 2.6, color: 0xE6D8B8 },
+        { id: "tower", name: "Watchtower", radius: 2.4, color: 0x6B4A2F },
+        { id: "stall", name: "Market Stall", radius: 2.2, color: 0xE0A03A },
+        { id: "temple", name: "Temple Ruins", radius: 3.2, color: 0xD6D2C4 },
+        { id: "dock", name: "Wooden Dock", radius: 1.8, water: true, color: 0xA97B4F }
+    ];
+
+    const PROP_TYPES = [
+        { id: "bush", name: "Bush", radius: 0, color: 0x4E7A3D },
+        { id: "flowers", name: "Flowers", radius: 0, color: 0xE86A8A },
+        { id: "reeds", name: "Reeds", radius: 0, water: true, color: 0x7CA84E },
+        { id: "bamboo", name: "Bamboo", radius: 0, color: 0x8FB84E },
+        { id: "mushrooms", name: "Mushrooms", radius: 0, color: 0xC8503C },
+        { id: "barrel", name: "Barrel", radius: 0.5, color: 0x8A5A33 },
+        { id: "crate", name: "Crate", radius: 0.5, color: 0xB08A55 },
+        { id: "bench", name: "Log Bench", radius: 0.8, color: 0xA97B4F },
+        { id: "lamp", name: "Lamp Post", radius: 0.35, color: 0xFFE9A8 },
+        { id: "sign", name: "Signpost", radius: 0.35, color: 0xB08A55 },
+        { id: "fence", name: "Fence", radius: 0.3, color: 0x8A5A33 },
+        { id: "campfire", name: "Campfire", radius: 0.6, color: 0xFF6A1F },
+        { id: "totem", name: "Totem Pole", radius: 0.5, color: 0x3FA0A8 },
+        { id: "gravestone", name: "Gravestone", radius: 0.35, color: 0xB0B0BA },
+        { id: "scarecrow", name: "Scarecrow", radius: 0.4, color: 0xD9B26A },
+        { id: "torch", name: "Torch", radius: 0.25, color: 0xFF8A1F },
+        { id: "boat", name: "Rowboat", radius: 0, water: true, color: 0xA97B4F },
+        { id: "umbrella", name: "Beach Umbrella", radius: 0.2, color: 0xE05A4A }
+    ];
+
+    const CAVE_SIZES = [
+        { id: "small", name: "Small", radius: 2.2, color: 0x7E7A72 },
+        { id: "medium", name: "Medium", radius: 3.4, color: 0x7E7A72 },
+        { id: "large", name: "Large", radius: 4.8, color: 0x7E7A72 },
+        { id: "huge", name: "Huge", radius: 6.5, color: 0x7E7A72 }
+    ];
+
+    const BUILDING_BY_ID = {}; BUILDING_TYPES.forEach((t) => { BUILDING_BY_ID[t.id] = t; });
+    const PROP_BY_ID = {}; PROP_TYPES.forEach((t) => { PROP_BY_ID[t.id] = t; });
+    const CAVE_BY_ID = {}; CAVE_SIZES.forEach((t) => { CAVE_BY_ID[t.id] = t; });
+    const buildingInfo = (id) => BUILDING_BY_ID[id] || BUILDING_TYPES[0];
+    const propInfo = (id) => PROP_BY_ID[id] || PROP_TYPES[0];
+    const caveInfo = (id) => CAVE_BY_ID[id] || CAVE_SIZES[1];
+
+    // Base height for a placed item. Water-friendly scenery (docks, boats,
+    // reeds) floats on the sea surface instead of sinking to the seabed.
+    function propBaseY(level, x, z, waterOk) {
+        const h = sampleHeight(level, x, z);
+        return (waterOk && h < level.seaLevel - 0.01) ? level.seaLevel : h;
+    }
+
+    // --------------------------------------------------- Scenery builders
+    // Flat-shaded low-poly models shared by the editor preview and the game.
+    // Materials are cached by colour+options: a level can hold thousands of
+    // props and sharing keeps memory sane.
+    const _matCache = new Map();
+    function mMat(color, opts) {
+        const key = color + "|" + JSON.stringify(opts || null);
+        let m = _matCache.get(key);
+        if (!m) {
+            m = new THREE.MeshStandardMaterial(Object.assign({ color: color, roughness: 0.9, flatShading: true }, opts || {}));
+            _matCache.set(key, m);
+        }
+        return m;
+    }
+    function mBox(w, h, d, color, opts) { return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mMat(color, opts)); }
+    function mCyl(rt, rb, h, seg, color, opts) { return new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 8), mMat(color, opts)); }
+    function mCone(r, h, seg, color, opts) { return new THREE.Mesh(new THREE.ConeGeometry(r, h, seg || 8), mMat(color, opts)); }
+    function mBlob(r, color, sy) {
+        const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), mMat(color));
+        if (sy) m.scale.y = sy;
+        return m;
+    }
+    function at(m, x, y, z) { m.position.set(x || 0, y || 0, z || 0); return m; }
+    function shade(g) {
+        g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        return g;
+    }
+
+    function makeBuilding(data) {
+        const g = new THREE.Group();
+        g.userData.propKind = "building";
+        g.userData.buildingType = data.type;
+        switch (String(data.type)) {
+            case "house": {
+                g.add(at(mBox(3.2, 2.2, 2.8, 0xF2E8D5), 0, 1.1, 0));
+                const roof = mCone(2.6, 1.5, 4, 0xB8503C);
+                roof.rotation.y = Math.PI / 4;
+                roof.position.y = 2.95;
+                g.add(roof);
+                g.add(at(mBox(0.8, 1.3, 0.15, 0x7A4A2A), 0, 0.65, 1.42));
+                g.add(at(mBox(0.65, 0.65, 0.12, 0x9FD9FF), -1.05, 1.45, 1.42));
+                break;
+            }
+            case "cabin": {
+                // Stacked log walls: rows alternate direction like notched logs.
+                const logGeo = new THREE.CylinderGeometry(0.19, 0.19, 3.1, 6);
+                for (let i = 0; i < 5; i++) {
+                    const y = 0.36 + i * 0.38;
+                    const axis = i % 2 === 0 ? "x" : "z";
+                    [-1.25, 1.25].forEach((off) => {
+                        const l = new THREE.Mesh(logGeo, mMat(0x8A5A33));
+                        if (axis === "x") { l.rotation.x = Math.PI / 2; l.position.set(off, y, 0); }
+                        else { l.rotation.z = Math.PI / 2; l.position.set(0, y, off); }
+                        g.add(l);
+                    });
+                }
+                const p1 = at(mBox(3.6, 0.16, 1.9, 0x5C3A22), 0, 2.5, -0.75); p1.rotation.x = -0.62; g.add(p1);
+                const p2 = at(mBox(3.6, 0.16, 1.9, 0x5C3A22), 0, 2.5, 0.75); p2.rotation.x = 0.62; g.add(p2);
+                g.add(at(mBox(0.75, 1.25, 0.14, 0x4A3A28), 0, 0.62, 1.34));
+                break;
+            }
+            case "shed": {
+                g.add(at(mBox(2.0, 1.6, 1.6, 0x9C7A4F), 0, 0.8, 0));
+                const roof = at(mBox(2.35, 0.14, 1.95, 0x4F5D46), 0, 1.78, 0);
+                roof.rotation.x = -0.16;
+                g.add(roof);
+                g.add(at(mBox(0.7, 1.15, 0.12, 0x6B4A2F), 0, 0.58, 0.83));
+                break;
+            }
+            case "lighthouse": {
+                g.add(at(mCyl(0.85, 1.3, 5.6, 10, 0xF4F1E8), 0, 2.8, 0));
+                g.add(at(mCyl(0.98, 1.06, 0.9, 10, 0xC8503C), 0, 1.7, 0));
+                g.add(at(mCyl(0.78, 0.86, 0.9, 10, 0xC8503C), 0, 4.4, 0));
+                g.add(at(mCyl(1.1, 1.1, 0.2, 10, 0x3A3F52), 0, 5.7, 0));
+                g.add(at(mCyl(0.68, 0.68, 0.85, 8, 0xFFE9A8, { emissive: 0xF2C14E }), 0, 6.2, 0));
+                g.add(at(mCone(0.95, 0.7, 10, 0xC8503C), 0, 6.95, 0));
+                g.add(at(mBox(0.7, 1.0, 0.14, 0x3A3F52), 0, 0.5, 1.22));
+                break;
+            }
+            case "windmill": {
+                g.add(at(mCyl(1.1, 1.7, 4.5, 10, 0xE6D8B8), 0, 2.25, 0));
+                g.add(at(mCone(1.4, 1.05, 10, 0x7A4A2A), 0, 5.0, 0));
+                const blades = new THREE.Group();
+                blades.position.set(0, 4.1, 1.55);
+                for (let i = 0; i < 4; i++) {
+                    const pivot = new THREE.Group();
+                    pivot.rotation.z = i * Math.PI / 2 + Math.PI / 4;
+                    pivot.add(at(mBox(0.34, 3.2, 0.09, 0xEDE6D2), 0, 1.7, 0));
+                    blades.add(pivot);
+                }
+                const hub = mCyl(0.24, 0.24, 0.5, 6, 0x5C3A22);
+                hub.rotation.x = Math.PI / 2;
+                blades.add(hub);
+                g.add(blades);
+                g.add(at(mBox(0.7, 1.2, 0.14, 0x7A4A2A), 0, 0.6, 1.55));
+                break;
+            }
+            case "tower": {
+                [[-0.95, -0.95], [0.95, -0.95], [-0.95, 0.95], [0.95, 0.95]].forEach((p) => {
+                    g.add(at(mBox(0.22, 3.4, 0.22, 0x6B4A2F), p[0], 1.7, p[1]));
+                });
+                g.add(at(mBox(2.7, 0.22, 2.7, 0x8A5A33), 0, 3.5, 0));
+                g.add(at(mBox(2.7, 0.5, 0.1, 0x5C3A22), 0, 3.95, -1.3));
+                g.add(at(mBox(2.7, 0.5, 0.1, 0x5C3A22), 0, 3.95, 1.3));
+                g.add(at(mBox(0.1, 0.5, 2.7, 0x5C3A22), -1.3, 3.95, 0));
+                g.add(at(mBox(0.1, 0.5, 2.7, 0x5C3A22), 1.3, 3.95, 0));
+                [[-1.15, -1.15], [1.15, -1.15], [-1.15, 1.15], [1.15, 1.15]].forEach((p) => {
+                    g.add(at(mBox(0.12, 1.0, 0.12, 0x6B4A2F), p[0], 4.1, p[1]));
+                });
+                const roof = mCone(2.1, 1.2, 4, 0x4F5D46);
+                roof.rotation.y = Math.PI / 4;
+                roof.position.y = 5.2;
+                g.add(roof);
+                break;
+            }
+            case "stall": {
+                [[-1.25, -0.75], [1.25, -0.75], [-1.25, 0.75], [1.25, 0.75]].forEach((p) => {
+                    g.add(at(mCyl(0.09, 0.09, 2.2, 6, 0x8A5A33), p[0], 1.1, p[1]));
+                });
+                g.add(at(mBox(2.7, 0.7, 1.5, 0x8A5A33), 0, 0.35, 0));
+                g.add(at(mBox(2.95, 0.12, 1.7, 0xD9B26A), 0, 0.76, 0));
+                const awning = new THREE.Group();
+                awning.position.set(0, 2.35, 0);
+                awning.rotation.x = -0.1;
+                awning.add(at(mBox(3.2, 0.12, 2.1, 0xC8503C), 0, 0, 0));
+                [-1.1, 0, 1.1].forEach((x) => { awning.add(at(mBox(0.55, 0.04, 2.14, 0xF2E8D5), x, 0.08, 0)); });
+                g.add(awning);
+                g.add(at(mBox(0.45, 0.4, 0.45, 0xE0A03A), -0.7, 1.02, 0.3));
+                g.add(at(mBox(0.4, 0.35, 0.4, 0x6FB54A), 0.65, 1.0, 0.35));
+                break;
+            }
+            case "temple": {
+                g.add(at(mBox(4.4, 0.4, 3.6, 0xB9B4A8), 0, 0.2, 0));
+                [[-1.7, -1.3, 2.7], [1.7, -1.3, 1.7], [-1.7, 1.3, 2.2], [1.7, 1.3, 0.9]].forEach((c) => {
+                    g.add(at(mCyl(0.32, 0.37, c[2], 8, 0xD6D2C4), c[0], 0.4 + c[2] / 2, c[1]));
+                });
+                g.add(at(mBox(4.0, 0.45, 0.9, 0xC9C4B4), 0, 3.15, 1.3));
+                const fallen = mCyl(0.32, 0.32, 1.9, 8, 0xD6D2C4);
+                fallen.rotation.z = Math.PI / 2;
+                fallen.position.set(0.3, 0.75, -0.1);
+                g.add(fallen);
+                break;
+            }
+            case "dock": {
+                g.add(at(mBox(2.2, 0.18, 5.0, 0xA97B4F), 0, 0.45, 0));
+                [-1.8, -0.6, 0.6, 1.8].forEach((z) => { g.add(at(mBox(2.24, 0.03, 0.14, 0x8A5A33), 0, 0.55, z)); });
+                [[-0.95, -2.2], [0.95, -2.2], [-0.95, 2.2], [0.95, 2.2]].forEach((p) => {
+                    g.add(at(mCyl(0.13, 0.13, 2.4, 6, 0x6B4A2F), p[0], -0.5, p[1]));
+                    g.add(at(mCyl(0.17, 0.17, 0.22, 6, 0x8A5A33), p[0], 0.8, p[1]));
+                });
+                break;
+            }
+            default: {
+                // Straw hut (also the fallback for unknown types).
+                g.add(at(mCyl(1.5, 1.7, 1.5, 10, 0xE0BE8C), 0, 0.75, 0));
+                g.add(at(mCone(2.1, 1.7, 10, 0xC7A34A), 0, 2.35, 0));
+                g.add(at(mBox(0.7, 1.05, 0.15, 0x6B4A2F), 0, 0.52, 1.62));
+                break;
+            }
+        }
+        const s = clamp(Number(data.scale) || 1, 0.5, 4);
+        g.scale.set(s, s, s);
+        g.rotation.y = Number(data.rot) || 0;
+        return shade(g);
+    }
+
+    function makeProp(data) {
+        const g = new THREE.Group();
+        g.userData.propKind = "prop";
+        g.userData.propType = data.type;
+        switch (String(data.type)) {
+            case "bush": {
+                g.add(at(mBlob(0.55, 0x4E7A3D, 0.8), 0, 0.38, 0));
+                g.add(at(mBlob(0.38, 0x5C8A46, 0.85), 0.32, 0.3, 0.18));
+                break;
+            }
+            case "flowers": {
+                [[0xE86A8A, -0.3, 0, 0.25], [0xF2C14E, 0.25, 0.1, 0.5], [0x9B7ED9, 0, -0.3, 0.4]].forEach((f) => {
+                    g.add(at(mCyl(0.02, 0.02, f[3], 4, 0x5C8A46), f[1], f[3] / 2, f[2]));
+                    g.add(at(mBlob(0.1, f[0]), f[1], f[3] + 0.05, f[2]));
+                });
+                break;
+            }
+            case "reeds": {
+                [[-0.35, 0.2, 1.5], [0, -0.15, 1.9], [0.3, 0.1, 1.6], [0.15, 0.35, 1.3], [-0.15, -0.3, 1.7]].forEach((r, i) => {
+                    const reed = mCyl(0.03, 0.04, r[2], 4, 0x7CA84E);
+                    reed.rotation.z = (i % 2 ? 0.08 : -0.08);
+                    g.add(at(reed, r[0], r[2] / 2, r[1]));
+                    if (i < 2) g.add(at(mCyl(0.06, 0.06, 0.3, 5, 0x6B4A2F), r[0], r[2] - 0.1, r[1]));
+                });
+                break;
+            }
+            case "bamboo": {
+                [[-0.3, 0.1, 2.6], [0.1, -0.15, 2.2], [0.3, 0.25, 2.9], [-0.05, 0.3, 2.0]].forEach((b, i) => {
+                    g.add(at(mCyl(0.06, 0.06, b[2], 5, 0x8FB84E), b[0], b[2] / 2, b[1]));
+                    g.add(at(mBox(0.3, 0.06, 0.14, 0x6F9B3E), b[0] + 0.12, b[2] - 0.4 - i * 0.1, b[1]));
+                });
+                break;
+            }
+            case "mushrooms": {
+                [[0xC8503C, -0.25, 0, 1], [0xE0A03A, 0.2, 0.15, 0.75], [0xC8503C, 0.05, -0.25, 0.6]].forEach((m) => {
+                    const h = 0.26 * m[3];
+                    g.add(at(mCyl(0.045, 0.055, h, 5, 0xEDE6D2), m[1], h / 2, m[2]));
+                    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.15 * m[3], 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), mMat(m[0]));
+                    g.add(at(cap, m[1], h, m[2]));
+                });
+                break;
+            }
+            case "barrel": {
+                g.add(at(mCyl(0.35, 0.42, 0.85, 10, 0x8A5A33), 0, 0.42, 0));
+                g.add(at(mCyl(0.43, 0.43, 0.07, 10, 0x4A4E5C), 0, 0.2, 0));
+                g.add(at(mCyl(0.38, 0.38, 0.07, 10, 0x4A4E5C), 0, 0.66, 0));
+                g.add(at(mCyl(0.34, 0.34, 0.05, 10, 0x6B4A2F), 0, 0.86, 0));
+                break;
+            }
+            case "crate": {
+                g.add(at(mBox(0.72, 0.72, 0.72, 0xB08A55), 0, 0.36, 0));
+                const b1 = at(mBox(0.78, 0.09, 0.04, 0x8A5A33), 0, 0.36, 0.37); b1.rotation.z = 0.78; g.add(b1);
+                const b2 = at(mBox(0.78, 0.09, 0.04, 0x8A5A33), 0, 0.36, 0.37); b2.rotation.z = -0.78; g.add(b2);
+                break;
+            }
+            case "bench": {
+                const seat = mCyl(0.2, 0.2, 1.9, 8, 0x8A5A33);
+                seat.rotation.z = Math.PI / 2;
+                seat.position.set(0, 0.45, 0);
+                g.add(seat);
+                g.add(at(mBox(0.16, 0.45, 0.4, 0x6B4A2F), -0.7, 0.22, 0));
+                g.add(at(mBox(0.16, 0.45, 0.4, 0x6B4A2F), 0.7, 0.22, 0));
+                g.add(at(mBox(1.9, 0.32, 0.1, 0x8A5A33), 0, 0.85, -0.24));
+                g.add(at(mBox(0.1, 0.42, 0.1, 0x6B4A2F), -0.7, 0.65, -0.22));
+                g.add(at(mBox(0.1, 0.42, 0.1, 0x6B4A2F), 0.7, 0.65, -0.22));
+                break;
+            }
+            case "lamp": {
+                g.add(at(mCyl(0.16, 0.2, 0.16, 6, 0x3A3F52), 0, 0.08, 0));
+                g.add(at(mCyl(0.06, 0.09, 2.5, 6, 0x3A3F52), 0, 1.33, 0));
+                g.add(at(mBox(0.36, 0.42, 0.36, 0xFFE9A8, { emissive: 0xF2A13A }), 0, 2.78, 0));
+                g.add(at(mCone(0.32, 0.22, 4, 0x3A3F52), 0, 3.1, 0));
+                break;
+            }
+            case "sign": {
+                g.add(at(mCyl(0.07, 0.08, 1.5, 5, 0x8A5A33), 0, 0.75, 0));
+                g.add(at(mBox(0.95, 0.5, 0.08, 0xB08A55), 0, 1.32, 0));
+                g.add(at(mBox(0.6, 0.06, 0.1, 0x8A5A33), 0, 1.32, 0.02));
+                break;
+            }
+            case "fence": {
+                g.add(at(mBox(0.13, 1.0, 0.13, 0x8A5A33), -0.75, 0.5, 0));
+                g.add(at(mBox(0.13, 1.0, 0.13, 0x8A5A33), 0.75, 0.5, 0));
+                g.add(at(mBox(1.65, 0.1, 0.07, 0xA97B4F), 0, 0.38, 0));
+                g.add(at(mBox(1.65, 0.1, 0.07, 0xA97B4F), 0, 0.75, 0));
+                break;
+            }
+            case "campfire": {
+                [[0.5, 0], [0.35, 2.1], [0.42, 3.9], [0.5, 5.1]].forEach((s) => {
+                    g.add(at(mBlob(0.16, 0x8E8E96), Math.cos(s[1]) * s[0], 0.1, Math.sin(s[1]) * s[0]));
+                });
+                for (let i = 0; i < 3; i++) {
+                    const log = mCyl(0.08, 0.08, 0.95, 5, 0x6B4A2F);
+                    log.rotation.z = Math.PI / 2;
+                    log.rotation.y = i * Math.PI / 3;
+                    log.position.y = 0.14;
+                    g.add(log);
+                }
+                g.add(at(mCone(0.3, 0.75, 6, 0xFF6A1F, { emissive: 0xCC3300 }), 0, 0.55, 0));
+                g.add(at(mCone(0.16, 0.5, 6, 0xFFD34D, { emissive: 0xE0A03A }), 0, 0.48, 0));
+                break;
+            }
+            case "totem": {
+                g.add(at(mBox(0.6, 0.65, 0.6, 0xC8503C), 0, 0.33, 0));
+                g.add(at(mBox(0.56, 0.6, 0.56, 0x3FA0A8), 0, 0.95, 0));
+                g.add(at(mBox(0.6, 0.55, 0.6, 0xE0A03A), 0, 1.53, 0));
+                g.add(at(mBox(0.1, 0.12, 0.06, 0xF2E8D5), -0.14, 1.58, 0.31));
+                g.add(at(mBox(0.1, 0.12, 0.06, 0xF2E8D5), 0.14, 1.58, 0.31));
+                const hat = mCone(0.42, 0.3, 4, 0x6B4A2F);
+                hat.rotation.y = Math.PI / 4;
+                g.add(at(hat, 0, 1.95, 0));
+                break;
+            }
+            case "gravestone": {
+                g.add(at(mBox(0.62, 0.12, 0.38, 0x8E8E96), 0, 0.06, 0));
+                g.add(at(mBox(0.5, 0.72, 0.18, 0xB0B0BA), 0, 0.48, 0));
+                const top = mCyl(0.25, 0.25, 0.18, 8, 0xB0B0BA);
+                top.rotation.x = Math.PI / 2;
+                top.position.set(0, 0.84, 0);
+                g.add(top);
+                break;
+            }
+            case "scarecrow": {
+                g.add(at(mCyl(0.06, 0.07, 2.0, 5, 0x6B4A2F), 0, 1.0, 0));
+                const arms = mCyl(0.05, 0.05, 1.3, 5, 0x6B4A2F);
+                arms.rotation.z = Math.PI / 2;
+                arms.position.set(0, 1.5, 0);
+                g.add(arms);
+                g.add(at(mBox(0.55, 0.65, 0.32, 0x9FD9FF), 0, 1.35, 0));
+                g.add(at(mBlob(0.24, 0xD9B26A), 0, 1.95, 0));
+                g.add(at(mCone(0.44, 0.35, 8, 0x8A5A33), 0, 2.25, 0));
+                break;
+            }
+            case "torch": {
+                g.add(at(mCyl(0.05, 0.06, 1.6, 5, 0x6B4A2F), 0, 0.8, 0));
+                g.add(at(mCyl(0.09, 0.09, 0.28, 6, 0x4A3A28), 0, 1.55, 0));
+                g.add(at(mCone(0.17, 0.55, 6, 0xFF8A1F, { emissive: 0xCC5500 }), 0, 1.95, 0));
+                break;
+            }
+            case "boat": {
+                g.add(at(mBox(0.95, 0.12, 2.5, 0xA97B4F), 0, 0.08, 0));
+                const sideL = at(mBox(0.1, 0.5, 2.5, 0x8A5A33), -0.48, 0.32, 0); sideL.rotation.z = 0.14; g.add(sideL);
+                const sideR = at(mBox(0.1, 0.5, 2.5, 0x8A5A33), 0.48, 0.32, 0); sideR.rotation.z = -0.14; g.add(sideR);
+                g.add(at(mBox(0.95, 0.45, 0.12, 0x8A5A33), 0, 0.3, 1.25));
+                g.add(at(mBox(0.95, 0.45, 0.12, 0x8A5A33), 0, 0.3, -1.25));
+                g.add(at(mBox(0.85, 0.08, 0.3, 0xD9B26A), 0, 0.3, 0.1));
+                break;
+            }
+            case "umbrella": {
+                g.add(at(mCyl(0.2, 0.24, 0.1, 8, 0xB0B0BA), 0, 0.05, 0));
+                const pole = mCyl(0.045, 0.045, 2.3, 5, 0xEDE6D2);
+                pole.rotation.z = 0.1;
+                pole.position.set(0.115, 1.2, 0);
+                g.add(pole);
+                g.add(at(mCone(1.35, 0.6, 8, 0xE05A4A), 0, 2.5, 0));
+                g.add(at(mCone(0.75, 0.28, 8, 0xF2E8D5), 0, 2.64, 0));
+                break;
+            }
+            default: {
+                g.add(at(mBox(0.5, 0.5, 0.5, 0xB9B4A8), 0, 0.25, 0));
+                break;
+            }
+        }
+        const s = clamp(Number(data.scale) || 1, 0.4, 4);
+        g.scale.set(s, s, s);
+        g.rotation.y = Number(data.rot) || 0;
+        return shade(g);
+    }
+
+    function makeCave(data) {
+        const info = caveInfo(String(data.size || "medium"));
+        const r = info.radius;
+        const g = new THREE.Group();
+        g.userData.propKind = "cave";
+        g.userData.caveSize = info.id;
+        // Flattened rocky mound; the mouth assembly pokes out the +Z face so
+        // the black interior stays visible from the front.
+        const mound = mBlob(r, 0x7E7A72);
+        mound.scale.set(1, 0.72, 0.62);
+        g.add(at(mound, 0, r * 0.18, -r * 0.1));
+        g.add(at(mBlob(r * 0.62, 0x767268, 0.8), r * 0.55, r * 0.1, -r * 0.45));
+        g.add(at(mBlob(r * 0.5, 0x86827A, 0.75), -r * 0.6, r * 0.06, -r * 0.3));
+        const mouth = new THREE.Mesh(new THREE.BoxGeometry(r * 0.86, r * 0.78, r * 0.3), new THREE.MeshBasicMaterial({ color: 0x0a0a0f }));
+        mouth.position.set(0, r * 0.36, r * 0.5);
+        g.add(mouth);
+        g.add(at(mBox(r * 0.3, r * 0.82, r * 0.4, 0x6E6A62), -r * 0.44, r * 0.38, r * 0.55));
+        g.add(at(mBox(r * 0.3, r * 0.82, r * 0.4, 0x6E6A62), r * 0.44, r * 0.38, r * 0.55));
+        g.add(at(mBox(r * 1.14, r * 0.3, r * 0.42, 0x6E6A62), 0, r * 0.82, r * 0.53));
+        g.add(at(mBlob(r * 0.22, 0x86827A), -r * 0.7, r * 0.08, r * 0.55));
+        g.add(at(mBlob(r * 0.16, 0x767268), r * 0.75, r * 0.06, r * 0.45));
+        g.rotation.y = Number(data.rot) || 0;
+        return shade(g);
+    }
+
+    // Spawn the level's trees, rocks, buildings, props and cave entrances into
+    // a scene. Trees/rocks still join `out.trees` (the game chops and mines
+    // those by raycast) while scenery goes into its own group so it can never
+    // be chopped and can be cleared from the scene with a single remove().
+    // out = { trees: [], colliders: [], decor: THREE.Group }
     function addLevelProps(scene, level, out) {
         out = out || { trees: [], colliders: [] };
         (level.trees || []).forEach((data) => {
@@ -632,6 +1074,37 @@
             out.trees.push(r);
             if (s > 0.5) out.colliders.push({ x: data.x, z: data.z, radius: s * 0.8 });
         });
+        const decor = new THREE.Group();
+        decor.name = "levelDecor";
+        (level.buildings || []).forEach((data) => {
+            const info = buildingInfo(data.type);
+            const y = propBaseY(level, data.x, data.z, info.water);
+            const m = makeBuilding(data);
+            m.position.set(data.x, y, data.z);
+            decor.add(m);
+            const cr = info.radius * (data.scale || 1);
+            if (cr > 0.2) out.colliders.push({ x: data.x, z: data.z, radius: cr });
+        });
+        (level.props || []).forEach((data) => {
+            const info = propInfo(data.type);
+            const h = sampleHeight(level, data.x, data.z);
+            // Float water props a touch below the surface so they read as
+            // resting in the water rather than hovering on it.
+            const y = (info.water && h < level.seaLevel - 0.01) ? level.seaLevel - 0.08 : h;
+            const m = makeProp(data);
+            m.position.set(data.x, y, data.z);
+            decor.add(m);
+            const cr = info.radius * (data.scale || 1);
+            if (cr > 0.05) out.colliders.push({ x: data.x, z: data.z, radius: cr });
+        });
+        (level.caves || []).forEach((data) => {
+            const m = makeCave(data);
+            m.position.set(data.x, sampleHeight(level, data.x, data.z), data.z);
+            decor.add(m);
+            out.colliders.push({ x: data.x, z: data.z, radius: caveInfo(data.size).radius * 0.62 });
+        });
+        if (decor.children.length) scene.add(decor);
+        out.decor = decor;
         return out;
     }
 
@@ -658,6 +1131,9 @@
         createNoiseTexture, createLeafTexture,
         createRockMesh, createDetailedTree, createFlowerMesh,
         makeTree, makeRock,
+        BUILDING_TYPES, PROP_TYPES, CAVE_SIZES,
+        buildingInfo, propInfo, caveInfo,
+        makeBuilding, makeProp, makeCave,
         NPC_TYPES, npcType, makeNpcPreview, makeLabelSprite,
         terrainVertexColor,
         buildTerrainGeometry, buildTerrainMesh, buildWaterMesh, buildOceanFloorMesh,
@@ -670,7 +1146,7 @@
         LEVEL_VERSION,
         createDefault, normalize, serialize,
         cellSize, cellCenter, worldToCell, inBounds,
-        sampleHeight, isWater, countLand, spawnPoint,
+        sampleHeight, isWater, countLand, spawnPoint, propBaseY,
         ZONES, zoneInfo, zoneIdByKey, zoneAt, countZoneWater, autoZones
     };
 })();
