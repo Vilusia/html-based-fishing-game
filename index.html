@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -125,6 +125,7 @@
         #btn-journal,
         #btn-players,
         #btn-props-ui,
+        #btn-skills-ui,
         #btn-admin-login,
         #btn-inventory-mobile {
             background: rgba(255, 255, 255, 0.15);
@@ -149,6 +150,7 @@
         #btn-journal:hover,
         #btn-players:hover,
         #btn-props-ui:hover,
+        #btn-skills-ui:hover,
         #btn-inventory-mobile:hover {
             background: rgba(255, 255, 255, 0.3);
             transform: translateY(-2px);
@@ -295,6 +297,55 @@
         #instructions span {
             text-align: left;
             color: #ddd;
+        }
+
+        /* --- HOTBAR UI --- */
+        #hotbar-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 12px;
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+        }
+
+        .hotbar-slot {
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s;
+        }
+
+        .hotbar-slot.active {
+            border-color: #ffd700;
+            background: rgba(255, 215, 0, 0.2);
+            transform: scale(1.1);
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        }
+
+        .hotbar-number {
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .hotbar-icon {
+            pointer-events: none;
         }
 
         /* --- HUD: BOTTOM LEFT (BAIT & CHAT) --- */
@@ -2007,15 +2058,278 @@
         #btn-close-props:hover {
             background: #333;
         }
+
+        /* --- COZY VIGNETTE --- */
+        #vignette {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            /* Radial gradient: transparent center, dark corners */
+            background: radial-gradient(circle, transparent 50%, rgba(0, 0, 0, 0.4) 150%);
+        }
+
+        /* --- CORE SETTINGS --- */
+        canvas {
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        :root {
+            --primary: #81C784;
+            --accent: #FFD54F;
+            --panel-bg: #5D4037;
+            --panel-border: #3E2723;
+            --panel-inner: #4E342E;
+            --text-shadow: 0 2px 0 rgba(0, 0, 0, 0.8);
+            --font-main: 'Fredoka', sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: var(--font-main);
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* --- UNIFIED TACTILE UI STYLE --- */
+        .stat-box,
+        #room-info-ui,
+        #bait-ui,
+        #instructions,
+        #fish-log,
+        #chat-messages,
+        #npc-prompt,
+        #guitar-ui {
+            background: var(--panel-bg) !important;
+            border: 4px solid var(--panel-border) !important;
+            border-radius: 12px !important;
+            color: white;
+            box-shadow: 0 6px 0 rgba(0, 0, 0, 0.3) !important;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        /* --- OVERLAYS & PANELS --- */
+        .overlay-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            /* Darken game, no blur */
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 2000;
+        }
+
+        #options-container,
+        #host-panel-container,
+        #lobby-container,
+        #tutorial-panel,
+        #props-panel,
+        #skills-panel,
+        #player-list-container {
+            background: var(--panel-bg) !important;
+            border: 4px solid var(--panel-border) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 10px 0 rgba(0, 0, 0, 0.4) !important;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        /* --- CHUNKY GAME BUTTONS --- */
+        button {
+            font-family: var(--font-main);
+            outline: none;
+            cursor: pointer;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        #btn-settings,
+        #btn-host-panel,
+        #btn-journal,
+        #btn-players,
+        #btn-props-ui,
+        #btn-skills-ui,
+        #btn-admin-login,
+        #btn-inventory-mobile,
+        .btn-lg,
+        .btn-sm {
+            background: #8D6E63;
+            color: white;
+            font-weight: bold;
+            border: 2px solid #3E2723;
+            border-bottom: 4px solid #3E2723;
+            border-radius: 8px;
+            transition: transform 0.1s, border-bottom-width 0.1s;
+        }
+
+        #btn-settings:active,
+        #btn-host-panel:active,
+        #btn-journal:active,
+        #btn-players:active,
+        #btn-props-ui:active,
+        #btn-skills-ui:active,
+        #btn-inventory-mobile:active,
+        .btn-lg:active,
+        .btn-sm:active {
+            transform: translateY(2px);
+            border-bottom-width: 2px;
+        }
+
+        .btn-green {
+            background: #66BB6A;
+            border-color: #1B5E20;
+        }
+
+        .btn-danger {
+            background: #EF5350;
+            border-color: #B71C1C;
+        }
+
+        /* Unified Top Buttons Spacing */
+        #btn-settings,
+        #btn-host-panel,
+        #btn-journal,
+        #btn-players,
+        #btn-props-ui,
+        #btn-skills-ui,
+        #btn-admin-login,
+        #btn-inventory-mobile {
+            padding: 0 16px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        /* --- CLOSE BUTTON --- */
+        .close-x-btn {
+            position: absolute;
+            top: -15px;
+            right: -15px;
+            width: 40px;
+            height: 40px;
+            background-color: #EF5350;
+            color: white;
+            border: 3px solid #B71C1C;
+            border-bottom: 5px solid #B71C1C;
+            border-radius: 50%;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
+            z-index: 100;
+        }
+
+        .close-x-btn:active {
+            transform: translateY(2px);
+            border-bottom-width: 3px;
+        }
+
+        /* --- COSMETIC SHOP TACTILE FIX --- */
+        #shop-wrapper {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            width: 90%;
+            max-width: 1000px;
+            max-height: 80vh;
+        }
+
+        #shop-main-panel,
+        #wardrobe-sidebar {
+            background: var(--panel-bg) !important;
+            border: 4px solid var(--panel-border) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 10px 0 rgba(0, 0, 0, 0.4) !important;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        #shop-main-panel {
+            flex: 2;
+        }
+
+        #wardrobe-sidebar {
+            flex: 1;
+            min-width: 200px;
+            background: var(--panel-inner) !important;
+        }
+
+        #color-picker-container,
+        #shop-container {
+            background: var(--panel-inner) !important;
+            border: 2px solid var(--panel-border) !important;
+            border-radius: 12px;
+        }
+
+        /* Chunky Shop Grid Items */
+        .grid-entry {
+            background: #8D6E63 !important;
+            border: 2px solid #3E2723 !important;
+            border-radius: 8px !important;
+            color: white !important;
+            transition: transform 0.1s;
+        }
+
+        .grid-entry:hover {
+            background: #A1887F !important;
+            transform: translateY(-2px);
+        }
+
+        .grid-entry.selected {
+            border-color: var(--accent) !important;
+            background: rgba(255, 213, 79, 0.2) !important;
+        }
     </style>
 </head>
 
 <body>
 
     <div id="game-container"></div>
+    <div id="vignette"></div>
     <div id="loading">Initializing Game Engine...</div>
-    <div id="version">v11.24</div>
-
+    <div id="version">v12.31</div>
+    <!-- HOTBAR -->
+    <div id="hotbar-container">
+        <!-- Generated by JS -->
+    </div>
     <div id="rotate-overlay">
         <h1>Please Rotate Your Device</h1>
         <p>Landscape mode required.</p>
@@ -2072,7 +2386,7 @@
             </div>
             <div id="lobby-version"
                 style="position: absolute; bottom: 10px; right: 10px; color: rgba(255,255,255,0.5); font-size: 12px;">
-                v11.24
+                v12.31
             </div>
             <div id="lobby-status" style="margin-top: 15px; color: #aaa; font-size: 14px;"></div>
             <div id="host-room-info" style="display: none;">
@@ -2097,50 +2411,52 @@
                 </a>
             </div>
 
-            <!-- AI Disclaimer -->
-            <div
-                style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #888; text-align: center;">
-                Made with AI-Assisted Code
+            <!-- Community Links -->
+            <div style="margin-top: 15px; font-size: 12px; color: #aaa; text-align: center;">
+                HTML Fishing &bull; Cast, Catch, Chill
             </div>
         </div>
     </div>
 
     <div id="journal-overlay" class="overlay-screen">
-        <h2>Fishing Journal</h2>
+        <button class="close-x-btn" onclick="toggleJournal()">×</button>
+        <div class="overlay-header">
+            <h2>📖 Fishing Journal</h2>
+            <div class="overlay-subtitle">Record of your catches, legendary encounters, and discovered species</div>
+        </div>
         <div id="journal-container" class="grid-container"></div>
-        <button class="btn-lg" onclick="toggleJournal()">CLOSE</button>
+        <button class="btn-lg" onclick="toggleJournal()" style="margin-top: 15px;">CLOSE JOURNAL</button>
     </div>
-
 
     <div id="shop-overlay" class="overlay-screen">
         <button class="close-x-btn" onclick="toggleShop()">×</button>
 
-        <div id="shop-wrapper"
-            style="display: flex; gap: 15px; width: 95%; max-width: 900px; height: 85vh; align-items: flex-start; justify-content: center;">
-
-            <div id="shop-main-panel"
-                style="flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%;">
-                <h2>Cosmetic Shop</h2>
+        <div id="shop-wrapper">
+            <div id="shop-main-panel">
+                <div class="overlay-header" style="margin-bottom: 12px;">
+                    <h2>✨ Stylist & Boutique</h2>
+                    <div class="overlay-subtitle">Express your style with custom gear, colors, and cosmetics</div>
+                </div>
 
                 <div id="color-picker-container">
                     <!-- Character Parts Selectors with Color Pickers -->
-                    <div class="picker-row"><span>Ears:</span><select id="ears-select" onchange="changeEars(this.value)"
-                            style="padding: 5px; border-radius: 5px;"></select><input type="color"
-                            id="ears-color-picker" onchange="changeEarsColor(this.value)" title="Ear Color"></div>
-                    <div class="picker-row"><span>Hair:</span><select id="hair-select" onchange="changeHair(this.value)"
-                            style="padding: 5px; border-radius: 5px;"></select><input type="color"
-                            id="hair-color-picker" onchange="changeHairColor(this.value)" title="Hair Color"></div>
-                    <div class="picker-row"><span>Eyes:</span><select id="eyes-select" onchange="changeEyes(this.value)"
-                            style="padding: 5px; border-radius: 5px;"></select></div>
-                    <div class="picker-row"><span>Nose:</span><select id="nose-select" onchange="changeNose(this.value)"
-                            style="padding: 5px; border-radius: 5px;"></select><input type="color"
-                            id="nose-color-picker" onchange="changeNoseColor(this.value)" title="Nose Color"></div>
-                    <div class="picker-row"><span>Misc:</span><select id="misc-select" onchange="changeMisc(this.value)"
-                            style="padding: 5px; border-radius: 5px;"></select><input type="color"
-                            id="misc-color-picker" onchange="changeMiscColor(this.value)" title="Misc Color"></div>
-                    <div class="picker-row"><span>Tail:</span><select id="tail-select" onchange="changeTail(this.value)"
-                            style="padding: 5px; border-radius: 5px;"></select><input type="color"
-                            id="tail-color-picker" onchange="changeTailColor(this.value)" title="Tail Color"></div>
+                    <div class="picker-row"><span>Ears:</span><select id="ears-select"
+                            onchange="changeEars(this.value)"></select><input type="color" id="ears-color-picker"
+                            onchange="changeEarsColor(this.value)" title="Ear Color"></div>
+                    <div class="picker-row"><span>Hair:</span><select id="hair-select"
+                            onchange="changeHair(this.value)"></select><input type="color" id="hair-color-picker"
+                            onchange="changeHairColor(this.value)" title="Hair Color"></div>
+                    <div class="picker-row"><span>Eyes:</span><select id="eyes-select"
+                            onchange="changeEyes(this.value)"></select></div>
+                    <div class="picker-row"><span>Nose:</span><select id="nose-select"
+                            onchange="changeNose(this.value)"></select><input type="color" id="nose-color-picker"
+                            onchange="changeNoseColor(this.value)" title="Nose Color"></div>
+                    <div class="picker-row"><span>Misc:</span><select id="misc-select"
+                            onchange="changeMisc(this.value)"></select><input type="color" id="misc-color-picker"
+                            onchange="changeMiscColor(this.value)" title="Misc Color"></div>
+                    <div class="picker-row"><span>Tail:</span><select id="tail-select"
+                            onchange="changeTail(this.value)"></select><input type="color" id="tail-color-picker"
+                            onchange="changeTailColor(this.value)" title="Tail Color"></div>
                     <!-- Base Colors -->
                     <div class="picker-row"><span>Fur:</span><input type="color" id="fur-color-picker"
                             onchange="changeFurColor(this.value)"></div>
@@ -2151,56 +2467,34 @@
                 </div>
 
                 <div id="shop-container" class="grid-container" style="flex: 1; width: 100%;"></div>
-                <button class="btn-lg" onclick="toggleShop()" style="margin-top: 10px;">CLOSE</button>
+                <button class="btn-lg" onclick="toggleShop()" style="margin-top: 10px;">DONE</button>
             </div>
 
-            <div id="wardrobe-sidebar"
-                style="width: 200px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 10px; height: 100%;">
-
+            <div id="wardrobe-sidebar">
                 <!-- Character Preview Section -->
-                <div id="character-preview"
-                    style="display: flex; flex-direction: column; align-items: center; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; border: 1px solid rgba(255,255,255,0.1);">
-                    <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #aaa;">Preview</h3>
+                <div id="character-preview">
+                    <h3
+                        style="margin: 0 0 8px 0; font-size: 13px; color: #ffd700; text-transform: uppercase; letter-spacing: 1px;">
+                        Live Preview</h3>
                     <div style="display: flex; gap: 10px; justify-content: center;">
                         <div style="text-align: center;">
-                            <canvas id="preview-front" width="96" height="96"
-                                style="background: rgba(50,50,50,0.5); border-radius: 6px; image-rendering: pixelated;"></canvas>
-                            <div style="font-size: 10px; color: #888; margin-top: 4px;">Front</div>
+                            <canvas id="preview-front" width="96" height="96"></canvas>
+                            <div style="font-size: 11px; color: #aaa; margin-top: 4px; font-weight: bold;">Front</div>
                         </div>
                         <div style="text-align: center;">
-                            <canvas id="preview-back" width="96" height="96"
-                                style="background: rgba(50,50,50,0.5); border-radius: 6px; image-rendering: pixelated;"></canvas>
-                            <div style="font-size: 10px; color: #888; margin-top: 4px;">Back</div>
+                            <canvas id="preview-back" width="96" height="96"></canvas>
+                            <div style="font-size: 11px; color: #aaa; margin-top: 4px; font-weight: bold;">Back</div>
                         </div>
                     </div>
                 </div>
 
-                <h3 style="margin: 5px 0; text-align: center;">Wardrobe</h3>
-
+                <h3 style="margin: 5px 0; text-align: center; color: #fff; font-size: 15px;">👔 Wardrobe</h3>
                 <button class="btn-sm btn-green" onclick="saveCurrentOutfit()" style="width: 100%;">+ Save
                     Outfit</button>
-
                 <div id="outfit-list"
-                    style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;">
-                </div>
+                    style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;"></div>
             </div>
-
         </div>
-    </div>
-
-    <div id="shop-container" class="grid-container"></div>
-
-    </div>
-
-    <div class="picker-row"><span>Fur:</span><input type="color" id="fur-color-picker"
-            onchange="changeFurColor(this.value)"></div>
-    <div class="picker-row"><span>Belly:</span><input type="color" id="belly-color-picker"
-            onchange="changeBellyColor(this.value)"></div>
-    <div class="picker-row"><span>Eyes:</span><input type="color" id="eye-color-picker"
-            onchange="changeEyeColor(this.value)"></div>
-    </div>
-    <div id="shop-container" class="grid-container"></div>
-    <button class="btn-lg" onclick="toggleShop()">CLOSE</button>
     </div>
 
     <div id="bait-shop-overlay" class="overlay-screen">
@@ -2245,6 +2539,8 @@
                     style="flex:1; min-width: 80px; font-size: 12px;">🎸 MIDI</button>
                 <button id="btn-titles-toggle" class="btn-lg" onclick="toggleShowTitles()"
                     style="flex:1; min-width: 80px; font-size: 12px;">🏷️ Titles</button>
+                <button id="btn-debug-toggle" class="btn-lg" onclick="toggleDebugMode()"
+                    style="flex:1; min-width: 80px; font-size: 12px;">🐛 Debug</button>
             </div>
 
             <hr style="border: 0; border-top: 1px solid #444; margin: 20px 0;">
@@ -2324,6 +2620,427 @@
         </div>
     </div>
 
+    <div id="skills-ui" class="overlay-screen">
+        <div id="skills-panel"
+            style="position: relative; width: 90%; max-width: 400px; background: rgba(20, 20, 20, 0.95); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; max-height: 80vh;">
+            <button class="close-x-btn" onclick="toggleSkillsUI()"
+                style="position: absolute; top: 10px; right: 10px;">×</button>
+            <h2>📊 Skills</h2>
+            <div id="skills-list"
+                style="width:100%; flex:1; overflow-y: auto; display: flex; flex-direction: column; gap: 15px;">
+                <!-- Skills will be injected here -->
+            </div>
+            <button class="btn-lg" onclick="toggleSkillsUI()" style="margin-top: 15px;">CLOSE</button>
+        </div>
+    </div>
+
+    <!-- TUTORIAL OVERLAY -->
+    <div id="tutorial-overlay" class="overlay-screen">
+        <div id="tutorial-panel"
+            style="position: relative; width: 95%; max-width: 700px; background: rgba(20, 20, 20, 0.98); border: 2px solid #FFD700; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; max-height: 85vh;">
+            <button class="close-x-btn" onclick="toggleTutorial()"
+                style="position: absolute; top: 10px; right: 10px;">×</button>
+            <h2 style="color: #FFD700; margin-bottom: 15px;">📚 Game Guide</h2>
+
+            <!-- Tab Navigation -->
+            <div id="tutorial-tabs" style="display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 15px;">
+                <button class="tutorial-tab active" onclick="showTutorialTab('basics')">🎮 Basics</button>
+                <button class="tutorial-tab" onclick="showTutorialTab('fishing')">🎣 Fishing</button>
+                <button class="tutorial-tab" onclick="showTutorialTab('skills')">⚒️ Skills</button>
+                <button class="tutorial-tab" onclick="showTutorialTab('exploration')">🌍 Exploration</button>
+                <button class="tutorial-tab" onclick="showTutorialTab('social')">💬 Social</button>
+                <button class="tutorial-tab" onclick="showTutorialTab('progression')">📈 Progression</button>
+            </div>
+
+            <!-- Tab Content -->
+            <div id="tutorial-content"
+                style="flex: 1; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 10px; padding: 20px;">
+
+                <!-- BASICS TAB -->
+                <div id="tab-basics" class="tutorial-panel">
+                    <h3>🎮 Getting Started</h3>
+                    <div class="tutorial-section">
+                        <h4>Movement</h4>
+                        <div class="key-diagram">
+                            <div class="key-row"><span class="key">W</span></div>
+                            <div class="key-row"><span class="key">A</span><span class="key">S</span><span
+                                    class="key">D</span></div>
+                        </div>
+                        <p>Use <b>WASD</b> to move around the world.</p>
+                        <p>Press <b>SPACE</b> to jump over obstacles.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Camera</h4>
+                        <p>🖱️ <b>Right-Click + Drag</b> to rotate the camera</p>
+                        <p>🎥 Press <b>C</b> to toggle first-person view</p>
+                        <p>📷 Press <b>H</b> to hide the HUD for screenshots</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Hotbar</h4>
+                        <p>Press <b>1-6</b> to switch between tools:</p>
+                        <div class="hotbar-diagram">
+                            <span class="slot">1: 🎣 Rod</span>
+                            <span class="slot">2: ✋ Hands</span>
+                            <span class="slot">3: 🪓 Axe</span>
+                            <span class="slot">4: 🎸 Guitar</span>
+                            <span class="slot">5: 🥊 Glove</span>
+                            <span class="slot">6: ⛏️ Pickaxe</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FISHING TAB -->
+                <div id="tab-fishing" class="tutorial-panel" style="display:none;">
+                    <h3>🎣 Fishing Guide</h3>
+                    <div class="tutorial-section">
+                        <h4>How to Cast</h4>
+                        <p>1️⃣ Equip your fishing rod (press <b>1</b>)</p>
+                        <p>2️⃣ <b>Hold Left-Click</b> to charge your cast</p>
+                        <p>3️⃣ <b>Release</b> to throw the line</p>
+                        <p>4️⃣ Wait for a fish to bite! 🐟</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Reeling Minigame</h4>
+                        <p>When a fish bites, a minigame appears:</p>
+                        <div class="minigame-diagram">
+                            <div class="bar-example">
+                                <span class="fish-icon">🐟</span>
+                                <span class="capture-zone">▬▬▬</span>
+                            </div>
+                        </div>
+                        <p><b>Hold Left-Click</b> to move the capture bar UP</p>
+                        <p><b>Release</b> to let it fall DOWN</p>
+                        <p>Keep the fish inside the green zone to fill the progress bar!</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Bait</h4>
+                        <p>Visit the <b>🪱 Bait Shop</b> NPC to buy better bait!</p>
+                        <p>Better bait = Higher chance of rare fish!</p>
+                        <p>Some bait unlocks exclusive fish species.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Fishing Zones</h4>
+                        <p>🏞️ <b>Lake</b> - Central area, common fish</p>
+                        <p>🌙 <b>Dark Pond</b> - Night creatures, rare spawns</p>
+                        <p>☀️ <b>Light Pond</b> - Sun-loving species</p>
+                        <p>🌊 <b>Ocean</b> - Deep sea fish (access via dock)</p>
+                        <p>🌋 <b>Lava World</b> - Volcanic fish (special access)</p>
+                    </div>
+                </div>
+
+                <!-- SKILLS TAB -->
+                <div id="tab-skills" class="tutorial-panel" style="display:none;">
+                    <h3>⚒️ Skills & Gathering</h3>
+                    <div class="tutorial-section">
+                        <h4>🪓 Lumberjacking (Axe)</h4>
+                        <p>1️⃣ Equip the <b>Axe</b> (press <b>3</b>)</p>
+                        <p>2️⃣ Find a tree 🌲</p>
+                        <p>3️⃣ <b>Left-Click</b> near the tree to chop</p>
+                        <p>4️⃣ Collect <b>Wood</b> to sell at the Merchant!</p>
+                        <div class="wood-types">
+                            <span class="resource">🪵 Oak</span>
+                            <span class="resource">🪵 Willow</span>
+                            <span class="resource">🪵 Maple</span>
+                            <span class="resource">🪵 Yew</span>
+                            <span class="resource">🪵 Magic</span>
+                        </div>
+                        <p><i>Higher skill = Better wood types!</i></p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>⛏️ Mining (Pickaxe)</h4>
+                        <p>1️⃣ Equip the <b>Pickaxe</b> (press <b>6</b>)</p>
+                        <p>2️⃣ Find ore rocks 🪨</p>
+                        <p>3️⃣ <b>Left-Click</b> near the rock to mine</p>
+                        <p>4️⃣ Collect <b>Ore</b> to sell at the Merchant!</p>
+                        <div class="ore-types">
+                            <span class="resource">🔘 Copper</span>
+                            <span class="resource">⚪ Tin</span>
+                            <span class="resource">🔵 Iron</span>
+                            <span class="resource">🟡 Gold</span>
+                            <span class="resource">💎 Mithril</span>
+                            <span class="resource">💠 Adamant</span>
+                            <span class="resource">🔮 Runite</span>
+                        </div>
+                        <p><i>Higher skill = Access to rarer ores!</i></p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>🌸 Floristry (Collecting)</h4>
+                        <p>Find flowers scattered around the world.</p>
+                        <p><b>Walk up to a flower</b> and refer to the prompt:</p>
+                        <p><b>"PRESS E TO COLLECT"</b></p>
+                        <p>Flowers give <b>Instant Money</b> and <b>Floristry XP</b>!</p>
+                        <div class="flower-types">
+                            <span class="resource">⚪ Daisy (Start)</span>
+                            <span class="resource">🟡 Dandelion (Lvl 10)</span>
+                            <span class="resource">🌷 Tulip (Lvl 20)</span>
+                            <span class="resource">🌹 Rose (Lvl 30)</span>
+                        </div>
+                        <p><i>New types unlock every 10 levels!</i></p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>📊 Viewing Your Skills</h4>
+                        <p>Click the <b>Skills</b> button in the top bar to see your levels!</p>
+                        <p>Skills use an XP system - keep gathering to level up!</p>
+                    </div>
+                </div>
+
+                <!-- EXPLORATION TAB -->
+                <div id="tab-exploration" class="tutorial-panel" style="display:none;">
+                    <h3>🌍 Exploration</h3>
+                    <div class="tutorial-section">
+                        <h4>Day & Night Cycle</h4>
+                        <p>☀️ <b>Daytime</b> - Brighter, some fish only appear now</p>
+                        <p>🌙 <b>Nighttime</b> - Darker, rare nocturnal fish spawn</p>
+                        <p>The world has a full day/night cycle!</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>🌧️ Weather</h4>
+                        <p>Sometimes it rains! During rain:</p>
+                        <p>• Sky gets darker</p>
+                        <p>• <b>Rain-exclusive fish</b> can be caught!</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>🌌 Void Portals</h4>
+                        <p>Mysterious portals randomly appear!</p>
+                        <p>Walk into one to enter <b>The Void</b></p>
+                        <p>Catch rare <b>Void Fish</b> only found there!</p>
+                        <p>⚠️ Portals disappear after 2 minutes!</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>🌋 Lava World</h4>
+                        <p>Find the <b>Inferno Guard</b> NPC (🌋 icon)</p>
+                        <p>He guards the entrance to the Lava World!</p>
+                        <p>Catch fire-themed fish in molten lakes!</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>👻 Ghost Cat</h4>
+                        <p>A mysterious black cat sometimes appears...</p>
+                        <p>Approach it if you dare! 👀</p>
+                    </div>
+                </div>
+
+                <!-- SOCIAL TAB -->
+                <div id="tab-social" class="tutorial-panel" style="display:none;">
+                    <h3>💬 Multiplayer & Social</h3>
+                    <div class="tutorial-section">
+                        <h4>Voice Chat</h4>
+                        <p>🎤 <b>Hold V</b> to talk to nearby players!</p>
+                        <p>Voice is <b>proximity-based</b> - get closer to hear better!</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Text Chat</h4>
+                        <p>💬 Press <b>Enter</b> to open chat</p>
+                        <p>Type your message and press <b>Enter</b> again to send</p>
+                        <p>Chat bubbles appear above your head!</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>🎸 Guitar</h4>
+                        <p>1️⃣ Press <b>4</b> or <b>G</b> to equip guitar</p>
+                        <p>2️⃣ Click <b>Load MIDI</b> to upload a .mid file</p>
+                        <p>3️⃣ <b>Other players hear your music!</b></p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>🥊 Boxing Glove</h4>
+                        <p>Press <b>5</b> to equip the glove</p>
+                        <p><b>Left-Click</b> to punch nearby players!</p>
+                        <p>It's all in good fun! 😄</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>🏕️ Props</h4>
+                        <p>Press <b>I</b> to open the Props menu</p>
+                        <p>Place items like campfires, tents, and more!</p>
+                        <p>Press <b>O</b> to undo your last prop</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>🐱 Meow!</h4>
+                        <p>Press <b>Z</b> to meow at other players!</p>
+                    </div>
+                </div>
+
+                <!-- PROGRESSION TAB -->
+                <div id="tab-progression" class="tutorial-panel" style="display:none;">
+                    <h3>📈 Progression</h3>
+                    <div class="tutorial-section">
+                        <h4>💰 Making Money</h4>
+                        <p>Find the <b>$ Merchant</b> NPC near the lake</p>
+                        <p>Press <b>E</b> to interact and sell:</p>
+                        <p>• 🐟 <b>Fish</b> from your inventory</p>
+                        <p>• 🪵 <b>Wood</b> from lumberjacking</p>
+                        <p>• 💎 <b>Ore</b> from mining</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>👕 Customization</h4>
+                        <p>Find the <b>Stylist</b> NPC (👕 icon)</p>
+                        <p>Buy and customize:</p>
+                        <p>• 🎩 Hats, Shirts, Patterns</p>
+                        <p>• 🎨 Fur colors, Eye colors</p>
+                        <p>• 🐱 Different species!</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>📖 Fishing Journal</h4>
+                        <p>Click <b>📖 Journal</b> in the top bar</p>
+                        <p>Track every fish species you've caught!</p>
+                        <p>Fish have different tiers: Normal → Glistening → Shining → Opalescent</p>
+                        <p>Can you catch them all? 🏆</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>🎣 Rod Upgrades</h4>
+                        <p>Better rods give bonuses:</p>
+                        <p>• Longer cast distance</p>
+                        <p>• Better catch rates</p>
+                        <p>Check the Stylist for rod cosmetics!</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <button class="btn-lg" onclick="toggleTutorial()" style="margin-top: 15px;">CLOSE GUIDE</button>
+        </div>
+    </div>
+
+    <style>
+        .tutorial-tab {
+            padding: 8px 12px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 8px;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .tutorial-tab:hover {
+            background: #444;
+            color: #fff;
+        }
+
+        .tutorial-tab.active {
+            background: #FFD700;
+            color: #000;
+            border-color: #FFD700;
+            font-weight: bold;
+        }
+
+        .tutorial-panel h3 {
+            color: #FFD700;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+        }
+
+        .tutorial-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .tutorial-section h4 {
+            color: #4ECDC4;
+            margin: 0 0 8px 0;
+            font-size: 14px;
+        }
+
+        .tutorial-section p {
+            margin: 5px 0;
+            color: #ccc;
+            font-size: 13px;
+        }
+
+        .tutorial-section b {
+            color: #FFD700;
+        }
+
+        .key-diagram {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            margin: 10px 0;
+        }
+
+        .key-row {
+            display: flex;
+            gap: 5px;
+        }
+
+        .key {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(180deg, #555, #333);
+            border: 2px solid #666;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .hotbar-diagram {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin: 10px 0;
+        }
+
+        .hotbar-diagram .slot {
+            background: #222;
+            border: 1px solid #555;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 11px;
+            color: #aaa;
+        }
+
+        .minigame-diagram {
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        .bar-example {
+            background: #333;
+            height: 30px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 10px;
+        }
+
+        .fish-icon {
+            font-size: 20px;
+        }
+
+        .capture-zone {
+            background: #2E8B57;
+            padding: 2px 15px;
+            border-radius: 3px;
+            color: #fff;
+        }
+
+        .wood-types,
+        .ore-types {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 10px 0;
+        }
+
+        .resource {
+            background: #2a2a2a;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 11px;
+            border: 1px solid #444;
+        }
+    </style>
+
     <div id="ui-layer">
         <div id="stats-ui">
             <div class="stat-row">
@@ -2331,6 +3048,7 @@
                 <button id="btn-host-panel" onclick="toggleHostPanel()" style="display:none;">🛡️</button>
                 <button id="btn-players" onclick="togglePlayerList()">👥</button>
                 <button id="btn-props-ui" onclick="togglePropsUI()">Props</button>
+                <button id="btn-skills-ui" onclick="toggleSkillsUI()">Skills</button>
 
                 <div class="stat-box">
                     <span id="money-display">$0</span>
@@ -2376,13 +3094,10 @@
             <b>R-Click</b> <span>Rotate Cam</span>
             <b>Enter</b> <span>Chat</span>
             <b>V</b> <span>Voice Chat</span>
-            <b>G</b> <span>Guitar Mode</span>
-            <b>B</b> <span>PvP Glove</span>
             <b>F</b> <span>Show Fish</span>
             <b>Z</b> <span>Meow</span>
             <b>I</b> <span>Props</span>
             <b>O</b> <span>Undo Prop</span>
-            <b>N</b> <span>Empty Hands</span>
             <b>H</b> <span>Hide HUD</span>
         </div>
         <div id="fish-log"><b>Inventory:</b><br>
@@ -2422,10 +3137,6 @@
 
             <div id="touch-buttons" class="touch-zone">
                 <div style="display: flex; gap: 15px; margin-bottom: 5px;">
-                    <div id="btn-mobile-guitar" class="touch-btn-sm">🎸</div>
-                    <div id="btn-mobile-show-fish" class="touch-btn-sm">🐟</div>
-                    <div id="btn-mobile-glove" class="touch-btn-sm">🥊</div>
-                    <div id="btn-mobile-empty" class="touch-btn-sm">📷</div>
                     <div id="btn-mobile-meow" class="touch-btn-sm">🐱</div>
                     <div id="btn-mobile-undo-prop" class="touch-btn-sm" onclick="undoProp()">🗑️</div>
                 </div>
@@ -2444,12 +3155,12 @@
 
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
-    <script src="core.js?v=11.24"></script>
-    <script src="fish.js?v=11.24"></script>
-    <script src="networking.js?v=11.24"></script>
-    <script src="audio.js?v=11.24"></script>
-    <script src="ui.js?v=11.24"></script>
-    <script src="props.js?v=11.24"></script>
+    <script src="core.js?v=12.31"></script>
+    <script src="fish.js?v=12.31"></script>
+    <script src="networking.js?v=12.31"></script>
+    <script src="audio.js?v=12.31"></script>
+    <script src="ui.js?v=12.32"></script>
+    <script src="props.js?v=12.31"></script>
 
     <!-- Start Open Web Analytics Tracker -->
     <script type="text/javascript">

@@ -1,5 +1,47 @@
 
 const UICache = { mEl: null, logHeader: null, lEl: null };
+let isHandsHidden = false; // Global state for empty hands mode
+let pickableFlowers = []; // Trackable, pickable flower meshes
+
+// --- SKILL SYSTEM HELPERS ---
+function addSkillXP(skillName, xpAmount) {
+    if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 }, floristry: { xp: 0 } };
+    if (!saveState.skills[skillName]) saveState.skills[skillName] = { xp: 0 };
+
+    const oldLevel = getLevelFromXP(saveState.skills[skillName].xp);
+    saveState.skills[skillName].xp += xpAmount;
+    const newLevel = getLevelFromXP(saveState.skills[skillName].xp);
+
+    // Level up notification
+    if (newLevel > oldLevel) {
+        showToast(`🎉 ${skillName.charAt(0).toUpperCase() + skillName.slice(1)} Level ${newLevel}!`, 'success');
+        Sound.sell(); // Play level up sound
+    }
+}
+
+// Get a random resource based on skill level (higher level = chance for better resources)
+function getResourceForLevel(skillLevel, resourceTypes) {
+    // Filter resources player can access based on level
+    const available = resourceTypes.filter(r => r.level <= skillLevel);
+    if (available.length === 0) return resourceTypes[0];
+
+    // Weighted chance: higher tier resources are rarer
+    // Roll determines which tier: higher roll = better resource chance
+    const roll = Math.random() * 100;
+    const levelBonus = skillLevel / 99 * 50; // Up to 50% bonus at level 99
+    const adjustedRoll = roll + levelBonus;
+
+    // Pick resource based on adjusted roll
+    // 0-40: lowest available, 40-70: mid, 70-90: high, 90+: best available
+    let tierIndex;
+    if (adjustedRoll >= 130) tierIndex = available.length - 1; // Best (rare at high levels)
+    else if (adjustedRoll >= 100) tierIndex = Math.max(0, available.length - 2);
+    else if (adjustedRoll >= 70) tierIndex = Math.max(0, available.length - 3);
+    else if (adjustedRoll >= 50) tierIndex = Math.max(0, Math.floor(available.length / 2));
+    else tierIndex = 0; // Most common
+
+    return available[Math.min(tierIndex, available.length - 1)];
+}
 
 function cacheUIElements() {
     UICache.mEl = document.getElementById('money-display');
@@ -16,11 +58,74 @@ function updateUI() {
     if (UICache.logHeader) UICache.logHeader.innerText = `Inventory (${totalFish}):`;
 
     if (UICache.lEl) {
-        if (totalFish === 0) {
+        // Check if inventory is empty (fish, typed wood, typed ore, legacy)
+        const hasWood = Object.values(saveState.woodInventory || {}).some(c => c > 0) || (saveState.wood && saveState.wood > 0);
+        const hasOre = Object.values(saveState.oreInventory || {}).some(c => c > 0) || (saveState.stone && saveState.stone > 0);
+        if (totalFish === 0 && !hasWood && !hasOre) {
             UICache.lEl.innerHTML = "Empty.";
         } else {
             UICache.lEl.innerHTML = "";
             const fragment = document.createDocumentFragment();
+
+            // WOOD INVENTORY (Typed)
+            if (!saveState.woodInventory) saveState.woodInventory = {};
+            WOOD_TYPES.forEach(woodType => {
+                const count = saveState.woodInventory[woodType.id] || 0;
+                if (count > 0) {
+                    const wDiv = document.createElement('div');
+                    wDiv.innerText = `${woodType.name} x${count}`;
+                    wDiv.style.color = woodType.color;
+                    wDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                    wDiv.style.fontWeight = 'bold';
+                    fragment.appendChild(wDiv);
+                }
+            });
+            // Legacy wood
+            if (saveState.wood && saveState.wood > 0) {
+                const wDiv = document.createElement('div');
+                wDiv.innerText = `Wood x${saveState.wood}`;
+                wDiv.style.color = '#deb887';
+                wDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                wDiv.style.fontWeight = 'bold';
+                fragment.appendChild(wDiv);
+            }
+
+            // ORE INVENTORY (Typed)
+            if (!saveState.oreInventory) saveState.oreInventory = {};
+            ORE_TYPES.forEach(oreType => {
+                const count = saveState.oreInventory[oreType.id] || 0;
+                if (count > 0) {
+                    const oDiv = document.createElement('div');
+                    oDiv.innerText = `${oreType.name} x${count}`;
+                    oDiv.style.color = oreType.color;
+                    oDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                    oDiv.style.fontWeight = 'bold';
+                    fragment.appendChild(oDiv);
+                }
+            });
+            // Legacy stone
+            if (saveState.stone && saveState.stone > 0) {
+                const sDiv = document.createElement('div');
+                sDiv.innerText = `Stone x${saveState.stone}`;
+                sDiv.style.color = '#aaa';
+                sDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                sDiv.style.fontWeight = 'bold';
+                fragment.appendChild(sDiv);
+            }
+
+            // FLOWER INVENTORY (Typed)
+            if (!saveState.flowerInventory) saveState.flowerInventory = {};
+            FLOWER_TYPES.forEach(flowerType => {
+                const count = saveState.flowerInventory[flowerType.id] || 0;
+                if (count > 0) {
+                    const fDiv = document.createElement('div');
+                    fDiv.innerText = `🌸 ${flowerType.name} x${count}`;
+                    fDiv.style.color = flowerType.color;
+                    fDiv.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+                    fDiv.style.fontWeight = 'bold';
+                    fragment.appendChild(fDiv);
+                }
+            });
 
             for (let i = totalFish - 1; i >= 0; i--) {
                 const f = saveState.inventory[i];
@@ -40,29 +145,395 @@ function updateUI() {
     }
 }
 
-function sellFish() {
+// --- MERCHANT SHOP SYSTEM ---
+function toggleMerchant() {
+    let merchantUI = document.getElementById('merchant-ui');
+
+    if (merchantUI && merchantUI.style.display === 'flex') {
+        merchantUI.style.display = 'none';
+        return;
+    }
+
+    const shopUI = document.getElementById('shop-ui'); // Close other shops
+    if (shopUI) shopUI.style.display = 'none';
+
+    if (!merchantUI) {
+        merchantUI = document.createElement('div');
+        merchantUI.id = 'merchant-ui';
+        merchantUI.className = 'overlay-screen';
+        document.body.appendChild(merchantUI);
+    }
+
+    updateMerchantUI(merchantUI);
+    merchantUI.style.display = 'flex';
+}
+
+function updateMerchantUI(container) {
+    let totalFishValue = 0;
+    saveState.inventory.forEach(f => totalFishValue += (f.price || f.value || 10)); // Handle legacy save formats
+
+    // Calculate Wood Value from typed inventory
+    if (!saveState.woodInventory) saveState.woodInventory = {};
+    let totalWoodValue = 0;
+    let totalWoodCount = 0;
+    Object.keys(saveState.woodInventory).forEach(woodId => {
+        const count = saveState.woodInventory[woodId] || 0;
+        const woodType = WOOD_TYPES.find(w => w.id === woodId);
+        if (woodType && count > 0) {
+            totalWoodValue += count * woodType.price;
+            totalWoodCount += count;
+        }
+    });
+    // Legacy wood conversion
+    if (saveState.wood && saveState.wood > 0) {
+        totalWoodValue += saveState.wood * 20;
+        totalWoodCount += saveState.wood;
+    }
+
+    // Calculate Ore Value from typed inventory
+    if (!saveState.oreInventory) saveState.oreInventory = {};
+    let totalOreValue = 0;
+    let totalOreCount = 0;
+    Object.keys(saveState.oreInventory).forEach(oreId => {
+        const count = saveState.oreInventory[oreId] || 0;
+        const oreType = ORE_TYPES.find(o => o.id === oreId);
+        if (oreType && count > 0) {
+            totalOreValue += count * oreType.price;
+            totalOreCount += count;
+        }
+    });
+    // Legacy stone conversion
+    if (saveState.stone && saveState.stone > 0) {
+        totalOreValue += saveState.stone * 30;
+        totalOreCount += saveState.stone;
+    }
+
+    // Calculate Flower Value from typed inventory
+    if (!saveState.flowerInventory) saveState.flowerInventory = {};
+    let totalFlowerValue = 0;
+    let totalFlowerCount = 0;
+    Object.keys(saveState.flowerInventory).forEach(flowerId => {
+        const count = saveState.flowerInventory[flowerId] || 0;
+        const flowerType = FLOWER_TYPES.find(f => f.id === flowerId);
+        if (flowerType && count > 0) {
+            totalFlowerValue += count * flowerType.price;
+            totalFlowerCount += count;
+        }
+    });
+
+    // AXE LOGIC
+    const axeTool = TOOLS.find(t => t.id === 'axe');
+    let axeBtn = '';
+    if (axeTool) {
+        const hasAxe = saveState.unlockedTools.includes('axe');
+        if (hasAxe) {
+            axeBtn = `<button class="btn-lg" disabled style="background:#224422; border-color:#448844; color:#8f8; width:100%;">Axe Owned</button>`;
+        } else {
+            const canAfford = saveState.money >= axeTool.price;
+            const style = canAfford ? 'width:100%;' : 'width:100%; opacity:0.5; cursor:not-allowed;';
+            axeBtn = `<button class="btn-lg" style="${style}" onclick="actionBuyTool('axe')">Buy Axe ($${axeTool.price})</button>`;
+        }
+    }
+
+    // PICKAXE LOGIC
+    let pickBtn = '';
+    const pickTool = TOOLS.find(t => t.id === 'pickaxe');
+    if (pickTool) {
+        const hasPick = (saveState.unlockedTools || []).includes('pickaxe');
+        if (hasPick) {
+            pickBtn = `<button class="btn-lg" disabled style="background:#224422; border-color:#448844; color:#8f8; width:100%;">Pickaxe Owned</button>`;
+        } else {
+            const canAfford = saveState.money >= pickTool.price;
+            const style = canAfford ? 'width:100%;' : 'width:100%; opacity:0.5; cursor:not-allowed;';
+            pickBtn = `<button class="btn-lg" style="${style}" onclick="actionBuyTool('pickaxe')">Buy Pickaxe ($${pickTool.price})</button>`;
+        }
+    } else {
+        // Fallback for debugging if it's missing from TOOLS collection
+        console.warn("Pickaxe not found in TOOLS!");
+    }
+
+    container.innerHTML = `
+        <div style="background:#5D4037; padding:30px; border-radius:16px; border:4px solid #3E2723; 
+                    box-shadow:0 10px 0 rgba(0,0,0,0.5); width:350px; text-align:center; position:relative; max-width:90%; 
+                    max-height: 90vh; overflow-y: auto; text-shadow: 1px 1px 0 #000;">
+            
+            <h2 style="color:#FFD54F; margin-top:0; font-size: 28px;">MERCHANT</h2>
+            <div style="font-size:28px; color:#81C784; margin-bottom:20px; font-weight: bold;">$${saveState.money}</div>
+
+            <h3 style="color:#FFF; border-bottom:3px solid #3E2723; padding-bottom:5px; margin-top:0; background: #4E342E; border-radius: 8px;">SELL</h3>
+            
+            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px; margin-top: 10px;">
+                <button class="btn-lg" onclick="actionSellFish()" ${totalFishValue === 0 ? 'disabled style="filter: grayscale(1); opacity:0.6"' : ''}>
+                    Sell Fish ($${totalFishValue})
+                </button>
+                <button class="btn-lg" onclick="actionSellWood()" ${totalWoodCount === 0 ? 'disabled style="filter: grayscale(1); opacity:0.6"' : ''}>
+                    Sell Wood (${totalWoodCount}x = $${totalWoodValue})
+                </button>
+                <button class="btn-lg" onclick="actionSellOre()" ${totalOreCount === 0 ? 'disabled style="filter: grayscale(1); opacity:0.6"' : ''}>
+                    Sell Ore (${totalOreCount}x = $${totalOreValue})
+                </button>
+                <button class="btn-lg" onclick="actionSellFlowers()" ${totalFlowerCount === 0 ? 'disabled style="filter: grayscale(1); opacity:0.6"' : ''}>
+                    🌸 Sell Flowers (${totalFlowerCount}x = $${totalFlowerValue})
+                </button>
+            </div>
+
+            <h3 style="color:#FFF; border-bottom:3px solid #3E2723; padding-bottom:5px; background: #4E342E; border-radius: 8px;">TOOLS</h3>
+            
+            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom: 20px; margin-top: 10px;">
+                ${axeBtn.replace('style="', 'style="border-bottom: 4px solid #1B5E20; ')}
+                ${pickBtn.replace('style="', 'style="border-bottom: 4px solid #1B5E20; ')}
+            </div>
+
+            <button class="close-x-btn" onclick="document.getElementById('merchant-ui').style.display='none'">×</button>
+        </div>
+    `;
+}
+
+window.actionSellStone = function () {
+    if (!saveState.stone || saveState.stone <= 0) { showToast("No stone!"); return; }
+
+    const count = saveState.stone;
+    const price = 30;
+    const total = count * price;
+
+    saveState.stone = 0;
+    saveState.money += total;
+    saveGame();
+    Sound.sell();
+    showToast(`Sold ${count} stone for $${total}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
+};
+
+window.actionSellFish = function () {
     if (saveState.inventory.length === 0) { showToast("No fish to sell!"); return; }
 
-    // --- NEW: Server Authority Check ---
+    // Server Authority Check
     if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
         dedicatedSocket.send(JSON.stringify({ type: 'sellFish' }));
-        return; // Wait for stateUpdate
+        // Close UI or wait? Let's close it to avoid confusion or just refresh
+        document.getElementById('merchant-ui').style.display = 'none';
+        return;
     }
-    // -----------------------------------
 
     let totalVal = 0;
-    saveState.inventory.forEach(f => totalVal += f.price);
+    saveState.inventory.forEach(f => totalVal += (f.price || f.value || 10));
     const count = saveState.inventory.length;
     saveState.money += totalVal;
     saveState.inventory = [];
     saveGame();
     Sound.sell();
     showToast(`Sold ${count} fish for $${totalVal}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
+
+    // NPC Animation
     if (npcMerchant) {
         const s = npcMerchant.getObjectByName("playerSprite");
         if (s) { s.scale.set(1.2, 1.2, 1.2); setTimeout(() => { s.scale.set(1, 1, 1); }, 200); }
     }
+};
+
+window.actionSellWood = function () {
+    // Calculate total from typed inventory
+    if (!saveState.woodInventory) saveState.woodInventory = {};
+    let total = 0;
+    let count = 0;
+    Object.keys(saveState.woodInventory).forEach(woodId => {
+        const amt = saveState.woodInventory[woodId] || 0;
+        const woodType = WOOD_TYPES.find(w => w.id === woodId);
+        if (woodType && amt > 0) {
+            total += amt * woodType.price;
+            count += amt;
+        }
+    });
+    // Legacy wood
+    if (saveState.wood && saveState.wood > 0) {
+        total += saveState.wood * 20;
+        count += saveState.wood;
+    }
+
+    if (count <= 0) { showToast("No wood!"); return; }
+
+    // Server Authority Check
+    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+        dedicatedSocket.send(JSON.stringify({ type: 'sellWood' }));
+        document.getElementById('merchant-ui').style.display = 'none';
+        return;
+    }
+
+    saveState.woodInventory = {};
+    saveState.wood = 0;
+    saveState.money += total;
+    saveGame();
+    Sound.sell();
+    showToast(`Sold ${count} wood for $${total}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
+    updateUI(); // Refresh inventory display
+};
+
+window.actionSellOre = function () {
+    // Calculate total from typed inventory
+    if (!saveState.oreInventory) saveState.oreInventory = {};
+    let total = 0;
+    let count = 0;
+    Object.keys(saveState.oreInventory).forEach(oreId => {
+        const amt = saveState.oreInventory[oreId] || 0;
+        const oreType = ORE_TYPES.find(o => o.id === oreId);
+        if (oreType && amt > 0) {
+            total += amt * oreType.price;
+            count += amt;
+        }
+    });
+    // Legacy stone
+    if (saveState.stone && saveState.stone > 0) {
+        total += saveState.stone * 30;
+        count += saveState.stone;
+    }
+
+    if (count <= 0) { showToast("No ore!"); return; }
+
+    // Server Authority Check
+    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+        dedicatedSocket.send(JSON.stringify({ type: 'sellOre' }));
+        document.getElementById('merchant-ui').style.display = 'none';
+        return;
+    }
+
+    saveState.oreInventory = {};
+    saveState.stone = 0;
+    saveState.money += total;
+    saveGame();
+    Sound.sell();
+    showToast(`Sold ${count} ore for $${total}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
+    updateUI(); // Refresh inventory display
+};
+
+window.actionSellFlowers = function () {
+    // Deprecated? Or just keeps functionality for legacy inventory
+    // Calculate total from typed inventory
+    if (!saveState.flowerInventory) saveState.flowerInventory = {};
+    let total = 0;
+    let count = 0;
+    Object.keys(saveState.flowerInventory).forEach(flowerId => {
+        const amt = saveState.flowerInventory[flowerId] || 0;
+        const flowerType = FLOWER_TYPES.find(f => f.id === flowerId);
+        if (flowerType && amt > 0) {
+            total += amt * flowerType.price;
+            count += amt;
+        }
+    });
+
+    if (count <= 0) { showToast("No flowers!"); return; }
+
+    // Server Authority Check
+    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+        dedicatedSocket.send(JSON.stringify({ type: 'sellFlowers' }));
+        document.getElementById('merchant-ui').style.display = 'none';
+        return;
+    }
+
+    saveState.flowerInventory = {};
+    saveState.money += total;
+    saveGame();
+    Sound.sell();
+    showToast(`🌸 Sold ${count} flowers for $${total}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
+    updateUI(); // Refresh inventory display
+};
+
+// --- FLOWER COLLECTION SYSTEM ---
+window.pickFlower = function (i) {
+    const flower = pickableFlowers[i];
+    if (!flower || flower.userData.isPicked) return;
+
+    // Mark as picked
+    flower.userData.isPicked = true;
+    flower.visible = false;
+
+    // Get Data
+    const typeId = flower.userData.typeId || 'daisy'; // Default fallback
+    const flowerType = FLOWER_TYPES.find(f => f.id === typeId) || FLOWER_TYPES[0];
+
+    // Rewards
+    const xp = flowerType.xp || 5;
+    const money = flowerType.price || 1;
+
+    // Apply
+    addSkillXP('floristry', xp);
+    saveState.money += money;
+    saveGame();
+
+    // SERVER SYNC
+    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+        dedicatedSocket.send(JSON.stringify({ type: 'collect_flower', id: typeId }));
+    }
+
+    // Feedback
+    Sound.flip(); // Use existing sound (flip or click)
+    showToast(`Picked ${flowerType.name}: +$${money}, +${xp} XP`, 'success');
+    updateUI(); // Update money display
+
+    // Respawn Logic (1 minute cooldown)
+    setTimeout(() => {
+        respawnFlower(i);
+    }, 60000);
 }
+
+function respawnFlower(i) {
+    const flower = pickableFlowers[i];
+    if (!flower) return;
+
+    // Determine new type based on CURRENT level
+    const floristryXP = (saveState.skills && saveState.skills.floristry) ? saveState.skills.floristry.xp : 0;
+    const floristryLevel = getLevelFromXP(floristryXP);
+    const newType = getResourceForLevel(floristryLevel, FLOWER_TYPES);
+
+    // Update Mesh Visuals
+    const head = flower.children[1]; // 0 is stem, 1 is head
+    if (head && head.material) {
+        head.material.color.set(newType.color);
+    }
+
+    // Update Data
+    flower.userData.typeId = newType.id;
+    flower.userData.isPicked = false;
+    flower.visible = true;
+
+    // Optional: Pop animation?
+    flower.scale.set(0, 0, 0);
+    const targetScale = flower.userData.originalScale || 1;
+
+    // Simple grow animation
+    let s = 0;
+    const anim = setInterval(() => {
+        s += 0.1;
+        if (s >= targetScale) {
+            s = targetScale;
+            clearInterval(anim);
+        }
+        flower.scale.set(s, s, s);
+    }, 50);
+}
+
+window.actionBuyTool = function (toolId) {
+    const tool = TOOLS.find(t => t.id === toolId);
+    if (!tool) return;
+    if (saveState.money < tool.price) { showToast("Not enough money!"); return; }
+
+    saveState.money -= tool.price;
+    if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod'];
+    if (!saveState.unlockedTools.includes(toolId)) saveState.unlockedTools.push(toolId);
+
+    if (toolId === 'guitar') saveState.hasGuitar = true;
+    if (toolId === 'glove') saveState.hasGlove = true;
+
+    // Auto-equip if possible or just refresh hotbar
+    updateHotbarVisuals();
+    saveGame();
+    Sound.sell();
+    showToast(`Purchased ${tool.name}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
+};
 
 function playSnagSound() {
     try {
@@ -1072,11 +1543,17 @@ function connectToDedicatedServer(customUrl = null) {
         else if (msg.type === 'stateUpdate') {
             if (msg.money !== undefined) saveState.money = msg.money;
             if (msg.inventory !== undefined) saveState.inventory = msg.inventory;
+            if (msg.woodInventory !== undefined) saveState.woodInventory = msg.woodInventory;
+            if (msg.wood !== undefined) saveState.wood = msg.wood;
+            if (msg.oreInventory !== undefined) saveState.oreInventory = msg.oreInventory;
+            if (msg.stone !== undefined) saveState.stone = msg.stone;
 
             saveGame();
+            updateUI(); // Refresh inventory display
 
             if (msg.soldCount && msg.soldValue) {
-                showToast(`Sold ${msg.soldCount} fish for $${msg.soldValue}!`);
+                const itemType = msg.soldType || 'fish';
+                showToast(`Sold ${msg.soldCount} ${itemType} for $${msg.soldValue}!`);
                 Sound.playSpatial('sell');
             }
         }
@@ -1244,6 +1721,10 @@ function createNoiseTexture(width, height, colorA, colorB, scale = 1, seed = 0) 
 
     // Enhanced noise generation
     const imageData = ctx.createImageData(width, height);
+    const NIGHT_COLOR = new THREE.Color(0x181840); // Slightly warmer/purpler night
+    const DAY_COLOR = new THREE.Color(0x9FD9FF); // Soft Warm Sky Blue
+    const SUNSET_COLOR = new THREE.Color(0xFFB085); // Peachy Sunset
+
     const data = imageData.data;
     const cA = new THREE.Color(colorA);
     const cB = new THREE.Color(colorB);
@@ -1270,25 +1751,39 @@ function createNoiseTexture(width, height, colorA, colorB, scale = 1, seed = 0) 
     return new THREE.CanvasTexture(canvas);
 }
 
+
 function createLeafTexture() {
-    // Pine needles pattern
-    const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+    // High Res Pine Texture
+    const c = document.createElement('canvas'); c.width = 256; c.height = 256;
     const ctx = c.getContext('2d');
 
-    // Dark base
-    ctx.fillStyle = '#1a472a';
-    ctx.fillRect(0, 0, 128, 128);
+    // Gradient Background
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#2d5a27');
+    grad.addColorStop(1, '#1a472a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
 
-    // Needles
-    for (let i = 0; i < 800; i++) {
-        ctx.strokeStyle = Math.random() > 0.5 ? '#2d5a27' : '#3e7038';
-        ctx.lineWidth = 1;
+    // Denser, layered needle details
+    for (let i = 0; i < 1500; i++) {
+        const val = Math.random();
+        ctx.strokeStyle = val > 0.7 ? '#3e7038' : (val > 0.4 ? '#2d5a27' : '#15331e');
+        ctx.lineWidth = 1 + Math.random();
         ctx.beginPath();
-        const x = Math.random() * 128;
-        const y = Math.random() * 128;
+        const x = Math.random() * 256;
+        const y = Math.random() * 256;
         ctx.moveTo(x, y);
-        ctx.lineTo(x + (Math.random() - 0.5) * 10, y + 5 + Math.random() * 5);
+        // Randomize direction slightly
+        ctx.lineTo(x + (Math.random() - 0.5) * 15, y + 5 + Math.random() * 10);
         ctx.stroke();
+    }
+
+    // Add noise/dots
+    for (let i = 0; i < 500; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? '#3e7038' : '#0f2916';
+        ctx.beginPath();
+        ctx.arc(Math.random() * 256, Math.random() * 256, Math.random() * 2, 0, Math.PI * 2);
+        ctx.fill();
     }
 
     const tex = new THREE.CanvasTexture(c);
@@ -1297,52 +1792,399 @@ function createLeafTexture() {
     return tex;
 }
 
+
+
+// --- VISUAL UPGRADE: ROCKS ---
+// --- VISUAL UPGRADE: ROCKS ---
+function createRockMesh(scale = 1, rng = Math.random) {
+    const geo = new THREE.IcosahedronGeometry(1, 1); // Higher poly for better shape
+
+    // REMOVED VERTEX RANDOMIZATION to fix "cracked" look with flat shading.
+    // The base icosahedron shape + random scaling/rotation is sufficient for this style.
+
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+        color: 0x888888,
+        roughness: 0.9,
+        flatShading: true
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.userData.isRock = true;
+
+    // Scale flattened on Y axis for "boulder" look
+    mesh.scale.set(scale, scale * 0.6, scale);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+}
+
+// --- VISUAL UPGRADE: DETAILED TREES ---
+// --- VISUAL UPGRADE: COZY FLUFFY TREES ---
+function createDetailedTree(leafMat, trunkMat) {
+    const group = new THREE.Group();
+    group.userData.isTree = true;
+
+    // Trunk (Slightly Thicker Base)
+    const trunkGeo = new THREE.CylinderGeometry(0.3, 0.6, 2.5, 7);
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    trunk.position.y = 1.25;
+    trunk.castShadow = true;
+    trunk.receiveShadow = true;
+    group.add(trunk);
+
+    // Leaves (Round/Fluffy Bunches using Icosahedrons)
+    const leafGeo = new THREE.IcosahedronGeometry(1.5, 0); // Low poly round shape
+
+    // Bottom Bunch
+    const L1 = new THREE.Mesh(leafGeo, leafMat);
+    L1.position.y = 3.0;
+    L1.scale.set(1.4, 1.1, 1.4);
+    L1.castShadow = true;
+    group.add(L1);
+
+    // Middle Bunch
+    const L2 = new THREE.Mesh(leafGeo, leafMat);
+    L2.position.y = 4.8;
+    L2.scale.set(1.1, 1.1, 1.1);
+    L2.castShadow = true;
+    group.add(L2);
+
+    // Top Bunch
+    const L3 = new THREE.Mesh(leafGeo, leafMat);
+    L3.position.y = 6.2;
+    L3.scale.set(0.8, 0.8, 0.8);
+    L3.castShadow = true;
+    L3.receiveShadow = true; // Leaves self-shadow
+    group.add(L3);
+
+    return group;
+}
+
+// --- TERRAIN HEIGHT SYSTEM ---
+window.getTerrainHeight = function getTerrainHeight(x, z) {
+    if (typeof isInVoid !== 'undefined' && isInVoid) return 0;
+    if (typeof isInLavaWorld !== 'undefined' && isInLavaWorld) return 0;
+
+    // --- -1. DOCK (Absolute Priority) ---
+    // Dock at X=0, Z=90-170, Y=0.3 (slightly above ground to prevent z-fighting)
+    if (x > -6 && x < 6 && z > 85 && z < 170) {
+        return 0.3; // Dock surface height (level with flattened terrain)
+    }
+
+    // Dock Approach Area (Flatten terrain around dock entrance)
+    if (z > 70 && z < 100 && Math.abs(x) < 12) {
+        return 0; // Flat ground leading to dock
+    }
+
+    // --- 0. PLATFORMS (Highest Priority) ---
+    if (window.parkourPlatforms) {
+        for (const p of window.parkourPlatforms) {
+            const r = p.scale * 1.5;
+            if (Math.hypot(x - p.x, z - p.z) < r) return p.y;
+        }
+    }
+
+    // --- FLAT ZONES ---
+
+    // 1. Lake (Center) - Lake Radius is 20 + Shore buffer
+    const dist = Math.sqrt(x * x + z * z);
+    if (dist < 32) return 0;
+
+    // 2. Cabin Area (-40, 10)
+    const distCabin = Math.sqrt((x + 40) ** 2 + (z - 10) ** 2);
+    if (distCabin < 20) return 0;
+
+    // 3. Waterfall / Cave Area (z < -70, x around 0)
+    // Waterfall is at (0, -95). Path leads there.
+    const distWaterfall = Math.sqrt(x * x + (z + 95) ** 2);
+    if (distWaterfall < 35) return 0;
+
+    // 4. Pond Area (-60, -30)
+    const distPond = Math.sqrt((x + 60) ** 2 + (z + 30) ** 2);
+    if (distPond < 15) return 0;
+
+    // 5. Dark Pond (60, 50) - HARDCODED like other pond for reliability
+    const distDarkPond = Math.sqrt((x - 60) ** 2 + (z - 50) ** 2);
+    if (distDarkPond < 24) return 0; // radius 14 + 10 buffer
+
+    // --- PLATFORMS & CLIFFS ---
+    // (Parkour logic moved to top priority)
+
+    // 7. Waterfall Top (Summit)
+    // Area above cave: x around 0, z < -100
+    if (z < -95 && Math.abs(x) < 25) {
+        // Height of the cliff top
+        return 42;
+    }
+
+    // --- NOISE GENERATION ---
+    // Smooth transition from flat zones using min distance
+    const minDist = Math.min(
+        Math.max(0, dist - 32),
+        Math.max(0, distCabin - 20),
+        Math.max(0, distWaterfall - 35),
+        Math.max(0, distPond - 15),
+        Math.max(0, distDarkPond - 24) // Include dark pond in smoothing
+    );
+
+    // Blend factor (0 to 1 over 15 units)
+    let blend = Math.min(1, minDist / 15);
+    blend = blend * blend * (3 - 2 * blend); // Smoothstep curve
+
+    // Simple layered sine noise for hills
+    const h1 = Math.sin(x * 0.05) * Math.cos(z * 0.05) * 4;
+    const h2 = Math.sin(x * 0.1 + 10) * Math.sin(z * 0.12 + 20) * 2;
+    const detail = Math.sin(x * 0.2) * 0.5;
+
+    // Bias height up slightly (hills, not valleys below water level)
+    let h = (h1 + h2 + detail + 1.5) * blend;
+    h = Math.max(0, h); // Ensure no underground dips
+
+    // --- ISLAND EDGE FALLOFF ---
+    // Apply the same slope near island edges so players walk on the visual terrain
+    const ISLAND_RADIUS = 120; // Must match value in fish.js
+    const EDGE_FALLOFF = 12;   // Must match value in terrain generation
+    const distFromCenter = Math.sqrt(x * x + z * z);
+
+    if (distFromCenter > ISLAND_RADIUS) {
+        // Beyond island - below water level
+        return -4;
+    } else if (distFromCenter > ISLAND_RADIUS - EDGE_FALLOFF) {
+        // In the falloff zone - smooth transition below water
+        const falloffProgress = (distFromCenter - (ISLAND_RADIUS - EDGE_FALLOFF)) / EDGE_FALLOFF;
+        const smoothFactor = (1 - Math.cos(falloffProgress * Math.PI)) / 2;
+        return h * (1 - smoothFactor) + (-4) * smoothFactor;
+    }
+
+    return h;
+}
+
+// Helper for flowers
+function createFlowerMesh(color) {
+    const group = new THREE.Group();
+    // Stem
+    const stemGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.4, 4);
+    const stemMat = new THREE.MeshLambertMaterial({ color: 0x228b22 });
+    const stem = new THREE.Mesh(stemGeo, stemMat);
+    stem.position.y = 0.2;
+    stem.castShadow = true;
+    group.add(stem);
+
+    // Flower Head
+    const headGeo = new THREE.DodecahedronGeometry(0.15, 0);
+    const headMat = new THREE.MeshLambertMaterial({ color: color });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.y = 0.4;
+    head.castShadow = true;
+    group.add(head);
+
+    return group;
+}
+
+
+
+// Keeps the cave mouth / waterfall approach readable and walkable.
+// Used by both procedural spawners and decorative passes.
+function isInCaveEntranceZone(x, z) {
+    return (Math.abs(x) < 24 && z > -120 && z < -70);
+}
+
 function generateWorld(seedStr) {
     treeMeshes.forEach(t => scene.remove(t));
     treeMeshes = []; treeColliders = [];
+    pickableFlowers = []; // Track pickable flowers separately
+    lavaColliders = [];
+
     const seed = xmur3(seedStr.toLowerCase())();
     const rand = mulberry32(seed);
 
     const cabinPos = new THREE.Vector3(-40, 0, 10);
     const safeZone = 15;
 
-    // Pre-create standard materials
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5D4037, roughness: 0.9 }); // Darker Wood
+    // --- PROTECTED ZONES (No Spawn) ---
+    // Spawn Point (25,0,0), Merchant (23,0,0), Stylist (-23,0,0), Bait (0,0,23), Guard (16,0,16)
+    const protectedZones = [
+        { x: 25, z: 0, r: 8 },  // Player Spawn
+        { x: 23, z: 0, r: 6 },  // Merchant
+        { x: -23, z: 0, r: 6 }, // Stylist
+        { x: 0, z: 23, r: 6 },  // Bait Shop
+        { x: 16, z: 16, r: 6 }, // Inferno Guard
+        { x: -40, z: 10, r: 15 }, // Cabin
+        // --- WATER BODIES ---
+        { x: -60, z: -30, r: 14 }, // Light Pond
+        { x: 60, z: 50, r: 26 },   // Dark Pond (radius 14 + buffer)
+        // Dock area
+        { x: 0, z: 130, r: 8 },    // Dock center
+    ];
+
+    function isSafe(x, z) {
+
+        // Keep the cave mouth / waterfall approach clear
+        if (isInCaveEntranceZone(x, z)) return false;
+
+        // Static protected zones (spawn, NPCs, pond, coarse river points, etc.)
+        for (let zone of protectedZones) {
+            const dx = x - zone.x;
+            const dz = z - zone.z;
+            if (dx * dx + dz * dz < zone.r * zone.r) return false;
+        }
+
+        // Dynamic river exclusion (covers intermediate points and matches the rendered river width)
+        if (window.riverColliders && Array.isArray(window.riverColliders)) {
+            for (const rc of window.riverColliders) {
+                const rr = (rc.radius != null ? rc.radius : 8) + 2.0;
+                const dx = x - rc.x;
+                const dz = z - rc.z;
+                if (dx * dx + dz * dz < rr * rr) return false;
+            }
+        }
+
+        // Waterfall Path Protection (legacy guard rail)
+        if (z < -70 && x > -30 && x < 30) return false;
+
+        return true;
+    }
+
+    // Materials
+    // Materials - COZY UPDATE
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6D4C41, roughness: 1.0 }); // Warmer Wood
     const leafTex = createLeafTexture();
     const leafMat = new THREE.MeshStandardMaterial({
         map: leafTex,
-        color: 0xddffdd, // Tint slightly
-        roughness: 0.8
+        color: 0x88CC88, // Warmer/Softer Green (Pale/Mossy)
+        roughness: 0.8,
+        flatShading: true
     });
 
-    for (let i = 0; i < 100; i++) {
+    // --- TREES ---
+    for (let i = 0; i < 120; i++) {
         const angle = rand() * Math.PI * 2;
-
         const minTreeDist = LAKE_RADIUS + 5;
         const maxTreeDist = ISLAND_RADIUS - 5;
-
         const dist = minTreeDist + rand() * (maxTreeDist - minTreeDist);
 
         const x = Math.cos(angle) * dist;
         const z = Math.sin(angle) * dist;
 
+        if (!isSafe(x, z)) continue;
+
+        // Detailed Tree
+        const localLeafMat = leafMat.clone();
+        const tint = (rand() - 0.5) * 0.2;
+        localLeafMat.color.setHSL(0.35 + tint, 0.6, 0.4);
+
+        const t = createDetailedTree(localLeafMat, trunkMat);
+        const y = getTerrainHeight(x, z);
+        t.position.set(x, y, z);
+
+        t.rotation.y = rand() * Math.PI * 2;
+        const scale = 0.8 + rand() * 0.4;
+        t.scale.set(scale, scale, scale);
+
+        scene.add(t);
+        treeMeshes.push(t);
+        treeColliders.push({ x, z, radius: 1.5 });
+    }
+
+    // --- ROCKS ---
+    for (let i = 0; i < 60; i++) {
+        const angle = rand() * Math.PI * 2;
+        const dist = (LAKE_RADIUS + 2) + rand() * (ISLAND_RADIUS - LAKE_RADIUS - 5);
+        const x = Math.cos(angle) * dist;
+        const z = Math.sin(angle) * dist;
+
+        if (!isSafe(x, z)) continue;
+
         if (new THREE.Vector3(x, 0, z).distanceTo(cabinPos) < safeZone) continue;
-        if (z < -70 && x > -30 && x < 30) continue;
 
-        // Tree Trunk
-        const t = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 2.5, 8), trunkMat);
-        t.position.set(x, 1.25, z);
+        let tooClose = false;
+        for (let t of treeColliders) {
+            if (Math.hypot(t.x - x, t.z - z) < 3) tooClose = true;
+        }
+        if (tooClose) continue;
 
-        // Tree Leaves (Cone) with Texture
-        const l = new THREE.Mesh(new THREE.ConeGeometry(2.2, 4.5, 8), leafMat);
-        l.position.set(0, 3, 0);
-        t.add(l);
+        const scale = 1 + rand() * 2;
+        const rock = createRockMesh(scale, rand);
+        const y = getTerrainHeight(x, z);
+        rock.position.set(x, y + scale * 0.3, z); // Adjust Y for terrain + scaling
+        rock.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
 
-        scene.add(t); treeMeshes.push(t); treeColliders.push({ x, z, radius: 1.5 });
+        scene.add(rock);
+        treeMeshes.push(rock);
+        // Collision for almost all rocks
+        if (scale > 0.5) {
+            treeColliders.push({ x, z, radius: scale * 0.8 });
+        }
+    }
+
+    // --- FLOWERS ---
+    // --- FLOWERS ---
+    // Calculate floristry level once for the batch
+    const floristryXP = (saveState.skills && saveState.skills.floristry) ? saveState.skills.floristry.xp : 0;
+    const floristryLevel = getLevelFromXP(floristryXP);
+
+    for (let i = 0; i < 80; i++) {
+        const angle = rand() * Math.PI * 2;
+        const dist = (LAKE_RADIUS + 1) + rand() * (ISLAND_RADIUS - LAKE_RADIUS - 2);
+        const x = Math.cos(angle) * dist;
+        const z = Math.sin(angle) * dist;
+
+        if (new THREE.Vector3(x, 0, z).distanceTo(cabinPos) < safeZone) continue;
+
+        // --- NO SPAWN ZONES (Ponds, Dock) ---
+        // Light Pond (-60, -30, r=14)
+        if ((x + 60) ** 2 + (z + 30) ** 2 < 16 * 16) continue;
+        // Dark Pond (60, 50, r=26)
+        if ((x - 60) ** 2 + (z - 50) ** 2 < 28 * 28) continue;
+        // Dock (0, 130, r=8) + Walking path (Z > 85, |X| < 6)
+        if (z > 80 && Math.abs(x) < 8) continue; // Dock path
+        if ((x) ** 2 + (z - 130) ** 2 < 12 * 12) continue; // Dock end
+
+        let tooClose = false;
+        for (let t of treeColliders) {
+            if (Math.hypot(t.x - x, t.z - z) < 2) tooClose = true;
+        }
+        if (tooClose) continue;
+
+        // Pick type based on level
+        const flowerType = getResourceForLevel(floristryLevel, FLOWER_TYPES);
+        const col = flowerType.color;
+
+        const flower = createFlowerMesh(col);
+        const y = getTerrainHeight(x, z);
+        flower.position.set(x, y, z);
+
+        // Random tilt/rot
+        flower.rotation.y = rand() * Math.PI * 2;
+        flower.rotation.x = (rand() - 0.5) * 0.3;
+        flower.rotation.z = (rand() - 0.5) * 0.3;
+
+        const scale = 0.8 + rand() * 0.5;
+        flower.scale.set(scale, scale, scale);
+
+        // Set up for picking
+        flower.userData.isFlower = true;
+        flower.userData.isPicked = false;
+        flower.userData.typeId = flowerType.id;
+
+        // Store for respawn logic
+        flower.userData.originalScale = scale;
+
+        scene.add(flower);
+        treeMeshes.push(flower);
+        pickableFlowers.push(flower);
     }
 }
 
+
 function handleDataFromClient(clientId, data) {
+    // DEBUG: Log all incoming data from clients (if debug mode enabled)
+    if (saveState.debugMode && data.type !== 'update') {
+        console.log('[P2P HOST] Received from', clientId, ':', data.type, data);
+    }
+
     // --- 1. SECURITY: RATE LIMIT CHECK ---
     const now = Date.now();
 
@@ -1354,7 +2196,8 @@ function handleDataFromClient(clientId, data) {
     const userLimit = rateLimits[clientId];
 
     // Global Packet Flood Protection (DoS prevention)
-    if (now - userLimit.lastGeneral < SPAM_THRESHOLDS.general) {
+    // Exclude 'chat' from general limit since it has its own specific limit
+    if (data.type !== 'chat' && now - userLimit.lastGeneral < SPAM_THRESHOLDS.general) {
         return; // Silently drop packets if they are spamming raw data too fast
     }
     userLimit.lastGeneral = now;
@@ -1433,6 +2276,7 @@ function handleDataFromClient(clientId, data) {
             if (mutedChatPeers.includes(clientId)) return;
             data.id = clientId;
             data.name = otherPlayers[clientId] ? otherPlayers[clientId].lastData.name : "Unknown";
+            if (saveState.debugMode) console.log('[P2P HOST DEBUG] Received chat from client, broadcasting:', data);
             if (data.id !== myPeerId) displayChatMessage(data.name, data.text, data.id);
             broadcastToClients(data);
 
@@ -1494,6 +2338,15 @@ function handleDataFromClient(clientId, data) {
         } else if (data.type === 'radio_event') {
             handleRadioEvent(data);
             if (isHost) broadcastToClients(data);
+        } else if (data.type === 'chop_tree') {
+            chopTree(data.index, true);
+            if (isHost) broadcastToClients(data);
+        } else if (data.type === 'mine_rock') {
+            mineRock(data.index, true);
+            if (isHost) broadcastToClients(data);
+        } else if (data.type === 'pick_flower') {
+            pickFlower(data.index, true);
+            if (isHost) broadcastToClients(data);
         }
 
     } catch (err) {
@@ -1505,6 +2358,20 @@ function handleDataFromHost(data) {
     if (data.type === 'error') {
         alert(data.message);
         location.reload();
+        return;
+    }
+
+    // Handle Tree Chop Event from Host/Server
+    if (data.type === 'chop_tree') {
+        chopTree(data.index, true);
+        return;
+    }
+    if (data.type === 'mine_rock') {
+        mineRock(data.index, true);
+        return;
+    }
+    if (data.type === 'pick_flower') {
+        pickFlower(data.index, true);
         return;
     }
 
@@ -1552,7 +2419,15 @@ function handleDataFromHost(data) {
     // C. Gameplay Events
     else if (data.type === 'forceGhost') spawnGhostMesh(data.x, data.z);
     else if (data.type === 'spawnPortal') spawnPortal(data.x, data.z, true);
-    else if (data.type === 'chat' && data.id !== myPeerId) displayChatMessage(data.name, data.text, data.id);
+    else if (data.type === 'chat') {
+        if (saveState.debugMode) {
+            console.log('[P2P CHAT DEBUG] Received chat from host:', data);
+            console.log('[P2P CHAT DEBUG] data.id:', data.id, 'myPeerId:', myPeerId, 'match:', data.id === myPeerId);
+        }
+        if (data.id !== myPeerId) {
+            displayChatMessage(data.name, data.text, data.id);
+        }
+    }
     else if (data.type === 'sound') {
         // --- MIDI MUTE CHECK START ---
         if (data.name === 'guitar') {
@@ -1631,6 +2506,17 @@ function sendUpdate() {
     myData.hair = saveState.currentHair;
     myData.hairColor = saveState.hairColor;
     myData.bobberType = saveState.currentBobber;
+
+    myData.bobberType = saveState.currentBobber;
+
+    // DETERMINE CURRENT TOOL - use same mapping as selectTool()
+    const toolMap = ['rod', 'hands', 'axe', 'guitar', 'glove', 'pickaxe'];
+    let toolId = toolMap[saveState.activeToolIndex] || 'rod';
+
+    // If we are holding a rod but hands are hidden (via '1' key toggle), force tool to 'hands'
+    if (toolId === 'rod' && isHandsHidden) toolId = 'hands';
+
+    myData.tool = toolId;
 
     myData.version = GAME_VERSION;
 
@@ -1784,7 +2670,7 @@ function updateRemotePlayer(id, data) {
         const tTex = createTitleTexture(data.title);
         if (tTex) {
             const tSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tTex }));
-            tSprite.position.y = 2.5; tSprite.scale.set(3, 0.75, 1); tSprite.name = "titleSprite";
+            tSprite.position.y = 3.45; tSprite.scale.set(3, 0.75, 1); tSprite.name = "titleSprite";
             tSprite.visible = saveState.showTitles;
             p.mesh.add(tSprite);
         }
@@ -1847,6 +2733,9 @@ function updateRemotePlayer(id, data) {
     const rod = p.mesh.getObjectByName("rod");
     let guitar = p.mesh.getObjectByName("guitarMesh");
     let glove = p.mesh.getObjectByName("gloveMesh");
+    // Change to 'axe' and 'pickaxe' to match existing naming if we want, but unique names help
+    let axe = p.mesh.getObjectByName("axeMesh");
+    let pickaxe = p.mesh.getObjectByName("pickaxeMesh");
     let fishSprite = p.mesh.getObjectByName("heldFishSprite");
 
     // A. Guitar Logic
@@ -1861,7 +2750,7 @@ function updateRemotePlayer(id, data) {
             const tex = new THREE.CanvasTexture(c);
             tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
             const mat = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5 });
-            guitar = new THREE.Sprite(mat); guitar.name = 'guitarMesh'; guitar.position.set(0.3, 1.0, 0.2); guitar.scale.set(1.5, 1.5, 1); p.mesh.add(guitar);
+            guitar = new THREE.Sprite(mat); guitar.name = 'guitarMesh'; guitar.position.set(0.3, 1.25, 0.2); guitar.scale.set(1.5, 1.5, 1); p.mesh.add(guitar);
         }
         guitar.visible = true;
         if (glove) glove.visible = false;
@@ -1877,7 +2766,7 @@ function updateRemotePlayer(id, data) {
             const tex = new THREE.CanvasTexture(c);
             tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
             const mat = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5 });
-            glove = new THREE.Sprite(mat); glove.name = 'gloveMesh'; glove.position.set(0.6, 1.0, 0.5); glove.scale.set(1.2, 1.2, 1); p.mesh.add(glove);
+            glove = new THREE.Sprite(mat); glove.name = 'gloveMesh'; glove.position.set(0.6, 1.25, 0.5); glove.scale.set(1.2, 1.2, 1); p.mesh.add(glove);
         }
         if (glove) glove.visible = true;
         if (guitar) guitar.visible = false;
@@ -1893,7 +2782,7 @@ function updateRemotePlayer(id, data) {
             fishSprite = new THREE.Sprite(fMat);
             fishSprite.name = 'heldFishSprite';
             fishSprite.userData = { fishName: data.heldFish.name };
-            fishSprite.position.set(0.6, 1.2, 0.5);
+            fishSprite.position.set(0.6, 1.5, 0.5);
             const s = data.heldFish.size || 1.0;
             fishSprite.scale.set(1.5 * s, 1.5 * s, 1);
             p.mesh.add(fishSprite);
@@ -1902,20 +2791,81 @@ function updateRemotePlayer(id, data) {
         if (guitar) guitar.visible = false;
         if (glove) glove.visible = false;
         if (rod) rod.visible = false;
+        if (axe) axe.visible = false;
+        if (pickaxe) pickaxe.visible = false;
     }
-    // D. Empty Hands Logic (NEW)
-    else if (data.handsEmpty) {
-        // Hide everything
-        if (guitar) guitar.visible = false;
-        if (glove) glove.visible = false;
-        if (fishSprite) fishSprite.visible = false;
+    // D. Axe Logic
+    else if (data.tool === 'axe') {
+        if (!axe) {
+            // Match equipAxe() exactly
+            const tex = createAxeTexture();
+            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+            const geo = new THREE.PlaneGeometry(2.5, 2.5);
+            geo.translate(0.5, 0.5, 0); // Pivot adjustment
+
+            axe = new THREE.Mesh(geo, mat);
+            axe.name = 'axeMesh';
+
+            axe.position.set(0.6, 0.96, 0.1);
+            axe.rotation.set(-0.2, -Math.PI / 2, 0);
+            axe.scale.x = -1; // FLIP SPRITE
+
+            p.mesh.add(axe);
+        }
+        axe.visible = true;
+        if (pickaxe) pickaxe.visible = false;
         if (rod) rod.visible = false;
-    }
-    // E. Rod Logic (Default)
-    else {
         if (guitar) guitar.visible = false;
         if (glove) glove.visible = false;
         if (fishSprite) fishSprite.visible = false;
+    }
+    // E. Pickaxe Logic
+    else if (data.tool === 'pickaxe') {
+        if (!pickaxe) {
+            // Match equipPickaxe() exactly
+            const tex = createPickaxeTexture();
+            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+            const geo = new THREE.PlaneGeometry(2.5, 2.5);
+            geo.translate(0.5, 0.5, 0);
+
+            pickaxe = new THREE.Mesh(geo, mat);
+            pickaxe.name = 'pickaxeMesh';
+
+            pickaxe.position.set(0.6, 0.96, 0.1);
+            pickaxe.rotation.set(-0.2, -Math.PI / 2, 0);
+            pickaxe.scale.x = -1; // Flip like axe
+
+            p.mesh.add(pickaxe);
+        }
+        pickaxe.visible = true;
+        if (axe) axe.visible = false;
+        if (rod) rod.visible = false;
+        if (guitar) guitar.visible = false;
+        if (glove) glove.visible = false;
+        if (fishSprite) fishSprite.visible = false;
+    }
+    // F. Hands Empty Logic
+    else if (data.handsEmpty || data.tool === 'hands') {
+        if (rod) rod.visible = false;
+        if (guitar) guitar.visible = false;
+        if (glove) glove.visible = false;
+        if (fishSprite) fishSprite.visible = false;
+        if (axe) axe.visible = false;
+        if (pickaxe) pickaxe.visible = false;
+    }
+    // G. Default: Rod
+    else {
+        if (rod) {
+            rod.visible = true;
+            // Ensure correct rod texture (lazy way: recreate if ID changed, or just trust init)
+            // We won't re-init texture every frame here to save perf, usually createRemotePlayer handles it.
+            // But if they switch rods, we might want to handle that in VISUALS SYNC section.
+        }
+        if (guitar) guitar.visible = false;
+        if (glove) glove.visible = false;
+        if (fishSprite) fishSprite.visible = false;
+        if (axe) axe.visible = false;
+        if (pickaxe) pickaxe.visible = false;
 
         // Ensure rod exists and skin is correct
         if (!rod || (data.rod && rod.userData.rodId !== data.rod)) {
@@ -1929,7 +2879,7 @@ function updateRemotePlayer(id, data) {
             rodGeo.translate(1.5, 1.5, 0);
 
             const newRod = new THREE.Mesh(rodGeo, rodMat);
-            newRod.position.set(0.6, 0.8, 0.1);
+            newRod.position.set(0.6, 0.96, 0.1);
             newRod.rotation.set(-0.2, -Math.PI / 2, 0);
             newRod.name = "rod";
             newRod.userData.rodId = rodId;
@@ -2241,7 +3191,7 @@ function showChatBubble(parentMesh, text) {
     const scaleY = scaleX * (canvasHeight / canvasWidth);
 
     sprite.scale.set(scaleX, scaleY, 1);
-    sprite.position.y = 3.2 + (scaleY / 2);
+    sprite.position.y = 4.15 + (scaleY / 2);
     sprite.name = "chatBubble";
 
     parentMesh.add(sprite);
@@ -2385,72 +3335,196 @@ function createLavaWorld() {
 let waterfallMesh;
 
 function createWaterfallZone() {
-    const mountainMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
+    // Replaced BoxGeometry Walls with Organic Rock Clusters
+    // Use a fixed seed for waterfall generation so it syncs for everyone
+    const seed = xmur3('waterfall zone')();
+    const rand = mulberry32(seed);
 
-    const c1 = new THREE.Mesh(new THREE.BoxGeometry(40, 40, 20), mountainMat);
-    c1.position.set(-25, 20, -90);
-    scene.add(c1);
+    // Static Colliders (Keep logic similar but invisible helpers?)
+    // Left Wall Collider
+    staticColliders.push({ minX: -60, maxX: -4, minZ: -120, maxZ: -79 });
+    // Right Wall Collider
+    staticColliders.push({ minX: 6, maxX: 60, minZ: -120, maxZ: -79 });
+    // Back Wall Collider
+    staticColliders.push({ minX: -60, maxX: 60, minZ: -130, maxZ: -99 });
 
-    staticColliders.push({ minX: -46, maxX: -4, minZ: -100, maxZ: -79 });
+    // --- MOUNTAIN & CAVE GENERATION ---
+    // Generate a mountain shape using stacked rocks
+    const mountainRocks = [];
 
-    const c2 = new THREE.Mesh(new THREE.BoxGeometry(40, 40, 20), mountainMat);
-    c2.position.set(25, 20, -90);
-    scene.add(c2);
+    // 1. Procedural Mountain Range (U-Shape)
+    for (let i = 0; i < 150; i++) {
+        // Fix: Angle Limit to generate "Behind" the waterfall (North side)
+        // Waterfall is at -95. We want rocks at Z < -95 (Back) and sides.
+        // 0 = Right, PI = Left. We want PI (Left) -> 2PI (Right)?
+        // Wait, standard circle: 0 is Right (+X), PI is Left (-X).
+        // Sin(Angle) maps to Z (+/-). Sin(0)=0, Sin(PI)=0. Sin(1.5PI)=-1 (Back).
+        // So we want Angle from PI (Left) to 2PI (Right).
+        const angle = Math.PI + rand() * Math.PI;
 
-    staticColliders.push({ minX: 6, maxX: 44, minZ: -100, maxZ: -79 });
+        const dist = 20 + rand() * 35; // Tighter fit
 
-    const c3 = new THREE.Mesh(new THREE.BoxGeometry(90, 10, 20), mountainMat);
-    c3.position.set(0, 35, -90);
-    scene.add(c3);
+        // Elliptical shape to wrap around
+        let x = Math.cos(angle) * dist;
+        let z = -95 + Math.sin(angle) * dist * 0.9;
 
-    const backWall = new THREE.Mesh(new THREE.BoxGeometry(90, 40, 10), mountainMat);
-    backWall.position.set(0, 20, -105);
-    scene.add(backWall);
-    staticColliders.push({ minX: -46, maxX: 44, minZ: -110, maxZ: -99 });
+        // Height: Stack them up!
+        let y = rand() * 55;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = 64; canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#4fa'; ctx.fillRect(0, 0, 64, 64);
-    for (let i = 0; i < 50; i++) {
-        ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.5})`;
-        ctx.fillRect(Math.random() * 64, Math.random() * 64, 2, 10);
+        // Flatten the "floor" outside the cave
+        if (y < 5) y = -2;
+
+        // Scale
+        const s = 10 + rand() * 15;
+
+        // CAVE OPENING LOGIC:
+        // Clear channel in the middle for player to walk in
+        // Center is X=0, Z=-95.
+        // Entrance is from Z > -95 (Front).
+        // So allow rocks IF they are far from X center OR High up.
+
+        // CAVE OPENING LOGIC:
+        // Keep a generous walkable corridor at the cave mouth so rocks don't block the entrance.
+        const inCaveMouthCorridor = (Math.abs(x) < 22 && z > -120 && z < -78 && y < 30);
+        if (inCaveMouthCorridor) continue;
+
+        const rock = createRockMesh(s, rand);
+        rock.position.set(x, y - 4, z);
+        rock.rotation.set(rand() * 6, rand() * 6, rand() * 6);
+        scene.add(rock);
+
+        // CRITICAL: ADD COLLISION
+        treeColliders.push({ x: x, z: z, radius: s * 0.8 });
     }
-    const waterTex = new THREE.CanvasTexture(canvas);
 
-    // --- FILTER FIX ---
+    // 2. Explicit Cave Roof / Archway
+    // Bridge the gap at the front to make it look like a cave entrance
+    for (let x = -15; x <= 15; x += 6) {
+        const s = 10 + rand() * 5;
+        const y = 25 + rand() * 5;
+        const z = -95 + (rand() - 0.5) * 10;
+
+        const rock = createRockMesh(s, rand);
+        rock.position.set(x, y, z);
+        scene.add(rock);
+        // No floor collision needed for roof, but strictly speaking doesn't hurt
+        // treeColliders.push({ x: x, z: z, radius: s * 0.8 }); 
+    }
+
+    // --- WATERFALL ---
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 128; // Higher res
+    const ctx = canvas.getContext('2d');
+
+    // Enhanced Water Texture
+    ctx.fillStyle = '#00CED1'; // Deep Cyan
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    for (let i = 0; i < 100; i++) {
+        // Streaks
+        const x = rand() * 128;
+        const y = rand() * 128;
+        const w = 2 + rand() * 4;
+        const h = 10 + rand() * 20;
+        ctx.fillRect(x, y, w, h);
+    }
+
+    const waterTex = new THREE.CanvasTexture(canvas);
     waterTex.magFilter = THREE.NearestFilter;
     waterTex.minFilter = THREE.NearestFilter;
-    // ------------------
-
     waterTex.wrapS = THREE.RepeatWrapping;
     waterTex.wrapT = THREE.RepeatWrapping;
-    waterTex.repeat.set(2, 6);
+    waterTex.repeat.set(2, 4);
 
     const waterMat = new THREE.MeshStandardMaterial({
         map: waterTex,
-        color: 0x00ffff,
+        color: 0x88ffff,
         transparent: true,
-        opacity: 0.8,
-        side: THREE.DoubleSide
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        roughness: 0.1,
+        metalness: 0.1,
+        emissive: 0x004444
     });
 
-    waterfallMesh = new THREE.Mesh(new THREE.PlaneGeometry(20, 50), waterMat);
-    waterfallMesh.position.set(0, 10, -81);
-    waterfallMesh.rotation.x = 0;
+    waterfallMesh = new THREE.Mesh(new THREE.BoxGeometry(24, 45, 4), waterMat);
+    waterfallMesh.position.set(0, 8, -95); // Lowered position slightly to match new height
+    waterfallMesh.rotation.x = 0; // Vertical
     scene.add(waterfallMesh);
 
-    const caveFloor = new THREE.Mesh(new THREE.CircleGeometry(15, 32), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+    // --- CAVE ---
+    // Floor
+    // Floor
+    const caveFloor = new THREE.Mesh(new THREE.CircleGeometry(18, 32), new THREE.MeshStandardMaterial({
+        color: 0x333333, // Lighter grey so it's not "black hole"
+        roughness: 0.9
+    }));
     caveFloor.rotation.x = -Math.PI / 2;
     caveFloor.position.set(0, 0.1, -95);
     scene.add(caveFloor);
 
-    const secretPool = new THREE.Mesh(new THREE.CircleGeometry(5, 32), new THREE.MeshStandardMaterial({ color: 0x0000ff, emissive: 0x0000aa }));
+    // Pool
+    // Pool (The "Special Spot")
+    const secretPool = new THREE.Mesh(new THREE.CircleGeometry(8, 32), new THREE.MeshStandardMaterial({
+        color: 0x00ffff,
+        emissive: 0x0044aa,
+        roughness: 0.1
+    }));
     secretPool.rotation.x = -Math.PI / 2;
     secretPool.position.set(0, 0.15, -95);
     scene.add(secretPool);
 
+    // Ambient Cave Light
+    const caveLight = new THREE.PointLight(0x00ffff, 1, 40);
+    caveLight.position.set(0, 10, -95);
+    scene.add(caveLight);
+
+    // Old manual arch loop removed, handled by seeded procedural generation now
+
     addHotspotParticles(0, 1, -95);
+
+    // Splash Particles (Simple)
+    // We already have addHotspotParticles, maybe add more for splash?
+
+    // --- PARKOUR PLATFORMS ---
+    // Add jumping platforms leading up to the top of the waterfall
+    // Heights and distances designed for player jump height (~2.5 units)
+    // MOVED TO LEFT SIDE of cave entrance, climbing the rock face.
+    const parkourPlatforms = [
+        { x: -28, y: 3, z: -80, scale: 4.5 },    // 1. Base (Left of entrance, outside)
+        { x: -35, y: 9, z: -85, scale: 4 },      // 2. Up the left face
+        { x: -38, y: 15, z: -92, scale: 4 },     // 3. Rounding the corner
+        { x: -30, y: 22, z: -98, scale: 3.5 },   // 4. Moving back/in
+        { x: -20, y: 28, z: -100, scale: 3.5 },  // 5. Approaching center
+        { x: -10, y: 35, z: -102, scale: 4 },    // 6. Near summit
+        { x: 0, y: 42, z: -105, scale: 5 },      // 7. Summit Ledge
+    ];
+
+    window.parkourPlatforms = parkourPlatforms; // Expose for physics collisions
+
+    // Use natural rock clusters
+    parkourPlatforms.forEach((p, i) => {
+        // Main stepping stone
+        const platformRock = createRockMesh(p.scale * 1.1, rand);
+        platformRock.position.set(p.x, p.y - 0.5, p.z);
+        // Random rotation for organic look
+        platformRock.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+        platformRock.material = platformRock.material.clone();
+        platformRock.material.color.setHex(0x666666);
+        scene.add(platformRock);
+
+        // Support rock (visual only) to connect to cliff
+        if (p.y > 5) {
+            const support = createRockMesh(p.scale * 0.9, rand);
+            support.position.set(p.x - 2, p.y - 3, p.z - 2);
+            support.rotation.set(rand(), rand(), rand());
+            scene.add(support);
+        }
+
+        // NOTE: We do NOT add to treeColliders here. 
+        // If we did, the 2D collision system would prevent the player from stepping ONTO the X/Z coordinates.
+        // Vertical physics is handled by getTerrainHeight checking window.parkourPlatforms.
+    });
 }
 
 function addHotspotParticles(x, y, z) {
@@ -2490,7 +3564,7 @@ function updateDayNightCycle(dt) {
 
 
     // 1. Calculate Colors
-    let lightIntensity = 1.0;
+    let lightIntensity = 0.65; // Reduced for cozy/warm feel (was 1.0)
 
     // --- LAVA WORLD OVERRIDE ---
     if (isInLavaWorld) {
@@ -2525,14 +3599,17 @@ function updateDayNightCycle(dt) {
         // Sunrise (6am - 7am)
         if (worldTime < 7) {
             _optColor1.copy(NIGHT_COLOR).lerp(DAY_COLOR, (worldTime - 6));
+            lightIntensity = 0.3 + (worldTime - 6) * 0.35; // 0.3 -> 0.65
         }
         // Sunset (5pm - 6pm)
         else if (worldTime > 17) {
             _optColor1.copy(DAY_COLOR).lerp(SUNSET_COLOR, (worldTime - 17));
+            lightIntensity = 0.65 - (worldTime - 17) * 0.35; // 0.65 -> 0.3
         }
         // Middle of Day
         else {
             _optColor1.copy(DAY_COLOR);
+            lightIntensity = 0.65; // Cozy daytime light
         }
     } else {
         // Night
@@ -2561,7 +3638,7 @@ function updateDayNightCycle(dt) {
 
     // Move Sun/Moon
     const angle = ((worldTime - 6) / 24) * Math.PI * 2;
-    const radius = 100;
+    const radius = 500; // Large radius to keep sun/moon far from terrain
 
     if (sunMesh) {
         sunMesh.position.x = Math.cos(angle) * radius;
@@ -2616,7 +3693,7 @@ function createRainSystem() {
         positions.push((Math.random() - 0.5) * 200); // x
         positions.push(Math.random() * 50 + 10);     // y (height)
         positions.push((Math.random() - 0.5) * 200); // z
-        velocities.push(1.5 + Math.random() * 1.0);  // Faster speed for rain
+        velocities.push(0.4 + Math.random() * 0.3);  // Slower, gentler rain
     }
 
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -2656,13 +3733,18 @@ function createRainSystem() {
 // --- THREE.JS SCENE SETUP ---
 function setupThreeJS() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+    // Warm/Cozy Initial Background
+    scene.background = new THREE.Color(0x9FD9FF);
+    scene.fog = new THREE.Fog(0x9FD9FF, 20, 100);
 
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
 
     // KEEP antialias: false for pixel art style
     renderer = new THREE.WebGLRenderer({ antialias: false });
+
+    // --- SHADOW MAP ENABLED ---
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
 
     // --- PIXEL RATIO FIX ---
     renderer.setPixelRatio(window.devicePixelRatio || 1);
@@ -2672,14 +3754,26 @@ function setupThreeJS() {
     renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
     document.getElementById('game-container').appendChild(renderer.domElement);
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    const hemi = new THREE.HemisphereLight(0xFFEEB1, 0x080820, 0.25); // Darker ambient
     hemi.name = 'hemiLight';
     scene.add(hemi);
 
     // The Sun Light (Shadow caster)
-    sunLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    sunLight = new THREE.DirectionalLight(0xffffff, 1.1); // Reduced from 1.8 for less harsh brightness
     sunLight.position.set(50, 100, 50);
     sunLight.castShadow = true;
+
+    // Configure Shadow Properties
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    const d = 150; // Cover entire island
+    sunLight.shadow.camera.left = -d;
+    sunLight.shadow.camera.right = d;
+    sunLight.shadow.camera.top = d;
+    sunLight.shadow.camera.bottom = -d;
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 500;
+    sunLight.shadow.bias = -0.0005; // Reduce artifacts
     scene.add(sunLight);
 
     // Sun Sprite (Billboard - always faces camera)
@@ -2687,16 +3781,16 @@ function setupThreeJS() {
     sunCanvas.width = 128; sunCanvas.height = 128;
     const sunCtx = sunCanvas.getContext('2d');
     const sunGradient = sunCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    sunGradient.addColorStop(0, 'rgba(255, 255, 200, 1)');
-    sunGradient.addColorStop(0.3, 'rgba(255, 220, 100, 1)');
-    sunGradient.addColorStop(0.7, 'rgba(255, 180, 50, 0.6)');
-    sunGradient.addColorStop(1, 'rgba(255, 150, 0, 0)');
+    sunGradient.addColorStop(0, 'rgba(255, 240, 200, 1)'); // Softer Center
+    sunGradient.addColorStop(0.3, 'rgba(255, 200, 100, 1)');
+    sunGradient.addColorStop(0.7, 'rgba(255, 160, 80, 0.6)'); // Warmer Orange
+    sunGradient.addColorStop(1, 'rgba(255, 140, 0, 0)');
     sunCtx.fillStyle = sunGradient;
     sunCtx.fillRect(0, 0, 128, 128);
     const sunTexture = new THREE.CanvasTexture(sunCanvas);
     const sunSpriteMat = new THREE.SpriteMaterial({ map: sunTexture, transparent: true, fog: false });
     sunMesh = new THREE.Sprite(sunSpriteMat);
-    sunMesh.scale.set(20, 20, 1);
+    sunMesh.scale.set(100, 100, 1); // Large sun for far orbit
     scene.add(sunMesh);
 
     // Moon Sprite (Billboard - always faces camera)
@@ -2713,7 +3807,7 @@ function setupThreeJS() {
     const moonTexture = new THREE.CanvasTexture(moonCanvas);
     const moonSpriteMat = new THREE.SpriteMaterial({ map: moonTexture, transparent: true, fog: false });
     moonMesh = new THREE.Sprite(moonSpriteMat);
-    moonMesh.scale.set(15, 15, 1);
+    moonMesh.scale.set(80, 80, 1); // Large moon for far orbit
     scene.add(moonMesh);
 
     // Stars System (visible at night)
@@ -2765,17 +3859,74 @@ function setupThreeJS() {
         window.cloudSprites.push(cloud);
     }
 
-    // Create HIGH QUALITY Grass Texture
-    const grassTex = createNoiseTexture(256, 256, '#7a9b7a', '#5a7b5a', 0.05, Math.random() * 100);
+    // Create HIGH QUALITY Grass Texture (Warmer/Vibrant Green)
+    const grassTex = createNoiseTexture(256, 256, '#8FB38F', '#6B8E5F', 0.05, Math.random() * 100);
     grassTex.wrapS = THREE.RepeatWrapping;
     grassTex.wrapT = THREE.RepeatWrapping;
     grassTex.repeat.set(8, 8);
 
-    const isl = new THREE.Mesh(new THREE.CylinderGeometry(ISLAND_RADIUS, ISLAND_RADIUS, 5, 64), new THREE.MeshStandardMaterial({ map: grassTex, color: 0xffffff, roughness: 0.8 }));
-    isl.position.y = -2.5; scene.add(isl);
+    // Generate Uneven Terrain
+    const terrainGeo = new THREE.PlaneGeometry(ISLAND_RADIUS * 2, ISLAND_RADIUS * 2, 128, 128);
+    terrainGeo.rotateX(-Math.PI / 2); // Rotate to be flat (Y-up)
 
-    // Create HIGH QUALITY Water Texture
-    const waterTex = createNoiseTexture(128, 128, '#5fbcfe', '#40acfe', 0.03, Math.random() * 100);
+    const posAttr = terrainGeo.attributes.position;
+    const BEACH_WIDTH = 20; // Width of sandy beach area
+    const EDGE_FALLOFF = 12; // Distance from edge where slope to water begins
+
+    // Create vertex colors for grass-to-sand blend
+    const colors = new Float32Array(posAttr.count * 3);
+    const grassColor = new THREE.Color('#6B8E5F');
+    const sandColor = new THREE.Color('#F0D060'); // Golden yellow sand
+
+    for (let i = 0; i < posAttr.count; i++) {
+        const x = posAttr.getX(i);
+        const z = posAttr.getZ(i);
+        const distFromCenter = Math.sqrt(x * x + z * z);
+
+        // Use getTerrainHeight directly - it already has edge falloff built in
+        const height = getTerrainHeight(x, z);
+        posAttr.setY(i, height);
+
+        // Apply colors based on distance from center
+        if (distFromCenter > ISLAND_RADIUS - EDGE_FALLOFF) {
+            // Slope zone and beyond - full sand color
+            colors[i * 3] = sandColor.r;
+            colors[i * 3 + 1] = sandColor.g;
+            colors[i * 3 + 2] = sandColor.b;
+        } else if (distFromCenter > ISLAND_RADIUS - BEACH_WIDTH) {
+            // Beach zone - grass-to-sand blend
+            const beachProgress = (distFromCenter - (ISLAND_RADIUS - BEACH_WIDTH)) / (BEACH_WIDTH - EDGE_FALLOFF);
+            const blendFactor = Math.min(1, Math.max(0, beachProgress));
+            const blendColor = grassColor.clone().lerp(sandColor, blendFactor);
+            colors[i * 3] = blendColor.r;
+            colors[i * 3 + 1] = blendColor.g;
+            colors[i * 3 + 2] = blendColor.b;
+        } else {
+            // Interior - normal grass
+            colors[i * 3] = grassColor.r;
+            colors[i * 3 + 1] = grassColor.g;
+            colors[i * 3 + 2] = grassColor.b;
+        }
+    }
+
+    // Add vertex colors to geometry
+    terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    terrainGeo.computeVertexNormals();
+
+    // Create material with vertex colors
+    const isl = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({
+        map: grassTex,
+        vertexColors: true, // Enable vertex color blending
+        roughness: 0.9
+    }));
+    isl.receiveShadow = true;
+    isl.castShadow = true;
+    scene.add(isl);
+
+    // (Island base cylinder removed - terrain now ends at water level)
+
+    // Create HIGH QUALITY Water Texture (Cozy Teal/Turquoise)
+    const waterTex = createNoiseTexture(128, 128, '#40E0D0', '#00CED1', 0.03, Math.random() * 100);
     waterTex.wrapS = THREE.RepeatWrapping;
     waterTex.wrapT = THREE.RepeatWrapping;
     waterTex.repeat.set(6, 6);
@@ -2788,7 +3939,102 @@ function setupThreeJS() {
         roughness: 0.2,
         metalness: 0.1
     }));
+    lake.receiveShadow = true; // Water receives shadows now
     lake.rotation.x = -Math.PI / 2; lake.position.y = 0.1; scene.add(lake);
+
+    // --- SURROUNDING OCEAN ---
+    const oceanTex = createNoiseTexture(256, 256, '#1a4a6e', '#0d3347', 0.02, 42);
+    oceanTex.wrapS = THREE.RepeatWrapping;
+    oceanTex.wrapT = THREE.RepeatWrapping;
+    oceanTex.repeat.set(20, 20);
+
+    const oceanGeo = new THREE.PlaneGeometry(600, 600);
+    const oceanMat = new THREE.MeshStandardMaterial({
+        map: oceanTex,
+        color: 0x6699cc,
+        transparent: true,
+        opacity: 0.9,
+        roughness: 0.3,
+        metalness: 0.2
+    });
+    const ocean = new THREE.Mesh(oceanGeo, oceanMat);
+    ocean.rotation.x = -Math.PI / 2;
+    ocean.position.y = -3; // Below the island
+    scene.add(ocean);
+
+    // --- SMALL POND (Near Cabin) ---
+    const pondTex = createNoiseTexture(64, 64, '#3a9a9a', '#2a7a7a', 0.04, 77);
+    const pondRadius = 10;
+    const pondX = -60;
+    const pondZ = -30;
+    const pondMesh = new THREE.Mesh(new THREE.CircleGeometry(pondRadius, 32), new THREE.MeshStandardMaterial({
+        map: pondTex,
+        color: 0xaaddee,
+        transparent: true,
+        opacity: 0.9,
+        roughness: 0.2
+    }));
+    pondMesh.rotation.x = -Math.PI / 2;
+    pondMesh.position.set(pondX, 0.12, pondZ);
+    pondMesh.receiveShadow = true;
+    scene.add(pondMesh);
+
+    // Store pond data for collision and fishing
+    window.pondCollider = { x: pondX, z: pondZ, radius: pondRadius };
+    // --- RIVER (From waterfall toward east) ---
+    // River defined as a series of connected segments.
+    // NOTE: Use overlapping discs along the spline instead of wide planes.
+    // This removes the visible rectangular “patch” artifacts seen in the video.
+    // --- DARK POND (South-East) ---
+    const darkPondTex = createNoiseTexture(64, 64, '#1a2a3a', '#0a1a2a', 0.04, 99);
+    const dpRadius = 14;
+    const dpX = 60, dpZ = 50;
+    const dpMesh = new THREE.Mesh(new THREE.CircleGeometry(dpRadius, 32), new THREE.MeshStandardMaterial({
+        map: darkPondTex,
+        color: 0x446688,
+        transparent: true,
+        opacity: 0.9,
+        roughness: 0.1
+    }));
+    dpMesh.rotation.x = -Math.PI / 2;
+    dpMesh.position.set(dpX, 0.12, dpZ);
+    dpMesh.receiveShadow = true;
+    scene.add(dpMesh);
+    // Add to window for collision logic (global like pondCollider)
+    window.darkPondCollider = { x: dpX, z: dpZ, radius: dpRadius };
+
+    // --- OCEAN DOCK (South) ---
+    // Wooden dock extending into the ocean at ground level
+    const dockGeo = new THREE.BoxGeometry(8, 0.3, 80); // Thin, long dock
+    const dockMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9 });
+    const dock = new THREE.Mesh(dockGeo, dockMat);
+    const dockY = 0.3; // Just above ground to prevent z-fighting
+    dock.position.set(0, dockY, 125); // Center at Z=125, extends Z=85 to Z=165
+    dock.castShadow = true; dock.receiveShadow = true;
+    scene.add(dock);
+
+    // Dock Posts (Pilings)
+    const postGeo = new THREE.CylinderGeometry(0.3, 0.3, 6);
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e });
+    for (let dz = -35; dz <= 35; dz += 10) {
+        const p1 = new THREE.Mesh(postGeo, postMat);
+        p1.position.set(-3.5, -2.5, 125 + dz);
+        scene.add(p1);
+        const p2 = new THREE.Mesh(postGeo, postMat);
+        p2.position.set(3.5, -2.5, 125 + dz);
+        scene.add(p2);
+    }
+
+    // Store dock bounds for collision reference
+    window.dockCollider = { minX: -6, maxX: 6, minZ: 85, maxZ: 170, y: 0.3 };
+
+    // Dock barriers (invisible walls to prevent falling off)
+    // End barrier
+    staticColliders.push({ minX: -5, maxX: 5, minZ: 164, maxZ: 166 });
+    // Left side barrier (from terrain edge to dock end)
+    staticColliders.push({ minX: -5.5, maxX: -4.5, minZ: 100, maxZ: 165 });
+    // Right side barrier
+    staticColliders.push({ minX: 4.5, maxX: 5.5, minZ: 100, maxZ: 165 });
 
     generateWorld("lobby-world");
     createCabin();
@@ -2949,6 +4195,10 @@ function createCabin() {
     ridge.position.set(0, 6.7, 0);
 
     roofGroup.add(slope1, slope2, ridge);
+    // Ensure roof parts receive shadows
+    slope1.receiveShadow = true;
+    slope2.receiveShadow = true;
+    ridge.receiveShadow = true;
     grp.add(roofGroup);
 
     scene.add(grp);
@@ -2983,6 +4233,11 @@ function createNPCs() {
     npcBait.lookAt(0, 0, 0);
     scene.add(npcBait);
 
+    // 4. Tutorial NPC (North - opposite of Bait Shop)
+    npcTutorial = createPlayerMesh('#9370DB', "Tutorial", 'bow', '#000000', 'bunny');
+    npcTutorial.position.set(0, 0, -(LAKE_RADIUS + 3));
+    npcTutorial.lookAt(0, 0, 0);
+    scene.add(npcTutorial);
 
     // 5. Inferno Guard (Main World - Waterfall Entrance)
     npcLavaKeeper = createPlayerMesh('#8B0000', "Inferno Guard", 'viking', '#FFD700', 'dragon');
@@ -2995,6 +4250,7 @@ function createNPCs() {
     addIcon(npcMerchant, '$');
     addIcon(npcStylist, '👕');
     addIcon(npcBait, '🪱');
+    addIcon(npcTutorial, '❓');
 
     // --- LAVA WORLD NPCs (Fixed Height) ---
     // Moved Y from -2.5 to 0 so they stand ON the floor
@@ -3028,7 +4284,7 @@ function addIcon(parent, text) {
     const c = document.createElement('canvas'); c.width = 64; c.height = 64;
     const ctx = c.getContext('2d'); ctx.fillStyle = '#FFD700'; ctx.font = '50px Arial'; ctx.textAlign = 'center'; ctx.fillText(text, 32, 50);
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c) }));
-    s.position.y = 3.2; parent.add(s);
+    s.position.y = 3.6; parent.add(s);
 }
 
 // --- DYNAMIC TEXTURE DRAWING FUNCTIONS ---
@@ -3038,170 +4294,826 @@ function drawHat(ctx, hatId, isBack) {
 
     ctx.fillStyle = hat.color;
 
-
     if (hat.type === 'cap') {
-        ctx.fillRect(14, 0, 36, 12); ctx.fillRect(14, 0, 36, 6);
-        if (!isBack) ctx.fillRect(14, 12, 40, 4);
+        // Baseball cap with button, curved crown, and shaded brim
+        ctx.fillStyle = hat.color;
+        ctx.beginPath();
+        ctx.arc(32, 10, 16, Math.PI, 0);
+        ctx.fill();
+        // Crown panels highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
+        ctx.beginPath(); ctx.arc(28, 6, 7, Math.PI, 0); ctx.fill();
+        // Top squatchee button
+        ctx.fillStyle = shadeColor(hat.color, -0.3);
+        ctx.beginPath(); ctx.arc(32, -6, 2.5, 0, Math.PI * 2); ctx.fill();
+        // Front brim or back snap
+        if (!isBack) {
+            ctx.fillStyle = shadeColor(hat.color, -0.2);
+            ctx.beginPath();
+            ctx.ellipse(32, 10, 20, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Edge highlight on brim
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(32, 10, 19, 0.1, Math.PI - 0.1); ctx.stroke();
+        } else {
+            // Back opening & strap
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath(); ctx.arc(32, 9, 5, Math.PI, 0); ctx.fill();
+            ctx.fillStyle = '#222';
+            ctx.fillRect(28, 9, 8, 2);
+        }
     } else if (hat.type === 'wide') {
-        ctx.fillRect(10, 8, 44, 4); ctx.fillRect(18, 0, 28, 10);
+        // Straw / cowboy / pirate wide hats
+        if (hat.id === 'straw') {
+            // Woven straw hat with band
+            ctx.fillStyle = '#e4d96f';
+            ctx.beginPath(); ctx.ellipse(32, 10, 23, 6, 0, 0, Math.PI * 2); ctx.fill();
+            // Crown
+            const crownGrad = ctx.createLinearGradient(0, -4, 0, 10);
+            crownGrad.addColorStop(0, '#f5eca0'); crownGrad.addColorStop(1, '#c9bd4e');
+            ctx.fillStyle = crownGrad;
+            ctx.beginPath(); ctx.arc(32, 8, 12, Math.PI, 0); ctx.fill();
+            // Red ribbon band
+            ctx.fillStyle = '#d32f2f';
+            ctx.fillRect(20, 6, 24, 3);
+            ctx.fillStyle = '#b71c1c';
+            ctx.fillRect(20, 8, 24, 1);
+        } else if (hat.id === 'cowboy') {
+            // Formed cowboy brim with curl and crown crease
+            const cCol = hat.color || '#8b4513';
+            ctx.fillStyle = cCol;
+            ctx.beginPath();
+            ctx.ellipse(32, 9, 24, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Crown
+            ctx.fillStyle = shadeColor(cCol, 0.1);
+            ctx.beginPath();
+            ctx.moveTo(21, 9); ctx.lineTo(23, -4); ctx.quadraticCurveTo(32, 0, 41, -4); ctx.lineTo(43, 9);
+            ctx.fill();
+            // Crown crease shadow
+            ctx.fillStyle = shadeColor(cCol, -0.3);
+            ctx.beginPath(); ctx.ellipse(32, -1, 7, 2, 0, 0, Math.PI * 2); ctx.fill();
+            // Hat band
+            ctx.fillStyle = '#222';
+            ctx.fillRect(22, 6, 20, 2.5);
+            ctx.fillStyle = '#d4af37';
+            ctx.fillRect(31, 6, 2, 2.5); // Gold buckle
+        } else if (hat.id === 'pirate') {
+            // Tricorn pirate hat with golden trim & skull emblem
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath();
+            ctx.moveTo(8, 11);
+            ctx.quadraticCurveTo(32, 3, 56, 11);
+            ctx.lineTo(48, -4);
+            ctx.quadraticCurveTo(32, 1, 16, -4);
+            ctx.closePath();
+            ctx.fill();
+            // Gold braided edge
+            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(8, 11); ctx.quadraticCurveTo(32, 3, 56, 11); ctx.stroke();
+            if (!isBack) {
+                // Skull & bones emblem
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath(); ctx.arc(32, 3, 2.5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillRect(31, 5, 2, 1.5);
+                ctx.fillStyle = '#ffd700';
+                ctx.fillRect(30, 7, 4, 1);
+            }
+        } else {
+            ctx.fillRect(10, 8, 44, 4); ctx.fillRect(18, 0, 28, 10);
+        }
     } else if (hat.type === 'dome') {
-        ctx.beginPath(); ctx.arc(32, 10, 18, Math.PI, 0); ctx.fill();
+        // Beanie / Knit Dome Hat with cuff and pom-pom
+        const baseCol = hat.color || '#444444';
+        const grad = ctx.createLinearGradient(0, -6, 0, 10);
+        grad.addColorStop(0, shadeColor(baseCol, 0.25));
+        grad.addColorStop(1, baseCol);
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(32, 10, 17, Math.PI, 0); ctx.fill();
+        // Knit ribbed stripes
+        ctx.strokeStyle = shadeColor(baseCol, -0.2);
+        ctx.lineWidth = 1;
+        for (let x = 18; x <= 46; x += 4) {
+            ctx.beginPath(); ctx.moveTo(x, 10); ctx.quadraticCurveTo(32, -4, 32, -6); ctx.stroke();
+        }
+        // Rolled Cuff
+        ctx.fillStyle = shadeColor(baseCol, -0.25);
+        ctx.fillRect(14, 7, 36, 5);
+        ctx.fillStyle = shadeColor(baseCol, 0.15);
+        ctx.fillRect(14, 7, 36, 1.5);
+        // Fluffy pompom on top
+        ctx.fillStyle = shadeColor(baseCol, 0.4);
+        ctx.beginPath(); ctx.arc(32, -7, 4, 0, Math.PI * 2); ctx.fill();
     } else if (hat.type === 'tall') {
-        ctx.fillRect(12, 10, 40, 4); ctx.fillRect(18, -10, 28, 20);
+        if (hat.id === 'chef') {
+            // Chef Toque (billowing folds & band)
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(20, 6, 24, 5);
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(24, 0, 8, 0, Math.PI * 2);
+            ctx.arc(32, -4, 9, 0, Math.PI * 2);
+            ctx.arc(40, 0, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(0,0,0,0.06)';
+            ctx.fillRect(23, 1, 2, 6); ctx.fillRect(31, -2, 2, 9); ctx.fillRect(39, 1, 2, 6);
+        } else {
+            // Silk Top Hat with shine and satin band
+            const thGrad = ctx.createLinearGradient(16, 0, 48, 0);
+            thGrad.addColorStop(0, '#111');
+            thGrad.addColorStop(0.35, '#333');
+            thGrad.addColorStop(0.55, '#444');
+            thGrad.addColorStop(1, '#0d0d0d');
+            ctx.fillStyle = thGrad;
+            ctx.fillRect(20, -12, 24, 22);
+            // Curved brim with edge
+            ctx.fillStyle = '#111';
+            ctx.beginPath(); ctx.ellipse(32, 10, 22, 4, 0, 0, Math.PI * 2); ctx.fill();
+            // Satin red/maroon ribbon
+            ctx.fillStyle = '#990000';
+            ctx.fillRect(20, 6, 24, 4);
+            ctx.fillStyle = '#cc0000';
+            ctx.fillRect(20, 6, 24, 1);
+        }
     } else if (hat.type === 'cone') {
         ctx.beginPath(); ctx.moveTo(10, 10); ctx.lineTo(54, 10); ctx.lineTo(32, -15); ctx.fill();
     } else if (hat.type === 'horn') {
-        ctx.fillRect(14, 0, 36, 10);
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.moveTo(14, 5); ctx.lineTo(5, -5); ctx.lineTo(14, 0); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 5); ctx.lineTo(59, -5); ctx.lineTo(50, 0); ctx.fill();
+        // Viking horned helmet with metallic band and polished horns
+        ctx.fillStyle = '#7a7a7a';
+        ctx.beginPath(); ctx.arc(32, 10, 17, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = '#555';
+        ctx.fillRect(14, 7, 36, 4);
+        // Rivets
+        ctx.fillStyle = '#ffd700';
+        for (let rx = 18; rx <= 46; rx += 7) {
+            ctx.beginPath(); ctx.arc(rx, 9, 1.2, 0, Math.PI * 2); ctx.fill();
+        }
+        // Horns
+        const hornGradL = ctx.createLinearGradient(14, 5, 2, -10);
+        hornGradL.addColorStop(0, '#e8e0d0'); hornGradL.addColorStop(1, '#8b7d6b');
+        ctx.fillStyle = hornGradL;
+        ctx.beginPath(); ctx.moveTo(15, 8); ctx.quadraticCurveTo(8, 2, 3, -8); ctx.quadraticCurveTo(10, -5, 17, 3); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = hornGradL;
+        ctx.beginPath(); ctx.moveTo(49, 8); ctx.quadraticCurveTo(56, 2, 61, -8); ctx.quadraticCurveTo(54, -5, 47, 3); ctx.closePath(); ctx.fill();
     } else if (hat.type === 'crown') {
+        // King crown: Golden arches, velvet interior, rich ruby/emerald gems
+        // Velvet cap interior
+        ctx.fillStyle = '#800020';
+        ctx.beginPath(); ctx.arc(32, 7, 14, Math.PI, 0); ctx.fill();
+        // Golden crown structure
+        const goldGrad = ctx.createLinearGradient(0, -6, 0, 10);
+        goldGrad.addColorStop(0, '#ffe066'); goldGrad.addColorStop(0.5, '#ffd700'); goldGrad.addColorStop(1, '#cc9900');
+        ctx.fillStyle = goldGrad;
         ctx.beginPath();
-        ctx.moveTo(14, 10); ctx.lineTo(14, -5); ctx.lineTo(20, 5); ctx.lineTo(26, -5);
-        ctx.lineTo(32, 5); ctx.lineTo(38, -5); ctx.lineTo(44, 5); ctx.lineTo(50, -5);
-        ctx.lineTo(50, 10); ctx.fill();
-    }
-
-
-    else if (hat.type === 'fedora') {
-        ctx.fillRect(10, 8, 44, 4);
-        ctx.fillRect(16, -2, 32, 10);
-        ctx.fillStyle = '#444'; ctx.fillRect(16, 4, 32, 2);
-    }
-    else if (hat.type === 'beret') {
-        ctx.beginPath(); ctx.ellipse(34, 4, 22, 10, -0.2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(34, -6); ctx.lineTo(34, -8); ctx.stroke();
-    }
-    else if (hat.type === 'bucket') {
-        ctx.fillRect(14, 0, 36, 10);
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, 16); ctx.lineTo(56, 16); ctx.lineTo(50, 10); ctx.fill();
-    }
-    else if (hat.type === 'headphones') {
-        ctx.fillStyle = '#222'; ctx.fillRect(10, 6, 8, 16); ctx.fillRect(46, 6, 8, 16);
-        ctx.strokeStyle = '#222'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(32, 10, 22, Math.PI, 0); ctx.stroke();
-    }
-    else if (hat.type === 'flower') {
+        ctx.moveTo(14, 10); ctx.lineTo(14, -4); ctx.lineTo(19, 4); ctx.lineTo(25, -6);
+        ctx.lineTo(32, 4); ctx.lineTo(39, -6); ctx.lineTo(45, 4); ctx.lineTo(50, -4);
+        ctx.lineTo(50, 10); ctx.closePath(); ctx.fill();
+        // Rim
+        ctx.fillStyle = '#b8860b'; ctx.fillRect(14, 8, 36, 3);
+        // Bejeweled gems
+        ctx.fillStyle = '#e60000'; ctx.beginPath(); ctx.arc(32, 9, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#00cc44'; ctx.beginPath(); ctx.arc(22, 9, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#0088ff'; ctx.beginPath(); ctx.arc(42, 9, 1.5, 0, Math.PI * 2); ctx.fill();
+        // Crown tips pearls
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(14, -4, 1.5, 0, Math.PI * 2); ctx.arc(25, -6, 1.8, 0, Math.PI * 2); ctx.arc(39, -6, 1.8, 0, Math.PI * 2); ctx.arc(50, -4, 1.5, 0, Math.PI * 2); ctx.fill();
+    } else if (hat.type === 'fedora') {
+        // Sleek Noir Fedora with hat band & feather
+        ctx.fillStyle = '#262626';
+        ctx.beginPath(); ctx.ellipse(32, 9, 23, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+        // Crown
+        ctx.fillStyle = '#1c1c1c';
+        ctx.fillRect(19, -3, 26, 11);
+        ctx.fillStyle = '#333';
+        ctx.beginPath(); ctx.ellipse(32, -3, 13, 3, 0, 0, Math.PI * 2); ctx.fill();
+        // Dark crimson / silk band
+        ctx.fillStyle = '#8b0000';
+        ctx.fillRect(19, 5, 26, 3);
+        // Little pin / feather
         if (!isBack) {
-            ctx.fillStyle = '#fff';
+            ctx.fillStyle = '#ffd700'; ctx.fillRect(23, 3, 2, 4);
+            ctx.fillStyle = '#00bcd4'; ctx.beginPath(); ctx.moveTo(23, 3); ctx.lineTo(21, -3); ctx.lineTo(24, 0); ctx.fill();
+        }
+    } else if (hat.type === 'beret') {
+        // French artist beret tilted with stalk
+        ctx.fillStyle = hat.color || '#800000';
+        ctx.beginPath(); ctx.ellipse(34, 5, 23, 9, -0.15, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = shadeColor(hat.color || '#800000', 0.2);
+        ctx.beginPath(); ctx.ellipse(32, 3, 14, 5, -0.15, 0, Math.PI * 2); ctx.fill();
+        // Beret tab/stem
+        ctx.strokeStyle = shadeColor(hat.color || '#800000', -0.3);
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(34, -4); ctx.lineTo(34, -7); ctx.stroke();
+    } else if (hat.type === 'bucket') {
+        // Fishing Bucket hat with stitched brim & brass eyelets
+        const bCol = hat.color || '#4682B4';
+        ctx.fillStyle = bCol;
+        ctx.fillRect(17, -2, 30, 11);
+        ctx.fillStyle = shadeColor(bCol, 0.15);
+        ctx.beginPath(); ctx.ellipse(32, -2, 15, 3, 0, 0, Math.PI * 2); ctx.fill();
+        // Flared brim
+        ctx.fillStyle = shadeColor(bCol, -0.15);
+        ctx.beginPath(); ctx.moveTo(15, 9); ctx.lineTo(8, 15); ctx.lineTo(56, 15); ctx.lineTo(49, 9); ctx.closePath(); ctx.fill();
+        // Brim stitch line
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(32, 11, 21, 0.3, Math.PI - 0.3); ctx.stroke();
+        // Brass ventilation eyelets
+        if (!isBack) {
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath(); ctx.arc(22, 3, 1.5, 0, Math.PI * 2); ctx.arc(42, 3, 1.5, 0, Math.PI * 2); ctx.fill();
+        }
+    } else if (hat.type === 'headphones') {
+        // Studio DJ Headphones with foam cushions, metallic headband & LED accent
+        // Headband
+        ctx.strokeStyle = '#222'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(32, 10, 21, Math.PI, 0); ctx.stroke();
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(32, 10, 21, Math.PI, 0); ctx.stroke();
+        // Ear cups
+        ctx.fillStyle = '#111';
+        ctx.fillRect(9, 6, 8, 16); ctx.fillRect(47, 6, 8, 16);
+        // Soft ear pads
+        ctx.fillStyle = '#444';
+        ctx.fillRect(15, 8, 2, 12); ctx.fillRect(47, 8, 2, 12);
+        // Outer glow/color rings
+        ctx.fillStyle = '#00e5ff';
+        ctx.fillRect(10, 12, 3, 4); ctx.fillRect(51, 12, 3, 4);
+    } else if (hat.type === 'flower') {
+        if (!isBack) {
+            // Delicate tropical plumeria / flower pin with soft petals
+            ctx.save();
+            ctx.translate(45, 6);
             for (let i = 0; i < 5; i++) {
                 const angle = (i / 5) * Math.PI * 2;
-                ctx.beginPath(); ctx.arc(44 + Math.cos(angle) * 5, 4 + Math.sin(angle) * 5, 4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.ellipse(Math.cos(angle) * 6, Math.sin(angle) * 6, 4.5, 3, angle, 0, Math.PI * 2);
+                ctx.fill();
             }
-            ctx.fillStyle = 'yellow'; ctx.beginPath(); ctx.arc(44, 4, 3, 0, Math.PI * 2); ctx.fill();
+            // Golden center
+            ctx.fillStyle = '#ffbb00';
+            ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ff6600';
+            ctx.beginPath(); ctx.arc(0, 0, 1.5, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
         }
-    }
-    else if (hat.type === 'miner') {
+    } else if (hat.type === 'miner') {
         ctx.fillStyle = hat.color;
         ctx.beginPath(); ctx.arc(32, 8, 18, Math.PI, 0); ctx.fill();
         if (!isBack) {
             ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(32, -2, 4, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = 'rgba(255,255,200,0.5)'; ctx.beginPath(); ctx.moveTo(32, -2); ctx.lineTo(10, 30); ctx.lineTo(54, 30); ctx.fill();
         }
-    }
-    else if (hat.type === 'sombrero') {
-        ctx.beginPath(); ctx.ellipse(32, 8, 28, 6, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillRect(22, -8, 20, 16);
-    }
-    else if (hat.type === 'santa') {
-        ctx.fillStyle = '#ff0000';
-        ctx.beginPath(); ctx.moveTo(12, 10); ctx.lineTo(52, 10); ctx.lineTo(20, -15); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.fillRect(12, 8, 40, 6);
-        ctx.beginPath(); ctx.arc(20, -15, 4, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (hat.type === 'witch') {
-        ctx.fillStyle = '#222'; ctx.beginPath(); ctx.ellipse(32, 10, 24, 4, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = hat.color; ctx.beginPath(); ctx.moveTo(20, 10); ctx.lineTo(44, 10); ctx.lineTo(32, -20); ctx.fill();
-    }
-    else if (hat.type === 'ninja') {
-        ctx.fillRect(14, 4, 36, 6);
-        ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(32, 7, 2, 0, Math.PI * 2); ctx.fill();
-        if (isBack) { ctx.fillStyle = hat.color; ctx.fillRect(30, 6, 4, 20); }
-    }
-    else if (hat.type === 'propeller') {
-        ctx.fillStyle = hat.color; ctx.beginPath(); ctx.arc(32, 8, 17, Math.PI, 0); ctx.fill();
-        ctx.fillStyle = '#555'; ctx.fillRect(31, -10, 2, 6);
-        if (!isBack) {
-            ctx.fillStyle = 'red'; ctx.beginPath(); ctx.ellipse(32, -10, 10, 2, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (hat.type === 'sombrero') {
+        // Festive sombrero with embroidered zigzag brim and tall pinched crown
+        const sGrad = ctx.createLinearGradient(0, -10, 0, 10);
+        sGrad.addColorStop(0, '#f2d6a2'); sGrad.addColorStop(1, '#c9a15d');
+        ctx.fillStyle = sGrad;
+        ctx.beginPath(); ctx.ellipse(32, 8, 28, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+        // Crown
+        ctx.fillRect(22, -10, 20, 18);
+        ctx.fillStyle = '#b3863c';
+        ctx.beginPath(); ctx.ellipse(32, -10, 10, 3, 0, 0, Math.PI * 2); ctx.fill();
+        // Colorful serape band
+        ctx.fillStyle = '#e60000'; ctx.fillRect(22, 3, 20, 2);
+        ctx.fillStyle = '#00b33c'; ctx.fillRect(22, 5, 20, 1.5);
+        // Brim embroidered pattern
+        ctx.strokeStyle = '#e60000'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let bx = 8; bx <= 54; bx += 4) {
+            ctx.lineTo(bx, 8 + ((bx % 8 === 0) ? -1.5 : 1.5));
         }
-    }
-    else if (hat.type === 'halo') {
-        ctx.strokeStyle = '#ffff00'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.ellipse(32, -10, 14, 4, 0, 0, Math.PI * 2); ctx.stroke();
-    }
-    else if (hat.type === 'antlers') {
-        ctx.strokeStyle = '#5D4037'; ctx.lineWidth = 2;
-
-        ctx.beginPath(); ctx.moveTo(20, 5); ctx.lineTo(10, -10); ctx.lineTo(15, -15); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(10, -10); ctx.lineTo(5, -12); ctx.stroke();
-
-        ctx.beginPath(); ctx.moveTo(44, 5); ctx.lineTo(54, -10); ctx.lineTo(49, -15); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(54, -10); ctx.lineTo(59, -12); ctx.stroke();
-    }
-    else if (hat.type === 'police') {
-        ctx.fillRect(14, -5, 36, 15);
-        ctx.fillStyle = 'black'; ctx.fillRect(14, 8, 36, 4);
-        if (!isBack) { ctx.fillStyle = 'gold'; ctx.beginPath(); ctx.arc(32, 0, 3, 0, Math.PI * 2); ctx.fill(); }
-    }
-    else if (hat.type === 'tv') {
-        ctx.fillStyle = '#444'; ctx.fillRect(10, -5, 44, 35);
-        if (!isBack) {
-            ctx.fillStyle = '#222'; ctx.fillRect(14, 0, 36, 25);
-            ctx.fillStyle = '#00ff00'; ctx.fillRect(18, 5, 4, 4); ctx.fillRect(24, 15, 12, 2);
+        ctx.stroke();
+    } else if (hat.type === 'santa') {
+        // Fluffy Santa hat with textured brim, pompom, and folded tip
+        const sGrad = ctx.createLinearGradient(12, 0, 52, 0);
+        sGrad.addColorStop(0, '#d32f2f'); sGrad.addColorStop(0.5, '#f44336'); sGrad.addColorStop(1, '#b71c1c');
+        ctx.fillStyle = sGrad;
+        ctx.beginPath(); ctx.moveTo(12, 10); ctx.lineTo(52, 10); ctx.quadraticCurveTo(45, -6, 22, -16); ctx.closePath(); ctx.fill();
+        // White fleece trim
+        ctx.fillStyle = '#f8f8f8';
+        ctx.beginPath(); ctx.ellipse(32, 9, 22, 4, 0, 0, Math.PI * 2); ctx.fill();
+        // Fluffy pompom
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(21, -16, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#e0e0e0';
+        ctx.beginPath(); ctx.arc(21, -16, 3, 0, Math.PI * 2); ctx.fill();
+    } else if (hat.type === 'witch') {
+        // Mystical Witch Hat with curved tip, shimmering buckle, and wide brim
+        ctx.fillStyle = '#1e1035';
+        ctx.beginPath(); ctx.ellipse(32, 10, 25, 5, 0, 0, Math.PI * 2); ctx.fill();
+        // Pointed cone curving back
+        const wGrad = ctx.createLinearGradient(0, 10, 0, -22);
+        wGrad.addColorStop(0, '#311b58'); wGrad.addColorStop(1, '#150a26');
+        ctx.fillStyle = wGrad;
+        ctx.beginPath();
+        ctx.moveTo(19, 10);
+        ctx.quadraticCurveTo(24, -6, 30, -22);
+        ctx.quadraticCurveTo(34, -22, 38, -6);
+        ctx.lineTo(45, 10);
+        ctx.closePath();
+        ctx.fill();
+        // Violet/Gold mystic ribbon
+        ctx.fillStyle = '#8a2be2';
+        ctx.fillRect(20, 6, 24, 3);
+        ctx.fillStyle = '#ffd700';
+        ctx.strokeRect(29, 5.5, 6, 4);
+    } else if (hat.type === 'ninja') {
+        // Ninja Headband with flowing cloth tails & metallic forehead crest
+        ctx.fillStyle = '#151515';
+        ctx.fillRect(14, 3, 36, 7);
+        // Metal plate
+        ctx.fillStyle = '#b0bec5';
+        ctx.fillRect(24, 4, 16, 5);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(25, 4.5, 14, 1); // Shimmer
+        // Engraved symbol
+        ctx.fillStyle = '#37474f';
+        ctx.beginPath(); ctx.arc(32, 6.5, 1.8, 0, Math.PI * 2); ctx.fill();
+        if (isBack) {
+            // Swaying headband tails
+            ctx.fillStyle = '#151515';
+            ctx.beginPath(); ctx.moveTo(30, 8); ctx.lineTo(26, 28); ctx.lineTo(31, 26); ctx.lineTo(32, 8); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(33, 8); ctx.lineTo(37, 30); ctx.lineTo(41, 27); ctx.lineTo(35, 8); ctx.fill();
         }
-
-        ctx.strokeStyle = '#888'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(20, -5); ctx.lineTo(10, -15); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(44, -5); ctx.lineTo(54, -15); ctx.stroke();
-    }
-    else if (hat.type === 'plunger') {
-        ctx.fillStyle = 'brown'; ctx.fillRect(30, -15, 4, 25);
-        ctx.fillStyle = '#cd5c5c'; ctx.beginPath(); ctx.arc(32, 10, 10, Math.PI, 0); ctx.fill();
-    }
-    else if (hat.type === 'arrow') {
+    } else if (hat.type === 'propeller') {
+        // Colorful Propeller Beanie
+        // Quartered cap (Red, Yellow, Blue, Green)
+        ctx.fillStyle = '#e53935'; ctx.beginPath(); ctx.arc(32, 8, 17, Math.PI, Math.PI * 1.5); ctx.lineTo(32, 8); ctx.fill();
+        ctx.fillStyle = '#1e88e5'; ctx.beginPath(); ctx.arc(32, 8, 17, Math.PI * 1.5, Math.PI * 2); ctx.lineTo(32, 8); ctx.fill();
+        // Cap rim
+        ctx.fillStyle = '#43a047'; ctx.fillRect(14, 7, 36, 3);
+        // Spindle & Propeller Blades
+        ctx.fillStyle = '#757575'; ctx.fillRect(31, -10, 2, 8);
+        ctx.fillStyle = '#fbc02d'; ctx.beginPath(); ctx.arc(32, -10, 2.5, 0, Math.PI * 2); ctx.fill();
+        if (!isBack) {
+            // Spinning blade
+            ctx.fillStyle = '#f44336';
+            ctx.beginPath(); ctx.ellipse(25, -10, 9, 2.5, -0.15, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffd600';
+            ctx.beginPath(); ctx.ellipse(39, -10, 9, 2.5, 0.15, 0, Math.PI * 2); ctx.fill();
+        }
+    } else if (hat.type === 'halo') {
+        // Holy Radiant Angel Halo with glowing aura
+        ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 6;
+        ctx.strokeStyle = '#fff59d'; ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.ellipse(32, -7, 15, 4.5, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(32, -7, 14.5, 4, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.shadowBlur = 0;
+    } else if (hat.type === 'antlers') {
+        // Majestic Forest Antlers with shaded 3D branches
+        ctx.strokeStyle = '#5D4037'; ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        // Left horn
+        ctx.beginPath(); ctx.moveTo(21, 6); ctx.lineTo(12, -8); ctx.lineTo(16, -17); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(12, -8); ctx.lineTo(4, -12); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(14, -13); ctx.lineTo(9, -18); ctx.stroke();
+        // Right horn
+        ctx.beginPath(); ctx.moveTo(43, 6); ctx.lineTo(52, -8); ctx.lineTo(48, -17); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(52, -8); ctx.lineTo(60, -12); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(50, -13); ctx.lineTo(55, -18); ctx.stroke();
+        // Bone highlight
+        ctx.strokeStyle = '#8D6E63'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(21, 5); ctx.lineTo(13, -7); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(43, 5); ctx.lineTo(51, -7); ctx.stroke();
+    } else if (hat.type === 'police') {
+        // Police peaked cap with patent leather visor & golden eagle badge
+        ctx.fillStyle = '#0a194f';
+        ctx.beginPath();
+        ctx.moveTo(12, 5); ctx.lineTo(14, -7); ctx.lineTo(50, -7); ctx.lineTo(52, 5);
+        ctx.closePath(); ctx.fill();
+        // Black band
+        ctx.fillStyle = '#111'; ctx.fillRect(14, 5, 36, 4);
+        // Shiny visor
+        ctx.fillStyle = '#1a1a1a';
+        ctx.beginPath(); ctx.ellipse(32, 9, 18, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+        if (!isBack) {
+            // Visor shine
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(32, 9, 16, 0.2, Math.PI - 0.2); ctx.stroke();
+            // Gold shield badge
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath(); ctx.moveTo(32, -3); ctx.lineTo(35, 1); ctx.lineTo(32, 5); ctx.lineTo(29, 1); ctx.closePath(); ctx.fill();
+            ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(32, 1, 1, 0, Math.PI * 2); ctx.fill();
+        }
+    } else if (hat.type === 'tv') {
+        // Retro CRT TV monitor with antennas, scanlines, glow face
+        const tvGrad = ctx.createLinearGradient(0, -6, 0, 30);
+        tvGrad.addColorStop(0, '#555'); tvGrad.addColorStop(1, '#2b2b2b');
+        ctx.fillStyle = tvGrad;
+        ctx.fillRect(10, -5, 44, 36);
+        // Screen bezel
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(13, -2, 38, 29);
+        if (!isBack) {
+            // Glowing CRT phosphor screen
+            ctx.fillStyle = '#0f380f'; ctx.fillRect(15, 0, 34, 25);
+            // Scanlines
+            ctx.fillStyle = 'rgba(0,255,0,0.08)';
+            for (let sy = 0; sy < 25; sy += 2) ctx.fillRect(15, sy, 34, 1);
+            // Cute glowing retro face
+            ctx.fillStyle = '#39ff14';
+            ctx.shadowColor = '#39ff14'; ctx.shadowBlur = 6;
+            ctx.fillRect(20, 6, 4, 6); ctx.fillRect(40, 6, 4, 6); // Eyes
+            ctx.fillRect(26, 17, 12, 2); ctx.fillRect(24, 15, 2, 2); ctx.fillRect(38, 15, 2, 2); // Smile
+            ctx.shadowBlur = 0;
+            // Tuning knobs
+            ctx.fillStyle = '#777';
+            ctx.beginPath(); ctx.arc(44, 29, 2, 0, Math.PI * 2); ctx.arc(40, 29, 2, 0, Math.PI * 2); ctx.fill();
+        }
+        // V-Antennas
+        ctx.strokeStyle = '#aaa'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(24, -5); ctx.lineTo(12, -18); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(40, -5); ctx.lineTo(52, -18); ctx.stroke();
+        ctx.fillStyle = '#ff1744'; ctx.beginPath(); ctx.arc(12, -18, 2, 0, Math.PI * 2); ctx.arc(52, -18, 2, 0, Math.PI * 2); ctx.fill();
+    } else if (hat.type === 'plunger') {
+        ctx.fillStyle = '#8B4513'; ctx.fillRect(30, -15, 4, 25);
+        ctx.fillStyle = '#d32f2f'; ctx.beginPath(); ctx.arc(32, 10, 11, Math.PI, 0); ctx.fill();
+    } else if (hat.type === 'arrow') {
         ctx.fillStyle = '#8B4513';
-
-        if (!isBack) ctx.fillRect(0, 15, 14, 2);
-        ctx.fillRect(50, 13, 14, 2);
-
-        ctx.fillStyle = 'white'; ctx.beginPath(); ctx.moveTo(0, 15); ctx.lineTo(-5, 10); ctx.lineTo(-5, 20); ctx.fill();
-
-        ctx.fillStyle = 'grey'; ctx.beginPath(); ctx.moveTo(64, 14); ctx.lineTo(70, 14); ctx.lineTo(64, 10); ctx.fill();
-    }
-    else if (hat.type === 'grad') {
-        ctx.fillStyle = hat.color;
+        if (!isBack) ctx.fillRect(0, 15, 14, 3);
+        ctx.fillRect(50, 13, 14, 3);
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(0, 15); ctx.lineTo(-6, 9); ctx.lineTo(-6, 21); ctx.fill();
+        ctx.fillStyle = '#9e9e9e'; ctx.beginPath(); ctx.moveTo(64, 14); ctx.lineTo(72, 14); ctx.lineTo(64, 9); ctx.fill();
+    } else if (hat.type === 'grad') {
+        ctx.fillStyle = hat.color || '#222';
         ctx.fillRect(16, 8, 32, 4);
         ctx.beginPath(); ctx.moveTo(32, -5); ctx.lineTo(60, 5); ctx.lineTo(32, 15); ctx.lineTo(4, 5); ctx.fill();
-        if (isBack) { ctx.strokeStyle = 'gold'; ctx.beginPath(); ctx.moveTo(32, -5); ctx.lineTo(32, 10); ctx.stroke(); }
-    }
-    else if (hat.type === 'rainbow') {
-
-        for (let i = 0; i < 20; i++) {
-            ctx.fillStyle = `hsl(${i * 18}, 100%, 50%)`;
-            const x = 32 + (Math.random() - 0.5) * 40;
-            const y = 10 + (Math.random() - 0.5) * 30;
-            ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
-        }
-    }
-    else if (hat.type === 'void') {
-
-        ctx.fillStyle = '#000'; ctx.fillRect(14, 10, 36, 24);
+        if (isBack) { ctx.strokeStyle = 'gold'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(32, -5); ctx.lineTo(32, 12); ctx.stroke(); }
+    } else if (hat.type === 'rainbow') {
+        // Luscious, cohesive Rainbow Afro with vibrant volumetric gradient curls
+        const curls = [
+            { x: 32, y: -4, r: 12, col: '#ff3366' },
+            { x: 22, y: 0, r: 11, col: '#ff9933' },
+            { x: 42, y: 0, r: 11, col: '#ffcc00' },
+            { x: 15, y: 8, r: 10, col: '#33cc66' },
+            { x: 49, y: 8, r: 10, col: '#3399ff' },
+            { x: 32, y: 6, r: 13, col: '#9933ff' },
+            { x: 24, y: 12, r: 9, col: '#ff33cc' },
+            { x: 40, y: 12, r: 9, col: '#00ffff' }
+        ];
+        curls.forEach(c => {
+            ctx.fillStyle = c.col;
+            ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fill();
+            // Highlight shine on each curl
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.beginPath(); ctx.arc(c.x - c.r * 0.3, c.y - c.r * 0.3, c.r * 0.4, 0, Math.PI * 2); ctx.fill();
+        });
+    } else if (hat.type === 'void') {
+        // Ethereal Void Mask with cosmic dark core, floating eyes and purple aura
+        ctx.shadowColor = '#8a2be2'; ctx.shadowBlur = 12;
+        ctx.fillStyle = '#0a0012';
+        ctx.beginPath(); ctx.ellipse(32, 15, 20, 14, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#4b0082'; ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
         if (!isBack) {
-            ctx.fillStyle = '#fff';
-
-            ctx.shadowColor = '#fff'; ctx.shadowBlur = 10;
-            ctx.fillRect(20, 18, 6, 2); ctx.fillRect(38, 18, 6, 2);
+            // Glowing twin void eyes
+            ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 8;
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(21, 14, 6, 2.5); ctx.fillRect(37, 14, 6, 2.5);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(23, 14.5, 2, 1.5); ctx.fillRect(39, 14.5, 2, 1.5);
             ctx.shadowBlur = 0;
         }
+    } else if (hat.type === 'diamond') {
+        // Sparkling Diamond Tiara with facets, refraction and glitter
+        ctx.fillStyle = '#e0f7fa';
+        ctx.fillRect(16, 8, 32, 3);
+        // Crystal spires
+        const drawDiamondShard = (x, y, w, h) => {
+            ctx.fillStyle = '#00e5ff';
+            ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + w / 2, y); ctx.lineTo(x + w, y + h); ctx.closePath(); ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w * 0.7, y + h); ctx.lineTo(x + w / 2, y + h); ctx.fill();
+        };
+        drawDiamondShard(28, -6, 8, 14);
+        drawDiamondShard(20, -2, 6, 10);
+        drawDiamondShard(38, -2, 6, 10);
+        drawDiamondShard(15, 2, 5, 6);
+        drawDiamondShard(44, 2, 5, 6);
+    } else if (hat.type === 'banana') {
+        // Nano Banana peel hat resting atop player's head!
+        const bGrad = ctx.createLinearGradient(16, 0, 48, 0);
+        bGrad.addColorStop(0, '#ffe135'); bGrad.addColorStop(0.5, '#fff176'); bGrad.addColorStop(1, '#fbc02d');
+        ctx.fillStyle = bGrad;
+        // Curved crescent banana shape
+        ctx.beginPath();
+        ctx.moveTo(14, 10);
+        ctx.quadraticCurveTo(32, -12, 50, 4);
+        ctx.quadraticCurveTo(32, -4, 14, 10);
+        ctx.fill();
+        // Green stem on left tip
+        ctx.fillStyle = '#7cb342';
+        ctx.beginPath(); ctx.arc(14, 10, 2.5, 0, Math.PI * 2); ctx.fill();
+        // Brown tip on right
+        ctx.fillStyle = '#5d4037';
+        ctx.beginPath(); ctx.arc(50, 4, 2, 0, Math.PI * 2); ctx.fill();
+        // Banana ridge line
+        ctx.strokeStyle = 'rgba(139, 69, 19, 0.35)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(15, 9); ctx.quadraticCurveTo(32, -7, 49, 4); ctx.stroke();
     }
-    else if (hat.type === 'diamond') {
-        ctx.fillStyle = '#ccc';
-        ctx.fillRect(14, 8, 36, 4);
+}
 
-        ctx.fillStyle = '#00ffff';
-        ctx.beginPath(); ctx.moveTo(32, 8); ctx.lineTo(32, -5); ctx.lineTo(28, 8); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(20, 8); ctx.lineTo(20, 0); ctx.lineTo(16, 8); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(44, 8); ctx.lineTo(44, 0); ctx.lineTo(48, 8); ctx.fill();
+
+function createToolTexture(type) {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 64;
+    const ctx = c.getContext('2d');
+
+    if (type === 'axe') {
+        // Handle
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(28, 10, 8, 44);
+        // Head
+        ctx.fillStyle = '#888888';
+        ctx.beginPath();
+        // Single bit axe shape
+        ctx.moveTo(32, 10);
+        ctx.lineTo(52, 10);
+        ctx.lineTo(52, 26);
+        ctx.lineTo(36, 26);
+        ctx.lineTo(32, 22); // Curve in
+        ctx.lineTo(20, 26); // Back bit (small)
+        ctx.lineTo(20, 10);
+        ctx.fill();
+        // Edge
+        ctx.fillStyle = '#CCCCCC';
+        ctx.fillRect(48, 10, 4, 16);
+    } else if (type === 'pickaxe') {
+        // Handle
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(28, 10, 8, 44);
+        // Head
+        ctx.fillStyle = '#888888';
+        ctx.beginPath();
+        // Arch shape
+        ctx.moveTo(10, 16);
+        ctx.quadraticCurveTo(32, 5, 54, 16);
+        ctx.lineTo(50, 22);
+        ctx.quadraticCurveTo(32, 12, 14, 22);
+        ctx.closePath();
+        ctx.fill();
     }
+
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    return t;
+}
+
+window.toggleMidiMute = function () {
+    saveState.midiMuted = !saveState.midiMuted;
+    saveGame();
+    updateMidiUI();
+}
+
+function updateMidiUI() {
+    const btn = document.getElementById('btn-midi-toggle');
+    if (btn) {
+        btn.innerText = saveState.midiMuted ? "🎸 MIDI: OFF" : "🎸 MIDI: ON";
+        btn.style.color = saveState.midiMuted ? '#ff4444' : '#44ff44';
+    }
+}
+
+window.toggleDebugMode = function () {
+    saveState.debugMode = !saveState.debugMode;
+    saveGame();
+    updateDebugUI();
+    showToast(saveState.debugMode ? "Debug Mode: ON" : "Debug Mode: OFF");
+}
+
+function updateDebugUI() {
+    const btn = document.getElementById('btn-debug-toggle');
+    if (btn) {
+        btn.innerText = saveState.debugMode ? "🐛 Debug: ON" : "🐛 Debug: OFF";
+        btn.style.color = saveState.debugMode ? '#44ff44' : '#ff4444';
+    }
+}
+// --- MODULAR CHARACTER DRAWING FUNCTIONS ---
+
+// Draw the base body and head (shared by all characters)
+function drawBody(ctx, col, bellyCol, back) {
+    // Body (Flat Color) - Taller
+    ctx.fillStyle = col;
+    ctx.fillRect(20, 28, 24, 40); // Taller body
+
+    if (!back) {
+        ctx.fillStyle = bellyCol;
+        // Rounded belly patch (adjusted)
+        ctx.beginPath();
+        ctx.ellipse(32, 48, 8, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Head (Flat Color) - Taller
+    ctx.fillStyle = col;
+    ctx.fillRect(14, 8, 36, 28); // Taller head
+
+    // Chin Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+    ctx.fillRect(14, 34, 36, 2);
+}
+
+// Helper for shading
+function shadeColor(color, percent) {
+    // Simple hex darken/lighten (assumes hex input)
+    let f = parseInt(color.slice(1), 16), t = percent < 0 ? 0 : 255, p = percent < 0 ? percent * -1 : percent, R = f >> 16, G = f >> 8 & 0x00FF, B = f & 0x0000FF;
+    return "#" + (0x1000000 + (Math.round((t - R) * p) + R) * 0x10000 + (Math.round((t - G) * p) + G) * 0x100 + (Math.round((t - B) * p) + B)).toString(16).slice(1);
+}
+
+// Draw ears based on selected type
+// Draw ears based on selected type
+function drawEars(ctx, earId, col, bellyCol, back) {
+    ctx.fillStyle = col;
+    const shadow = shadeColor(col, -0.2);
+    const highlight = shadeColor(col, 0.2);
+
+    if (earId === 'cat') {
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(14, -2); ctx.lineTo(26, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(50, -2); ctx.lineTo(38, 10); ctx.fill();
+
+        if (!back) {
+            ctx.fillStyle = shadow; // Inner ear
+            ctx.beginPath(); ctx.moveTo(16, 8); ctx.lineTo(16, 2); ctx.lineTo(22, 8); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(48, 8); ctx.lineTo(48, 2); ctx.lineTo(42, 8); ctx.fill();
+        }
+    }
+    else if (earId === 'bunny') {
+        ctx.fillStyle = col;
+        // Bigger rabbit ears
+        ctx.beginPath(); ctx.ellipse(22, 0, 6, 14, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(42, 0, 6, 14, 0, 0, Math.PI * 2); ctx.fill();
+
+        if (!back) {
+            ctx.fillStyle = bellyCol; // Pink inner
+            ctx.beginPath(); ctx.ellipse(22, 0, 3.5, 9, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(42, 0, 3.5, 9, 0, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    else if (earId === 'dog') {
+        ctx.fillStyle = col;
+        // Floppy ears
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, 12); ctx.lineTo(10, 20); ctx.lineTo(18, 20); ctx.lineTo(20, 12); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, 12); ctx.lineTo(54, 20); ctx.lineTo(46, 20); ctx.lineTo(44, 12); ctx.fill();
+        // Shadow underneath
+        ctx.fillStyle = shadow;
+        ctx.fillRect(10, 20, 8, 2); ctx.fillRect(46, 20, 8, 2);
+    }
+    else if (earId === 'bear') {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(14, 8, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 8, 6, 0, Math.PI * 2); ctx.fill();
+
+        if (!back) {
+            ctx.fillStyle = shadow;
+            ctx.beginPath(); ctx.arc(14, 8, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(50, 8, 3, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    else if (earId === 'fox') {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, -5); ctx.lineTo(24, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, -5); ctx.lineTo(40, 10); ctx.fill();
+        // Black tips
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.moveTo(11, 2); ctx.lineTo(10, -5); ctx.lineTo(17, 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(53, 2); ctx.lineTo(54, -5); ctx.lineTo(47, 2); ctx.fill();
+    }
+    else if (earId === 'pig') {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(8, 8); ctx.lineTo(18, 16); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 12); ctx.lineTo(56, 8); ctx.lineTo(46, 16); ctx.fill();
+    }
+    else if (earId === 'dragon') {
+        ctx.fillStyle = col; // Horns usually
+        ctx.beginPath(); ctx.moveTo(18, 10); ctx.lineTo(14, -4); ctx.lineTo(24, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(46, 10); ctx.lineTo(50, -4); ctx.lineTo(40, 10); ctx.fill();
+        // Ridges
+        ctx.fillStyle = shadow;
+        ctx.fillRect(16, 2, 4, 1); ctx.fillRect(44, 2, 4, 1);
+        ctx.fillRect(15, -1, 4, 1); ctx.fillRect(45, -1, 4, 1);
+    }
+    else if (earId === 'mouse') {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(14, 6, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 6, 9, 0, Math.PI * 2); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = bellyCol;
+            ctx.beginPath(); ctx.arc(14, 6, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(50, 6, 5, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    else if (earId === 'raccoon') {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, 0); ctx.lineTo(24, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, 0); ctx.lineTo(40, 10); ctx.fill();
+        ctx.fillStyle = '#eee';
+        ctx.fillRect(13, 10, 4, -4); ctx.fillRect(47, 10, 4, -4); // White edge
+    }
+    else if (earId === 'koala') {
+        ctx.fillStyle = '#888';
+        ctx.beginPath(); ctx.arc(12, 14, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(52, 14, 7, 0, Math.PI * 2); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = '#fff'; // Fluffy hair inside
+            ctx.beginPath(); ctx.arc(12, 14, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(52, 14, 4, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    else if (earId === 'cow') {
+        // Horns
+        ctx.fillStyle = '#eee';
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, 0); ctx.lineTo(18, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, 0); ctx.lineTo(46, 10); ctx.fill();
+        // Ears below horns
+        ctx.fillStyle = col;
+        ctx.ellipse(8, 16, 6, 3, 0.4, 0, Math.PI * 2); ctx.fill();
+        ctx.ellipse(56, 16, 6, 3, -0.4, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (earId === 'monkey') {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(10, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(54, 20, 5, 0, Math.PI * 2); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = shadow;
+            ctx.beginPath(); ctx.arc(10, 20, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(54, 20, 3, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    else if (earId === 'protogen') {
+        // Robotic angular ears
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, -6); ctx.lineTo(24, 10); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, -6); ctx.lineTo(40, 10); ctx.closePath(); ctx.fill();
+        // Glow Accent
+        ctx.fillStyle = '#00ffff';
+        ctx.fillRect(10, 0, 2, 8); ctx.fillRect(52, 0, 2, 8);
+    }
+    // New types maintained with simple improvements
+    else if (earId === 'wolf') {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.moveTo(12, 10); ctx.lineTo(8, -4); ctx.lineTo(22, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(52, 10); ctx.lineTo(56, -4); ctx.lineTo(42, 10); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = bellyCol;
+            ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(12, 2); ctx.lineTo(20, 10); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(52, 2); ctx.lineTo(44, 10); ctx.fill();
+        }
+    }
+    else if (earId === 'deer') {
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(16, 2, 3, 10); ctx.fillRect(45, 2, 3, 10);
+        ctx.fillRect(12, 0, 8, 3); ctx.fillRect(44, 0, 8, 3); // Branch
+        ctx.fillRect(10, -4, 3, 6); ctx.fillRect(51, -4, 3, 6); // Points
+    }
+}
+
+function createToolTexture(type) {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 64;
+    const ctx = c.getContext('2d');
+
+    if (type === 'axe') {
+        // Handle
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(28, 10, 8, 44);
+        // Head
+        ctx.fillStyle = '#888888';
+        ctx.beginPath();
+        // Single bit axe shape
+        ctx.moveTo(32, 10);
+        ctx.lineTo(52, 10);
+        ctx.lineTo(52, 26);
+        ctx.lineTo(36, 26);
+        ctx.lineTo(32, 22); // Curve in
+        ctx.lineTo(20, 26); // Back bit (small)
+        ctx.lineTo(20, 10);
+        ctx.fill();
+        // Edge
+        ctx.fillStyle = '#CCCCCC';
+        ctx.fillRect(48, 10, 4, 16);
+    } else if (type === 'pickaxe') {
+        // Handle
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(28, 10, 8, 44);
+        // Head
+        ctx.fillStyle = '#888888';
+        ctx.beginPath();
+        // Arch shape
+        ctx.moveTo(10, 16);
+        ctx.quadraticCurveTo(32, 5, 54, 16);
+        ctx.lineTo(50, 22);
+        ctx.quadraticCurveTo(32, 12, 14, 22);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    return t;
 }
 
 window.toggleMidiMute = function () {
@@ -3222,92 +5134,177 @@ function updateMidiUI() {
 
 // Draw the base body and head (shared by all characters)
 function drawBody(ctx, col, bellyCol, back) {
-    // Body Box
-    ctx.fillStyle = col;
-    ctx.fillRect(20, 30, 24, 30);
+    // VISUAL UPGRADE: Gradient Shading - Taller Characters
+
+    // Body Gradient (taller)
+    const bodyGrad = ctx.createLinearGradient(0, 28, 0, 68);
+    bodyGrad.addColorStop(0, col);
+    bodyGrad.addColorStop(1, shadeColor(col, -0.2)); // Darker bottom
+
+    ctx.fillStyle = bodyGrad;
+    ctx.fillRect(20, 28, 24, 40); // Taller body
 
     if (!back) {
         ctx.fillStyle = bellyCol;
-        ctx.fillRect(24, 35, 16, 20); // Belly Patch
+        // Rounded belly patch (adjusted for taller body)
+        ctx.beginPath();
+        ctx.ellipse(32, 48, 8, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
     }
 
-    // Standard Head (36x24)
-    ctx.fillStyle = col;
-    ctx.fillRect(14, 10, 36, 24);
+    // Head Gradient (taller)
+    const headGrad = ctx.createLinearGradient(0, 8, 0, 38);
+    headGrad.addColorStop(0, shadeColor(col, 0.1)); // Lighter top
+    headGrad.addColorStop(1, col);
+
+    ctx.fillStyle = headGrad;
+    ctx.fillRect(14, 8, 36, 28); // Taller head
+
+    // Chin Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+    ctx.fillRect(14, 34, 36, 2);
+}
+
+// Helper for shading
+function shadeColor(color, percent) {
+    // Simple hex darken/lighten (assumes hex input)
+    let f = parseInt(color.slice(1), 16), t = percent < 0 ? 0 : 255, p = percent < 0 ? percent * -1 : percent, R = f >> 16, G = f >> 8 & 0x00FF, B = f & 0x0000FF;
+    return "#" + (0x1000000 + (Math.round((t - R) * p) + R) * 0x10000 + (Math.round((t - G) * p) + G) * 0x100 + (Math.round((t - B) * p) + B)).toString(16).slice(1);
 }
 
 // Draw ears based on selected type
+// Draw ears based on selected type
 function drawEars(ctx, earId, col, bellyCol, back) {
     ctx.fillStyle = col;
+    const shadow = shadeColor(col, -0.2);
+    const highlight = shadeColor(col, 0.2);
 
     if (earId === 'cat') {
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(14, 0); ctx.lineTo(24, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(50, 0); ctx.lineTo(40, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(14, -2); ctx.lineTo(26, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(50, -2); ctx.lineTo(38, 10); ctx.fill();
+
+        if (!back) {
+            ctx.fillStyle = shadow; // Inner ear
+            ctx.beginPath(); ctx.moveTo(16, 8); ctx.lineTo(16, 2); ctx.lineTo(22, 8); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(48, 8); ctx.lineTo(48, 2); ctx.lineTo(42, 8); ctx.fill();
+        }
     }
     else if (earId === 'bunny') {
-        ctx.fillRect(18, -4, 8, 16); ctx.fillRect(38, -4, 8, 16);
+        ctx.fillStyle = col;
+        // Bigger rabbit ears
+        ctx.beginPath(); ctx.ellipse(22, 0, 6, 14, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(42, 0, 6, 14, 0, 0, Math.PI * 2); ctx.fill();
+
         if (!back) {
-            ctx.fillStyle = bellyCol;
-            ctx.fillRect(20, -2, 4, 12); ctx.fillRect(40, -2, 4, 12);
+            ctx.fillStyle = bellyCol; // Pink inner
+            ctx.beginPath(); ctx.ellipse(22, 0, 3.5, 9, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(42, 0, 3.5, 9, 0, 0, Math.PI * 2); ctx.fill();
         }
     }
     else if (earId === 'dog') {
-        ctx.fillRect(10, 12, 6, 12); ctx.fillRect(48, 12, 6, 12);
+        ctx.fillStyle = col;
+        // Floppy ears
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, 12); ctx.lineTo(10, 20); ctx.lineTo(18, 20); ctx.lineTo(20, 12); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, 12); ctx.lineTo(54, 20); ctx.lineTo(46, 20); ctx.lineTo(44, 12); ctx.fill();
+        // Shadow underneath
+        ctx.fillStyle = shadow;
+        ctx.fillRect(10, 20, 8, 2); ctx.fillRect(46, 20, 8, 2);
     }
     else if (earId === 'bear') {
-        ctx.beginPath(); ctx.arc(14, 10, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 10, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(14, 8, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 8, 6, 0, Math.PI * 2); ctx.fill();
+
+        if (!back) {
+            ctx.fillStyle = shadow;
+            ctx.beginPath(); ctx.arc(14, 8, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(50, 8, 3, 0, Math.PI * 2); ctx.fill();
+        }
     }
     else if (earId === 'fox') {
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, -5); ctx.lineTo(24, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, -5); ctx.lineTo(40, 10); ctx.fill();
+        // Black tips
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.moveTo(11, 2); ctx.lineTo(10, -5); ctx.lineTo(17, 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(53, 2); ctx.lineTo(54, -5); ctx.lineTo(47, 2); ctx.fill();
     }
     else if (earId === 'pig') {
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(8, 8); ctx.lineTo(18, 16); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 12); ctx.lineTo(56, 8); ctx.lineTo(46, 16); ctx.fill();
     }
     else if (earId === 'dragon') {
-        // Uses custom color (no more hardcoded #eee)
-        ctx.beginPath(); ctx.moveTo(18, 10); ctx.lineTo(14, -2); ctx.lineTo(24, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(46, 10); ctx.lineTo(50, -2); ctx.lineTo(40, 10); ctx.fill();
+        ctx.fillStyle = col; // Horns usually
+        ctx.beginPath(); ctx.moveTo(18, 10); ctx.lineTo(14, -4); ctx.lineTo(24, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(46, 10); ctx.lineTo(50, -4); ctx.lineTo(40, 10); ctx.fill();
+        // Ridges
+        ctx.fillStyle = shadow;
+        ctx.fillRect(16, 2, 4, 1); ctx.fillRect(44, 2, 4, 1);
+        ctx.fillRect(15, -1, 4, 1); ctx.fillRect(45, -1, 4, 1);
     }
     else if (earId === 'mouse') {
-        ctx.beginPath(); ctx.arc(14, 8, 8, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 8, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(14, 6, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 6, 9, 0, Math.PI * 2); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = bellyCol;
+            ctx.beginPath(); ctx.arc(14, 6, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(50, 6, 5, 0, Math.PI * 2); ctx.fill();
+        }
     }
     else if (earId === 'raccoon') {
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, 0); ctx.lineTo(24, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, 0); ctx.lineTo(40, 10); ctx.fill();
+        ctx.fillStyle = '#eee';
+        ctx.fillRect(13, 10, 4, -4); ctx.fillRect(47, 10, 4, -4); // White edge
     }
     else if (earId === 'koala') {
-        // Uses custom color (no more hardcoded #ddd)
-        ctx.beginPath(); ctx.arc(12, 14, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(52, 14, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#888';
+        ctx.beginPath(); ctx.arc(12, 14, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(52, 14, 7, 0, Math.PI * 2); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = '#fff'; // Fluffy hair inside
+            ctx.beginPath(); ctx.arc(12, 14, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(52, 14, 4, 0, Math.PI * 2); ctx.fill();
+        }
     }
     else if (earId === 'cow') {
-        // Horns use custom color
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, 4); ctx.lineTo(18, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, 4); ctx.lineTo(46, 10); ctx.fill();
-        ctx.fillRect(8, 16, 6, 4); ctx.fillRect(50, 16, 6, 4);
+        // Horns
+        ctx.fillStyle = '#eee';
+        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, 0); ctx.lineTo(18, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, 0); ctx.lineTo(46, 10); ctx.fill();
+        // Ears below horns
+        ctx.fillStyle = col;
+        ctx.ellipse(8, 16, 6, 3, 0.4, 0, Math.PI * 2); ctx.fill();
+        ctx.ellipse(56, 16, 6, 3, -0.4, 0, Math.PI * 2); ctx.fill();
     }
     else if (earId === 'monkey') {
-        ctx.beginPath(); ctx.arc(12, 20, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(52, 20, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(10, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(54, 20, 5, 0, Math.PI * 2); ctx.fill();
+        if (!back) {
+            ctx.fillStyle = shadow;
+            ctx.beginPath(); ctx.arc(10, 20, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(54, 20, 3, 0, Math.PI * 2); ctx.fill();
+        }
     }
     else if (earId === 'protogen') {
-        // Robotic angular ears - uses custom color with darker accent
+        // Robotic angular ears
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, -6); ctx.lineTo(24, 10); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, -6); ctx.lineTo(40, 10); ctx.closePath(); ctx.fill();
-        // Accent stripe (slightly darker)
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.fillRect(12, 4, 2, 4); ctx.fillRect(50, 4, 2, 4);
+        // Glow Accent
+        ctx.fillStyle = '#00ffff';
+        ctx.fillRect(10, 0, 2, 8); ctx.fillRect(52, 0, 2, 8);
     }
-    // --- NEW 25 SPECIES EARS ---
+    // New types maintained with simple improvements
     else if (earId === 'wolf') {
-        // Sharp pointed wolf ears
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.moveTo(12, 10); ctx.lineTo(8, -4); ctx.lineTo(22, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(52, 10); ctx.lineTo(56, -4); ctx.lineTo(42, 10); ctx.fill();
-        // Inner ear
         if (!back) {
             ctx.fillStyle = bellyCol;
             ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(12, 2); ctx.lineTo(20, 10); ctx.fill();
@@ -3315,22 +5312,20 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         }
     }
     else if (earId === 'deer') {
-        // Antlers
         ctx.fillStyle = '#8B4513';
         ctx.fillRect(16, 2, 3, 10); ctx.fillRect(45, 2, 3, 10);
-        ctx.fillRect(12, 0, 8, 3); ctx.fillRect(44, 0, 8, 3);
-        ctx.fillRect(10, -4, 3, 6); ctx.fillRect(51, -4, 3, 6);
+        ctx.fillRect(12, 0, 8, 3); ctx.fillRect(44, 0, 8, 3); // Branch
+        ctx.fillRect(10, -4, 3, 6); ctx.fillRect(51, -4, 3, 6); // Points
     }
-    else if (earId === 'owl') {
-        // Feather tufts
+    else if (earId === 'owl' || earId === 'squirrel') {
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.moveTo(16, 10); ctx.lineTo(14, -2); ctx.lineTo(22, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(48, 10); ctx.lineTo(50, -2); ctx.lineTo(42, 10); ctx.fill();
     }
     else if (earId === 'bat') {
-        // Large bat ears
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.moveTo(10, 14); ctx.lineTo(6, -6); ctx.lineTo(26, 14); ctx.fill();
         ctx.beginPath(); ctx.moveTo(54, 14); ctx.lineTo(58, -6); ctx.lineTo(38, 14); ctx.fill();
-        // Inner ear membrane
         if (!back) {
             ctx.fillStyle = bellyCol;
             ctx.beginPath(); ctx.moveTo(12, 12); ctx.lineTo(10, 0); ctx.lineTo(22, 12); ctx.fill();
@@ -3338,425 +5333,346 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         }
     }
     else if (earId === 'shark') {
-        // Fin-like ears
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.moveTo(14, 14); ctx.lineTo(18, 0); ctx.lineTo(22, 14); ctx.fill();
         ctx.beginPath(); ctx.moveTo(42, 14); ctx.lineTo(46, 0); ctx.lineTo(50, 14); ctx.fill();
     }
-    else if (earId === 'dolphin' || earId === 'snake') {
-        // No visible ears - do nothing
-    }
     else if (earId === 'tiger' || earId === 'leopard') {
-        // Round cat-like ears
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.arc(16, 8, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(48, 8, 6, 0, Math.PI * 2); ctx.fill();
         if (!back) {
-            ctx.fillStyle = bellyCol;
+            ctx.fillStyle = bellyCol; // White spot
             ctx.beginPath(); ctx.arc(16, 8, 3, 0, Math.PI * 2); ctx.fill();
             ctx.beginPath(); ctx.arc(48, 8, 3, 0, Math.PI * 2); ctx.fill();
         }
     }
     else if (earId === 'rhino') {
-        // Small ears with horn
+        ctx.fillStyle = col;
         ctx.beginPath(); ctx.arc(14, 12, 4, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(50, 12, 4, 0, Math.PI * 2); ctx.fill();
     }
     else if (earId === 'elephant') {
-        // Large floppy elephant ears
-        ctx.beginPath();
-        ctx.ellipse(8, 20, 10, 14, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(56, 20, 10, 14, 0, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.ellipse(8, 20, 10, 14, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(56, 20, 10, 14, 0, 0, Math.PI * 2); ctx.fill();
     }
-    else if (earId === 'hippo') {
-        // Small round hippo ears
-        ctx.beginPath(); ctx.arc(16, 8, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(48, 8, 4, 0, Math.PI * 2); ctx.fill();
+    else if (earId === 'hippo' || earId === 'otter' || earId === 'beaver' || earId === 'ferret') {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(14, 8, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 8, 4, 0, Math.PI * 2); ctx.fill();
     }
-    else if (earId === 'giraffe') {
-        // Ossicones (horn-like)
-        ctx.fillRect(18, 0, 4, 12); ctx.fillRect(42, 0, 4, 12);
-        ctx.beginPath(); ctx.arc(20, 0, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(44, 0, 3, 0, Math.PI * 2); ctx.fill();
+    else if (earId === 'giraffe' || earId === 'zebra') {
+        ctx.fillStyle = col;
+        ctx.fillRect(16, 0, 4, 12); ctx.fillRect(44, 0, 4, 12);
     }
-    else if (earId === 'zebra') {
-        // Upright zebra ears
-        ctx.fillRect(14, 0, 6, 12); ctx.fillRect(44, 0, 6, 12);
-        if (!back) {
-            ctx.fillStyle = bellyCol;
-            ctx.fillRect(16, 2, 2, 8); ctx.fillRect(46, 2, 2, 8);
-        }
-    }
-    else if (earId === 'panda') {
-        // Round black panda ears
-        ctx.fillStyle = '#000';
-        ctx.beginPath(); ctx.arc(14, 8, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 8, 6, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (earId === 'red_panda') {
-        // Fluffy red panda ears
-        ctx.beginPath(); ctx.arc(14, 8, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 8, 7, 0, Math.PI * 2); ctx.fill();
-        if (!back) {
-            ctx.fillStyle = bellyCol;
-            ctx.beginPath(); ctx.arc(14, 8, 4, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(50, 8, 4, 0, Math.PI * 2); ctx.fill();
-        }
-    }
-    else if (earId === 'skunk') {
-        // Pointed skunk ears
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(12, 0); ctx.lineTo(22, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(52, 0); ctx.lineTo(42, 10); ctx.fill();
-    }
-    else if (earId === 'otter' || earId === 'beaver') {
-        // Small round ears
-        ctx.beginPath(); ctx.arc(14, 10, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 10, 4, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (earId === 'hedgehog') {
-        // Small spiky ears
-        ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(12, 6); ctx.lineTo(18, 12); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 12); ctx.lineTo(52, 6); ctx.lineTo(46, 12); ctx.fill();
-    }
-    else if (earId === 'squirrel') {
-        // Tufted squirrel ears
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, -2); ctx.lineTo(20, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, -2); ctx.lineTo(44, 10); ctx.fill();
-        // Tufts
-        ctx.fillRect(8, -4, 3, 4); ctx.fillRect(53, -4, 3, 4);
-    }
-    else if (earId === 'chipmunk') {
-        // Small rounded chipmunk ears
-        ctx.beginPath(); ctx.arc(14, 10, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 10, 5, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (earId === 'hamster') {
-        // Tiny round hamster ears
-        ctx.beginPath(); ctx.arc(16, 10, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(48, 10, 4, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (earId === 'chinchilla') {
-        // Large round chinchilla ears
-        ctx.beginPath(); ctx.arc(12, 10, 8, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(52, 10, 8, 0, Math.PI * 2); ctx.fill();
-        if (!back) {
-            ctx.fillStyle = bellyCol;
-            ctx.beginPath(); ctx.arc(12, 10, 5, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(52, 10, 5, 0, Math.PI * 2); ctx.fill();
-        }
-    }
-    else if (earId === 'ferret') {
-        // Small rounded ferret ears
-        ctx.beginPath(); ctx.arc(14, 12, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 12, 4, 0, Math.PI * 2); ctx.fill();
+    else if (earId === 'panda' || earId === 'skunk' || earId === 'red_panda' || earId === 'chipmunk' || earId === 'hamster' || earId === 'chinchilla') {
+        ctx.fillStyle = (earId === 'panda' ? '#000' : col);
+        ctx.beginPath(); ctx.arc(14, 9, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 9, 6, 0, Math.PI * 2); ctx.fill();
     }
 }
 
 // Draw eyes based on selected type (front only)
 function drawEyes(ctx, eyeId, eyeCol) {
-    if (eyeId === 'standard') {
+    // Helper for glint/shine
+    const drawGlint = (x, y) => {
         ctx.fillStyle = 'white';
-        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillRect(x, y, 2, 2); // 2x2 shine on 128 canvas
+    };
+    const shade = shadeColor(eyeCol, -0.3);
+
+    if (eyeId === 'standard') {
+        // Sclera
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(20, 18, 8, 10); ctx.fillRect(36, 18, 8, 10);
+        // Top shadow
+        ctx.fillStyle = '#ddd';
+        ctx.fillRect(20, 18, 8, 2); ctx.fillRect(36, 18, 8, 2);
+        // Iris
         ctx.fillStyle = eyeCol;
-        ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
+        ctx.fillRect(22, 22, 4, 6); ctx.fillRect(38, 22, 4, 6);
+        drawGlint(23, 20); drawGlint(39, 20);
     }
     else if (eyeId === 'dragon') {
-        ctx.fillStyle = 'white';
-        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(20, 18, 8, 10); ctx.fillRect(36, 18, 8, 10);
+        ctx.fillStyle = '#ddd'; // Shadow
+        ctx.fillRect(20, 18, 8, 2); ctx.fillRect(36, 18, 8, 2);
         ctx.fillStyle = eyeCol;
-        ctx.fillRect(24, 18, 4, 8); ctx.fillRect(40, 18, 4, 8); // Slit pupils
+        // Slit pupil
+        ctx.beginPath(); ctx.ellipse(24, 23, 2, 5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(40, 23, 2, 5, 0, 0, Math.PI * 2); ctx.fill();
+        drawGlint(21, 19); drawGlint(37, 19);
     }
     else if (eyeId === 'frog') {
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(19, 15, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(45, 15, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(19, 15, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(45, 15, 6, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = eyeCol;
-        ctx.beginPath(); ctx.arc(19, 15, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(45, 15, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(19, 15, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(45, 15, 2.5, 0, Math.PI * 2); ctx.fill();
     }
     else if (eyeId === 'cute') {
-        // Big round cute eyes
+        // Big round cute eyes with extra shine
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(24, 21, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 21, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(24, 22, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 22, 5, 0, Math.PI * 2); ctx.fill();
+        // Shine
         ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(22, 19, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(38, 19, 2.5, 0, Math.PI * 2); ctx.fill();
+        drawGlint(26, 24); drawGlint(42, 24); // Double shine
+    }
+    else if (eyeId === 'sleepy') {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(20, 20, 8, 6); ctx.fillRect(36, 20, 8, 6);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(23, 21, 4, 3); ctx.fillRect(39, 21, 4, 3);
+        // Heavy Eyelids
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(20, 18, 8, 4); ctx.fillRect(36, 18, 8, 4);
+    }
+    else if (eyeId === 'angry') {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 22, 4, 4); ctx.fillRect(40, 22, 4, 4);
+        // Angry brows
+        ctx.fillStyle = '#333';
+        ctx.beginPath(); ctx.moveTo(18, 16); ctx.lineTo(28, 20); ctx.lineTo(28, 18); ctx.lineTo(18, 14); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(46, 16); ctx.lineTo(36, 20); ctx.lineTo(36, 18); ctx.lineTo(46, 14); ctx.fill();
+    }
+    else if (eyeId === 'cat_eyes') {
+        ctx.fillStyle = '#ffffcc'; // Pale yellow
         ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = eyeCol;
-        ctx.beginPath(); ctx.arc(25, 21, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(41, 21, 4, 0, Math.PI * 2); ctx.fill();
-        // Shine
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(23, 18, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(39, 18, 2, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (eyeId === 'sleepy') {
-        // Half-closed sleepy eyes
-        ctx.fillStyle = 'white';
-        ctx.fillRect(20, 20, 8, 4); ctx.fillRect(36, 20, 8, 4);
-        ctx.fillStyle = eyeCol;
-        ctx.fillRect(23, 21, 4, 3); ctx.fillRect(39, 21, 4, 3);
-        // Eyelids
-        ctx.fillStyle = '#333';
-        ctx.fillRect(20, 18, 8, 2); ctx.fillRect(36, 18, 8, 2);
-    }
-    else if (eyeId === 'angry') {
-        // Angry eyes with angled brows
-        ctx.fillStyle = 'white';
-        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
-        ctx.fillStyle = eyeCol;
-        ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
-        // Angry brows
-        ctx.fillStyle = '#333';
-        ctx.beginPath(); ctx.moveTo(18, 16); ctx.lineTo(28, 18); ctx.lineTo(28, 16); ctx.lineTo(18, 14); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(46, 16); ctx.lineTo(36, 18); ctx.lineTo(36, 16); ctx.lineTo(46, 14); ctx.fill();
-    }
-    else if (eyeId === 'cat_eyes') {
-        // Vertical slit cat eyes
-        ctx.fillStyle = '#ffffaa'; // Yellow-ish
-        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = eyeCol;
-        ctx.fillRect(23, 16, 2, 8); ctx.fillRect(39, 16, 2, 8);
+        ctx.beginPath(); ctx.ellipse(24, 20, 2, 6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(40, 20, 2, 6, 0, 0, Math.PI * 2); ctx.fill();
     }
     else if (eyeId === 'sparkle') {
-        // Sparkle/star eyes
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = eyeCol;
-        // Stars
+        // Big Stars
         const drawStar = (cx, cy) => {
+            ctx.filter = `drop-shadow(0 0 2px ${eyeCol})`;
             ctx.beginPath();
-            ctx.moveTo(cx, cy - 3);
-            ctx.lineTo(cx + 1, cy - 1);
-            ctx.lineTo(cx + 3, cy);
-            ctx.lineTo(cx + 1, cy + 1);
-            ctx.lineTo(cx, cy + 3);
-            ctx.lineTo(cx - 1, cy + 1);
-            ctx.lineTo(cx - 3, cy);
-            ctx.lineTo(cx - 1, cy - 1);
-            ctx.closePath();
-            ctx.fill();
+            for (let i = 0; i < 5; i++) {
+                ctx.lineTo(cx + Math.cos((18 + i * 72) * Math.PI / 180) * 4, cy + Math.sin((18 + i * 72) * Math.PI / 180) * 4);
+                ctx.lineTo(cx + Math.cos((54 + i * 72) * Math.PI / 180) * 2, cy + Math.sin((54 + i * 72) * Math.PI / 180) * 2);
+            }
+            ctx.closePath(); ctx.fill();
+            ctx.filter = "none";
         };
         drawStar(24, 20); drawStar(40, 20);
     }
     else if (eyeId === 'dizzy') {
-        // Dizzy spiral eyes
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = eyeCol; ctx.lineWidth = 1.5;
-        // Spirals
-        ctx.beginPath(); ctx.arc(24, 20, 2, 0, Math.PI * 3); ctx.stroke();
-        ctx.beginPath(); ctx.arc(40, 20, 2, 0, Math.PI * 3); ctx.stroke();
-    }
-    else if (eyeId === 'heart') {
-        // Heart-shaped pupils
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#ff4444';
-        // Hearts
-        const drawHeart = (cx, cy) => {
-            ctx.beginPath();
-            ctx.moveTo(cx, cy + 2);
-            ctx.bezierCurveTo(cx - 3, cy - 1, cx - 3, cy - 3, cx, cy - 1);
-            ctx.bezierCurveTo(cx + 3, cy - 3, cx + 3, cy - 1, cx, cy + 2);
-            ctx.fill();
-        };
-        drawHeart(24, 20); drawHeart(40, 20);
-    }
-    else if (eyeId === 'x_eyes') {
-        // X eyes (knocked out)
-        ctx.strokeStyle = eyeCol; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(20, 16); ctx.lineTo(28, 24); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(28, 16); ctx.lineTo(20, 24); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(36, 16); ctx.lineTo(44, 24); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(44, 16); ctx.lineTo(36, 24); ctx.stroke();
-    }
-    else if (eyeId === 'dot') {
-        // Simple dot eyes
-        ctx.fillStyle = eyeCol;
-        ctx.beginPath(); ctx.arc(24, 20, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 3, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (eyeId === 'protogen') {
-        // Glowing visor eyes - angular LED style, uses custom eye color
-        ctx.fillStyle = eyeCol;
-        // Left eye - angular chevron
-        ctx.beginPath(); ctx.moveTo(18, 18); ctx.lineTo(26, 22); ctx.lineTo(18, 26); ctx.lineTo(20, 22); ctx.closePath(); ctx.fill();
-        // Right eye - angular chevron
-        ctx.beginPath(); ctx.moveTo(46, 18); ctx.lineTo(38, 22); ctx.lineTo(46, 26); ctx.lineTo(44, 22); ctx.closePath(); ctx.fill();
-        // Glow effect
-        ctx.shadowColor = eyeCol;
-        ctx.shadowBlur = 4;
-        ctx.fillRect(20, 20, 6, 4);
-        ctx.fillRect(38, 20, 6, 4);
-        ctx.shadowBlur = 0;
-    }
-    // --- NEW EYE TYPES ---
-    else if (eyeId === 'wolf') {
-        // Fierce wolf eyes
-        ctx.fillStyle = '#ffcc00';
-        ctx.fillRect(18, 18, 10, 8); ctx.fillRect(36, 18, 10, 8);
-        ctx.fillStyle = eyeCol;
-        ctx.fillRect(24, 18, 4, 8); ctx.fillRect(40, 18, 4, 8);
-        // Angry brow
-        ctx.fillStyle = '#333';
-        ctx.beginPath(); ctx.moveTo(16, 16); ctx.lineTo(28, 18); ctx.lineTo(28, 16); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(48, 16); ctx.lineTo(36, 18); ctx.lineTo(36, 16); ctx.fill();
-    }
-    else if (eyeId === 'owl') {
-        // Large round owl eyes
-        ctx.fillStyle = '#ffcc00';
-        ctx.beginPath(); ctx.arc(22, 20, 8, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(42, 20, 8, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = eyeCol;
-        ctx.beginPath(); ctx.arc(22, 20, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(42, 20, 4, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (eyeId === 'shark') {
-        // Dark beady shark eyes
-        ctx.fillStyle = '#111';
-        ctx.beginPath(); ctx.arc(22, 20, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(42, 20, 4, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (eyeId === 'snake') {
-        // Slit snake eyes
-        ctx.fillStyle = '#ffffaa';
-        ctx.beginPath(); ctx.ellipse(24, 20, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.ellipse(40, 20, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = eyeCol;
-        ctx.fillRect(23, 15, 2, 10); ctx.fillRect(39, 15, 2, 10);
-    }
-    else if (eyeId === 'tired') {
-        // Tired eyes with bags
-        ctx.fillStyle = 'white';
-        ctx.fillRect(20, 20, 8, 6); ctx.fillRect(36, 20, 8, 6);
-        ctx.fillStyle = eyeCol;
-        ctx.fillRect(24, 21, 4, 4); ctx.fillRect(40, 21, 4, 4);
-        // Bags under eyes
-        ctx.fillStyle = 'rgba(100,80,120,0.4)';
-        ctx.fillRect(20, 26, 8, 2); ctx.fillRect(36, 26, 8, 2);
-    }
-    else if (eyeId === 'wink') {
-        // One eye open, one winking
-        ctx.fillStyle = 'white';
-        ctx.fillRect(20, 18, 8, 8);
-        ctx.fillStyle = eyeCol;
-        ctx.fillRect(24, 20, 4, 4);
-        // Wink (closed eye)
-        ctx.fillStyle = eyeCol;
-        ctx.beginPath(); ctx.arc(40, 22, 4, 0, Math.PI); ctx.fill();
-    }
-    else if (eyeId === 'crying') {
-        // Crying eyes with tears
-        ctx.fillStyle = 'white';
-        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
-        ctx.fillStyle = eyeCol;
-        ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
-        // Tears
-        ctx.fillStyle = '#88ccff';
-        ctx.fillRect(22, 26, 2, 6); ctx.fillRect(42, 26, 2, 6);
-    }
-    else if (eyeId === 'star') {
-        // Star-shaped pupils
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = eyeCol;
-        const star = (cx, cy) => { ctx.beginPath(); for (let i = 0; i < 5; i++) { const a = (i * 4 * Math.PI) / 5 - Math.PI / 2; ctx.lineTo(cx + Math.cos(a) * 3, cy + Math.sin(a) * 3); } ctx.fill(); };
-        star(24, 20); star(40, 20);
-    }
-    else if (eyeId === 'spiral') {
-        // Hypnotic spiral eyes
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = eyeCol; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(24, 20, 4, 0, Math.PI * 4); ctx.stroke();
-        ctx.beginPath(); ctx.arc(40, 20, 4, 0, Math.PI * 4); ctx.stroke();
+        // Swirls
+        const drawSwirl = (cx, cy) => {
+            ctx.beginPath();
+            for (let i = 0; i < 20; i++) {
+                const r = i / 3;
+                const a = i / 2;
+                ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+            }
+            ctx.stroke();
+        };
+        drawSwirl(24, 20); drawSwirl(40, 20);
     }
+    else if (eyeId === 'heart') {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ff5555';
+        const drawHeart = (cx, cy) => {
+            ctx.beginPath();
+            const topCurveHeight = 2;
+            ctx.moveTo(cx, cy + 2);
+            ctx.bezierCurveTo(cx, cy, cx - 3, cy - 3, cx - 3, cy - 1);
+            ctx.bezierCurveTo(cx - 3, cy + 1.5, cx, cy + 3.5, cx, cy + 5);
+            ctx.bezierCurveTo(cx, cy + 3.5, cx + 3, cy + 1.5, cx + 3, cy - 1);
+            ctx.bezierCurveTo(cx + 3, cy - 3, cx, cy, cx, cy + 2);
+            ctx.fill();
+        };
+        drawHeart(24, 18); drawHeart(40, 18);
+    }
+    else if (eyeId === 'x_eyes') {
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 3;
+        const s = 5;
+        ctx.beginPath(); ctx.moveTo(24 - s, 20 - s); ctx.lineTo(24 + s, 20 + s); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(24 + s, 20 - s); ctx.lineTo(24 - s, 20 + s); ctx.stroke();
+
+        ctx.beginPath(); ctx.moveTo(40 - s, 20 - s); ctx.lineTo(40 + s, 20 + s); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(40 + s, 20 - s); ctx.lineTo(40 - s, 20 + s); ctx.stroke();
+    }
+    else if (eyeId === 'dot') {
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(24, 20, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 3.5, 0, Math.PI * 2); ctx.fill();
+        drawGlint(25, 19); drawGlint(41, 19);
+    }
+    else if (eyeId === 'protogen') {
+        ctx.fillStyle = eyeCol;
+        ctx.shadowColor = eyeCol; ctx.shadowBlur = 5;
+        // Screens
+        ctx.fillRect(18, 16, 12, 10); ctx.fillRect(34, 16, 12, 10);
+        // Pixels inside
+        ctx.fillStyle = '#003300';
+        ctx.fillRect(22, 18, 4, 6); ctx.fillRect(38, 18, 4, 6);
+        ctx.shadowBlur = 0;
+    }
+    else if (eyeId === 'wolf') {
+        ctx.fillStyle = '#ffcc00'; // Amber eyes
+        ctx.beginPath(); ctx.moveTo(16, 20); ctx.lineTo(24, 16); ctx.lineTo(28, 20); ctx.lineTo(24, 24); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(36, 20); ctx.lineTo(40, 16); ctx.lineTo(48, 20); ctx.lineTo(40, 24); ctx.fill();
+        // Pupils
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(23, 19, 2, 4); ctx.fillRect(39, 19, 2, 4);
+        // Angry brow
+        ctx.fillStyle = '#333';
+        ctx.beginPath(); ctx.moveTo(16, 14); ctx.lineTo(28, 18); ctx.lineTo(28, 12); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(48, 14); ctx.lineTo(36, 18); ctx.lineTo(36, 12); ctx.fill();
+    }
+    else if (eyeId === 'owl') {
+        ctx.fillStyle = '#ffcc00';
+        ctx.beginPath(); ctx.arc(22, 20, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 20, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(22, 20, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 20, 4, 0, Math.PI * 2); ctx.fill();
+        drawGlint(20, 16); drawGlint(40, 16);
+    }
+    else if (eyeId === 'shark') {
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.arc(22, 20, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 20, 4, 0, Math.PI * 2); ctx.fill();
+        drawGlint(23, 19); drawGlint(43, 19);
+    }
+    else if (eyeId === 'snake') {
+        ctx.fillStyle = '#ffffaa';
+        ctx.beginPath(); ctx.ellipse(24, 20, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(40, 20, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(23, 16, 2, 8); ctx.fillRect(39, 16, 2, 8);
+    }
+    else if (eyeId === 'tired') {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(20, 20, 8, 5); ctx.fillRect(36, 20, 8, 5);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(23, 21, 2, 2); ctx.fillRect(39, 21, 2, 2);
+        // Bags
+        ctx.fillStyle = 'rgba(100,0,100,0.2)';
+        ctx.beginPath(); ctx.arc(24, 26, 5, 0, Math.PI, false); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 26, 5, 0, Math.PI, false); ctx.fill();
+    }
+    else if (eyeId === 'wink') {
+        ctx.fillStyle = '#fff'; ctx.fillRect(20, 18, 8, 8);
+        ctx.fillStyle = eyeCol; ctx.fillRect(24, 22, 4, 4);
+        drawGlint(25, 20);
+        // Wink
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(36, 22); ctx.lineTo(44, 22); ctx.stroke();
+    }
+    else if (eyeId === 'crying') {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
+        ctx.fillStyle = eyeCol;
+        ctx.fillRect(24, 22, 4, 4); ctx.fillRect(40, 22, 4, 4);
+        // Tears
+        ctx.fillStyle = '#8cf';
+        ctx.fillRect(20, 26, 8, 8); ctx.fillRect(36, 26, 8, 8);
+    }
+    else if (eyeId === 'star') {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        // Star pupil
+        const drawStar = (cx, cy) => { ctx.beginPath(); for (let i = 0; i < 5; i++) { const a = (i * 4 * Math.PI) / 5 - Math.PI / 2; ctx.lineTo(cx + Math.cos(a) * 3, cy + Math.sin(a) * 3); } ctx.fill(); };
+        drawStar(24, 20); drawStar(40, 20);
+    }
+    else if (eyeId === 'spiral') { /* Handled by dizzy */ }
     else if (eyeId === 'closed') {
-        // Happy closed eyes
-        ctx.strokeStyle = eyeCol; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(24, 22, 4, Math.PI, 0); ctx.stroke();
-        ctx.beginPath(); ctx.arc(40, 22, 4, Math.PI, 0); ctx.stroke();
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(24, 22, 5, Math.PI, 0); ctx.stroke();
+        ctx.beginPath(); ctx.arc(40, 22, 5, Math.PI, 0); ctx.stroke();
     }
     else if (eyeId === 'wide') {
-        // Wide surprised eyes
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(24, 20, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(24, 20, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 8, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = eyeCol;
-        ctx.beginPath(); ctx.arc(24, 20, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(24, 20, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 2, 0, Math.PI * 2); ctx.fill();
     }
     else if (eyeId === 'beady') {
-        // Small beady eyes
         ctx.fillStyle = eyeCol;
-        ctx.beginPath(); ctx.arc(24, 22, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 22, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(24, 22, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 22, 2.5, 0, Math.PI * 2); ctx.fill();
+        drawGlint(25, 21); drawGlint(41, 21);
     }
     else if (eyeId === 'anime') {
-        // Large anime eyes with shine
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(22, 20, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(42, 20, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = eyeCol;
-        ctx.beginPath(); ctx.arc(23, 21, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(43, 21, 5, 0, Math.PI * 2); ctx.fill();
-        // Shine spots
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(20, 18, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 18, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(24, 23, 1, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(44, 23, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.ellipse(22, 20, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(42, 20, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = shade; // gradient top
+        ctx.beginPath(); ctx.arc(22, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = eyeCol; // bottom lighter
+        ctx.beginPath(); ctx.arc(22, 23, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(42, 23, 4, 0, Math.PI * 2); ctx.fill();
+        drawGlint(19, 16); drawGlint(24, 22);
+        drawGlint(39, 16); drawGlint(44, 22);
     }
     else if (eyeId === 'glasses') {
-        // Eyes with glasses
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = '#fff';
         ctx.fillRect(18, 18, 10, 8); ctx.fillRect(36, 18, 10, 8);
         ctx.fillStyle = eyeCol;
         ctx.fillRect(22, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
-        // Glasses frames
         ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
         ctx.strokeRect(16, 16, 14, 12); ctx.strokeRect(34, 16, 14, 12);
         ctx.beginPath(); ctx.moveTo(30, 22); ctx.lineTo(34, 22); ctx.stroke();
     }
     else if (eyeId === 'sunglasses') {
-        // Cool sunglasses
         ctx.fillStyle = '#111';
         ctx.fillRect(16, 16, 14, 10); ctx.fillRect(34, 16, 14, 10);
+        // Reflection
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.beginPath(); ctx.moveTo(16, 16); ctx.lineTo(24, 26); ctx.lineTo(16, 26); ctx.fill();
         ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
         ctx.strokeRect(16, 16, 14, 10); ctx.strokeRect(34, 16, 14, 10);
         ctx.beginPath(); ctx.moveTo(30, 20); ctx.lineTo(34, 20); ctx.stroke();
     }
     else if (eyeId === 'monocle') {
-        // One eye normal, one with monocle
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = '#fff';
         ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
         ctx.fillStyle = eyeCol;
         ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
-        // Monocle on right eye
         ctx.strokeStyle = '#c9a000'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(40, 22, 7, 0, Math.PI * 2); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(46, 26); ctx.lineTo(50, 34); ctx.stroke();
     }
     else if (eyeId === 'eyepatch') {
-        // Pirate eyepatch
-        ctx.fillStyle = 'white';
-        ctx.fillRect(20, 18, 8, 8);
-        ctx.fillStyle = eyeCol;
-        ctx.fillRect(24, 20, 4, 4);
-        // Eyepatch on right eye
+        ctx.fillStyle = '#fff'; ctx.fillRect(20, 18, 8, 8);
+        ctx.fillStyle = eyeCol; ctx.fillRect(24, 20, 4, 4);
+        // Patch
         ctx.fillStyle = '#222';
-        ctx.beginPath(); ctx.arc(40, 22, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 22, 7, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(34, 18); ctx.lineTo(50, 10); ctx.stroke();
     }
     else if (eyeId === 'cross') {
-        // Cross/plus shaped eyes
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = eyeCol; ctx.lineWidth = 2;
@@ -3764,63 +5680,47 @@ function drawEyes(ctx, eyeId, eyeCol) {
         ctx.beginPath(); ctx.moveTo(38, 20); ctx.lineTo(42, 20); ctx.moveTo(40, 18); ctx.lineTo(40, 22); ctx.stroke();
     }
     else if (eyeId === 'dollar') {
-        // Dollar sign eyes
         ctx.fillStyle = '#44ff44';
         ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#000';
-        ctx.font = '10px Arial';
+        ctx.fillStyle = '#006600';
+        ctx.font = 'bold 10px monospace';
         ctx.fillText('$', 21, 24); ctx.fillText('$', 37, 24);
     }
     else if (eyeId === 'fire') {
-        // Fiery eyes
-        ctx.fillStyle = '#ff4400';
+        // Gradient fire
+        const grad = ctx.createLinearGradient(0, 15, 0, 25);
+        grad.addColorStop(0, '#ffcc00'); grad.addColorStop(1, '#ff4400');
+        ctx.fillStyle = grad;
         ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#ffcc00';
-        ctx.beginPath(); ctx.arc(24, 20, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(24, 20, 1, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 1, 0, Math.PI * 2); ctx.fill();
     }
     else if (eyeId === 'galaxy') {
-        // Galaxy/cosmic eyes
         ctx.fillStyle = '#220044';
         ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#ff88ff';
-        ctx.beginPath(); ctx.arc(22, 18, 1, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(38, 18, 1, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#8888ff';
-        ctx.beginPath(); ctx.arc(26, 22, 1, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(42, 22, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(22, 18, 1, 1); ctx.fillRect(38, 22, 1, 1);
     }
     else if (eyeId === 'robot') {
-        // Robot LED eyes
-        ctx.fillStyle = '#00ff00';
+        ctx.fillStyle = '#0f0';
         ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
         ctx.fillStyle = '#003300';
-        ctx.fillRect(22, 20, 2, 4); ctx.fillRect(24, 20, 2, 4);
-        ctx.fillRect(38, 20, 2, 4); ctx.fillRect(40, 20, 2, 4);
+        ctx.fillRect(20, 18, 8, 1); ctx.fillRect(20, 20, 8, 1); ctx.fillRect(20, 22, 8, 1);
+        ctx.fillRect(36, 18, 8, 1); ctx.fillRect(36, 20, 8, 1); ctx.fillRect(36, 22, 8, 1);
     }
     else if (eyeId === 'demon') {
-        // Demonic red eyes
-        ctx.fillStyle = '#ff0000';
-        ctx.beginPath(); ctx.arc(24, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 20, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#a00';
+        ctx.beginPath(); ctx.arc(24, 20, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 20, 6, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#000';
         ctx.fillRect(23, 17, 2, 6); ctx.fillRect(39, 17, 2, 6);
     }
     else if (eyeId === 'alien') {
-        // Large black alien eyes
         ctx.fillStyle = '#000';
-        ctx.beginPath(); ctx.ellipse(22, 20, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.ellipse(42, 20, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
-        // Shine
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-        ctx.beginPath(); ctx.arc(20, 16, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 16, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(22, 20, 7, 9, 0.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(42, 20, 7, 9, -0.2, 0, Math.PI * 2); ctx.fill();
+        drawGlint(20, 16); drawGlint(40, 16);
     }
 }
 
@@ -3832,29 +5732,32 @@ function drawNose(ctx, noseId, bellyCol, noseCol) {
 
     if (noseId === 'cat') {
         ctx.fillStyle = getCol('pink');
-        ctx.fillRect(30, 28, 4, 2);
+        ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(36, 28); ctx.lineTo(32, 33); ctx.fill();
     }
     else if (noseId === 'dog') {
         ctx.fillStyle = getCol('black');
-        ctx.fillRect(29, 26, 6, 4);
-        ctx.strokeStyle = 'black'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(32, 30); ctx.lineTo(32, 33); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(32, 28, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(32, 30); ctx.lineTo(32, 34); ctx.stroke();
     }
     else if (noseId === 'bear') {
         ctx.fillStyle = getCol('#dcb');
-        ctx.beginPath(); ctx.arc(32, 28, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(32, 28, 6, 5, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'black';
-        ctx.fillRect(30, 26, 4, 3);
+        ctx.beginPath(); ctx.ellipse(32, 27, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
     }
     else if (noseId === 'pig') {
         ctx.fillStyle = getCol('#ffaaaa');
-        ctx.fillRect(26, 26, 12, 6);
+        ctx.beginPath(); ctx.ellipse(32, 29, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#cc6666';
-        ctx.fillRect(28, 28, 2, 2); ctx.fillRect(34, 28, 2, 2);
+        ctx.beginPath(); ctx.arc(30, 29, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(34, 29, 1.5, 0, Math.PI * 2); ctx.fill();
     }
     else if (noseId === 'duck') {
         ctx.fillStyle = getCol('orange');
-        ctx.beginPath(); ctx.ellipse(32, 28, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(32, 30, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Nostrils
+        ctx.fillRect(30, 29, 1, 1); ctx.fillRect(33, 29, 1, 1);
     }
     else if (noseId === 'dragon') {
         ctx.fillStyle = getCol(bellyCol || '#fff');
@@ -3864,458 +5767,439 @@ function drawNose(ctx, noseId, bellyCol, noseCol) {
     }
     else if (noseId === 'mouse') {
         ctx.fillStyle = getCol('pink');
-        ctx.fillRect(30, 28, 4, 3);
+        ctx.beginPath(); ctx.arc(32, 30, 3, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'black';
-        ctx.fillRect(24, 28, 6, 1); ctx.fillRect(34, 28, 6, 1); // Whiskers
+        ctx.fillRect(22, 30, 8, 0.5); ctx.fillRect(34, 30, 8, 0.5); // Thin Whiskers
     }
     else if (noseId === 'axolotl') {
         ctx.fillStyle = getCol('black');
-        ctx.fillRect(30, 28, 4, 1); // Tiny smile
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath(); ctx.arc(32, 30, 4, 0, Math.PI, false); ctx.stroke();
+        ctx.globalAlpha = 1;
     }
     else if (noseId === 'koala') {
         ctx.fillStyle = getCol('#333');
         ctx.beginPath(); ctx.ellipse(32, 26, 5, 8, 0, 0, Math.PI * 2); ctx.fill();
+        // Shine
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath(); ctx.ellipse(30, 24, 2, 3, 0, 0, Math.PI * 2); ctx.fill();
     }
     else if (noseId === 'cow') {
         ctx.fillStyle = getCol('pink');
-        ctx.fillRect(24, 26, 16, 6);
+        // Round rect if supported, else rect with shading
+        ctx.fillRect(24, 28, 16, 6);
         ctx.fillStyle = 'black';
-        ctx.fillRect(26, 28, 2, 2); ctx.fillRect(36, 28, 2, 2);
+        ctx.beginPath(); ctx.arc(28, 30, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(36, 30, 2, 0, Math.PI * 2); ctx.fill();
     }
     else if (noseId === 'frog') {
         ctx.fillStyle = getCol('#003300');
-        ctx.fillRect(22, 26, 20, 2);
+        ctx.fillRect(24, 30, 16, 1);
     }
     else if (noseId === 'penguin') {
         ctx.fillStyle = getCol('orange');
         ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(36, 28); ctx.lineTo(32, 34); ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.moveTo(32, 34); ctx.lineTo(32, 28); ctx.stroke();
     }
     else if (noseId === 'monkey') {
         ctx.fillStyle = getCol('#eec');
-        ctx.fillRect(26, 26, 12, 6);
+        ctx.beginPath(); ctx.ellipse(32, 29, 8, 5, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'black';
-        ctx.fillRect(30, 27, 4, 1);
+        ctx.fillRect(31, 28, 2, 1);
     }
     else if (noseId === 'protogen') {
-        // Visor screen mouth - uses custom color or default cyan
         const col = getCol('#00ffff');
-        ctx.fillStyle = col;
-        ctx.shadowColor = col;
-        ctx.shadowBlur = 3;
-        ctx.fillRect(22, 28, 20, 3);
+        ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 3;
+        ctx.fillRect(24, 30, 16, 2);
         ctx.shadowBlur = 0;
-        // Mouth expression line
-        ctx.fillStyle = '#00aaaa';
-        ctx.fillRect(26, 29, 12, 1);
     }
-    // --- NEW NOSE TYPES ---
     else if (noseId === 'wolf') {
-        // Long wolf snout
         ctx.fillStyle = getCol(bellyCol || '#ccc');
-        ctx.fillRect(26, 24, 12, 10);
-        ctx.fillStyle = 'black';
-        ctx.fillRect(30, 24, 4, 3);
+        ctx.fillRect(27, 26, 10, 8);
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(36, 28); ctx.lineTo(32, 34); ctx.fill();
+        // Side shading
+        ctx.fillStyle = 'rgba(0,0,0,0.1)';
+        ctx.fillRect(26, 26, 1, 8); ctx.fillRect(37, 26, 1, 8);
     }
     else if (noseId === 'deer') {
-        // Small deer nose
         ctx.fillStyle = getCol('black');
-        ctx.fillRect(29, 27, 6, 3);
+        ctx.beginPath(); ctx.moveTo(28, 27); ctx.lineTo(36, 27); ctx.lineTo(32, 32); ctx.fill();
     }
-    else if (noseId === 'owl') {
-        // Small beak
+    else if (noseId === 'owl' || noseId === 'bird') {
         ctx.fillStyle = getCol('#cc8800');
-        ctx.beginPath(); ctx.moveTo(28, 26); ctx.lineTo(36, 26); ctx.lineTo(32, 32); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(29, 27); ctx.lineTo(35, 27); ctx.lineTo(32, 34); ctx.fill();
     }
     else if (noseId === 'bat') {
-        // Flat bat nose
         ctx.fillStyle = getCol('#666');
-        ctx.fillRect(28, 26, 8, 4);
+        ctx.beginPath(); ctx.ellipse(32, 28, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#333';
-        ctx.fillRect(29, 27, 2, 2); ctx.fillRect(33, 27, 2, 2);
+        ctx.fillRect(30, 28, 1, 2); ctx.fillRect(33, 28, 1, 2);
     }
     else if (noseId === 'shark') {
-        // Shark gills/nose
         ctx.fillStyle = getCol('#888');
         ctx.fillRect(28, 28, 8, 2);
-        // Gills on side
-        ctx.fillStyle = '#555';
-        ctx.fillRect(16, 26, 4, 1); ctx.fillRect(16, 28, 4, 1); ctx.fillRect(16, 30, 4, 1);
-        ctx.fillRect(44, 26, 4, 1); ctx.fillRect(44, 28, 4, 1); ctx.fillRect(44, 30, 4, 1);
+        ctx.fillStyle = '#555'; // Gills
+        for (let y = 26; y <= 30; y += 2) {
+            ctx.fillRect(16, y, 4, 1); ctx.fillRect(44, y, 4, 1);
+        }
     }
     else if (noseId === 'dolphin') {
-        // Long dolphin snout
         ctx.fillStyle = getCol(bellyCol || '#ccc');
-        ctx.fillRect(26, 26, 12, 6);
+        ctx.beginPath(); ctx.ellipse(32, 28, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#333';
-        ctx.fillRect(26, 30, 12, 1);
+        ctx.beginPath(); ctx.moveTo(26, 31); ctx.quadraticCurveTo(32, 33, 38, 31); ctx.stroke();
     }
     else if (noseId === 'snake') {
-        // Forked tongue
         ctx.fillStyle = getCol('#333');
-        ctx.fillRect(30, 28, 4, 2);
+        ctx.fillRect(31, 29, 2, 1);
         ctx.fillStyle = '#ff4466';
-        ctx.fillRect(30, 30, 1, 4); ctx.fillRect(33, 30, 1, 4);
+        ctx.fillRect(31, 30, 2, 4);
+        ctx.fillRect(30, 34, 1, 2); ctx.fillRect(33, 34, 1, 2); // Fork
     }
     else if (noseId === 'tiger') {
-        // Tiger nose with whiskers
-        ctx.fillStyle = getCol('black');
-        ctx.fillRect(29, 26, 6, 4);
+        ctx.fillStyle = getCol('#e8a');
+        ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(36, 28); ctx.lineTo(32, 33); ctx.fill();
         // Whiskers
         ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(18, 28); ctx.lineTo(28, 28); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(36, 28); ctx.lineTo(46, 28); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(18, 30); ctx.lineTo(28, 30); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(36, 30); ctx.lineTo(46, 30); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(20, 30); ctx.lineTo(28, 30); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(36, 30); ctx.lineTo(44, 30); ctx.stroke();
     }
     else if (noseId === 'rhino') {
-        // Horn on nose
-        ctx.fillStyle = getCol('#888');
-        ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(32, 18); ctx.lineTo(36, 28); ctx.fill();
-        ctx.fillStyle = '#666';
-        ctx.fillRect(28, 28, 8, 4);
+        ctx.fillStyle = '#ddd';
+        ctx.beginPath(); ctx.moveTo(30, 20); ctx.lineTo(34, 20); ctx.lineTo(32, 30); ctx.fill();
     }
     else if (noseId === 'elephant') {
-        // Trunk
         ctx.fillStyle = getCol(bellyCol || '#ccc');
-        ctx.fillRect(30, 26, 4, 12);
-        ctx.fillRect(28, 36, 8, 4);
+        ctx.beginPath(); ctx.moveTo(28, 26); ctx.lineTo(36, 26); ctx.lineTo(34, 38); ctx.lineTo(30, 38); ctx.fill();
     }
-    else if (noseId === 'hippo') {
-        // Wide hippo nose
-        ctx.fillStyle = getCol('#dca');
-        ctx.fillRect(22, 26, 20, 8);
-        ctx.fillStyle = '#666';
-        ctx.fillRect(26, 28, 3, 3); ctx.fillRect(35, 28, 3, 3);
-    }
-    else if (noseId === 'giraffe') {
-        // Spotted giraffe nose
-        ctx.fillStyle = getCol('#b8860b');
-        ctx.fillRect(28, 26, 8, 6);
-        ctx.fillStyle = '#8b6914';
-        ctx.fillRect(29, 27, 2, 2); ctx.fillRect(33, 28, 2, 2);
-    }
-    else if (noseId === 'zebra') {
-        // Striped zebra nose
-        ctx.fillStyle = getCol('#333');
-        ctx.fillRect(28, 26, 8, 6);
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(30, 26, 2, 6);
-    }
-    else if (noseId === 'panda') {
-        // Black panda nose
-        ctx.fillStyle = getCol('black');
-        ctx.fillRect(29, 27, 6, 4);
-    }
-    else if (noseId === 'skunk') {
-        // Pink skunk nose
-        ctx.fillStyle = getCol('pink');
-        ctx.fillRect(30, 28, 4, 2);
+    else if (noseId === 'zebra' || noseId === 'giraffe') {
+        ctx.fillStyle = '#333';
+        ctx.fillRect(28, 26, 8, 8);
     }
     else if (noseId === 'otter') {
-        // Otter nose with whiskers
-        ctx.fillStyle = getCol('black');
-        ctx.fillRect(29, 27, 6, 3);
+        ctx.fillStyle = getCol('#333');
+        ctx.fillRect(28, 28, 8, 4);
         // Whiskers
-        ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(20, 28); ctx.lineTo(28, 28); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(36, 28); ctx.lineTo(44, 28); ctx.stroke();
+        ctx.fillStyle = '#000';
+        ctx.fillRect(20, 30, 6, 1); ctx.fillRect(38, 30, 6, 1);
     }
     else if (noseId === 'beaver') {
-        // Beaver with buck teeth
-        ctx.fillStyle = getCol('black');
-        ctx.fillRect(29, 26, 6, 3);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(29, 27, 6, 3);
         ctx.fillStyle = '#fff';
-        ctx.fillRect(30, 30, 2, 4); ctx.fillRect(32, 30, 2, 4);
+        ctx.fillRect(30, 30, 4, 3); ctx.fillStyle = '#ccc'; ctx.fillRect(31.5, 30, 1, 3);
     }
     else if (noseId === 'hedgehog') {
-        // Small dark hedgehog nose
         ctx.fillStyle = getCol('#333');
-        ctx.fillRect(30, 28, 4, 2);
+        ctx.beginPath(); ctx.arc(32, 29, 3, 0, Math.PI * 2); ctx.fill();
     }
     else if (noseId === 'squirrel' || noseId === 'hamster') {
-        // Tiny pink nose
         ctx.fillStyle = getCol('pink');
-        ctx.fillRect(30, 28, 4, 2);
+        ctx.beginPath(); ctx.arc(32, 29, 3, 0, Math.PI * 2); ctx.fill();
     }
     else if (noseId === 'ferret') {
-        // Small pink ferret nose
         ctx.fillStyle = getCol('pink');
-        ctx.fillRect(30, 27, 4, 3);
-    }
-    else if (noseId === 'bird') {
-        // Pointed bird beak
-        ctx.fillStyle = getCol('orange');
-        ctx.beginPath(); ctx.moveTo(26, 28); ctx.lineTo(38, 28); ctx.lineTo(32, 36); ctx.fill();
+        ctx.beginPath(); ctx.arc(32, 29, 3, 0, Math.PI * 2); ctx.fill();
     }
     else if (noseId === 'smile') {
-        // Simple smile
-        ctx.strokeStyle = getCol('#333'); ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(32, 28, 4, 0, Math.PI); ctx.stroke();
+        ctx.strokeStyle = getCol('#333'); ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(32, 28, 5, 0.2, Math.PI - 0.2); ctx.stroke();
     }
     else if (noseId === 'blep') {
-        // Cat nose with tongue sticking out
         ctx.fillStyle = getCol('pink');
         ctx.fillRect(30, 28, 4, 2);
-        // Tongue
         ctx.fillStyle = '#ff6688';
-        ctx.fillRect(31, 30, 2, 4);
+        ctx.beginPath(); ctx.arc(32, 31, 2, 0, Math.PI, false); ctx.fill();
+    }
+    else {
+        // Fallback
+        if (noseId && noseId !== 'none') {
+            ctx.fillStyle = getCol('pink');
+            ctx.fillRect(30, 28, 4, 2);
+        }
     }
 }
 
 // Draw misc extras (wings, gills, mane, mask, etc.)
 // col is the custom misc color
+// Draw misc extras (wings, gills, mane, mask, etc.)
+// col is the custom misc color
 function drawMisc(ctx, miscId, col, bellyCol, back) {
     if (miscId === 'none') return;
+    const shade = shadeColor(col, -0.2);
 
     if (miscId === 'fox_cheeks') {
         if (!back) {
             ctx.fillStyle = col;
-            ctx.beginPath(); ctx.moveTo(14, 34); ctx.lineTo(32, 34); ctx.lineTo(14, 24); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(50, 34); ctx.lineTo(32, 34); ctx.lineTo(50, 24); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(14, 34); ctx.quadraticCurveTo(23, 38, 32, 34); ctx.lineTo(14, 24); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(50, 34); ctx.quadraticCurveTo(41, 38, 32, 34); ctx.lineTo(50, 24); ctx.fill();
         }
     }
     else if (miscId === 'dragon_wings') {
         ctx.fillStyle = col;
-        ctx.beginPath(); ctx.moveTo(22, 35); ctx.lineTo(6, 25); ctx.lineTo(14, 45); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(42, 35); ctx.lineTo(58, 25); ctx.lineTo(50, 45); ctx.fill();
+        // Left Wing
+        ctx.beginPath(); ctx.moveTo(22, 35); ctx.quadraticCurveTo(10, 20, 4, 25); ctx.lineTo(14, 45); ctx.fill();
+        // Right Wing
+        ctx.beginPath(); ctx.moveTo(42, 35); ctx.quadraticCurveTo(54, 20, 60, 25); ctx.lineTo(50, 45); ctx.fill();
+        // Spines
+        ctx.fillStyle = shade;
+        ctx.beginPath(); ctx.moveTo(4, 25); ctx.lineTo(2, 22); ctx.lineTo(6, 24); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(60, 25); ctx.lineTo(62, 22); ctx.lineTo(58, 24); ctx.fill();
     }
     else if (miscId === 'axolotl_gills') {
         ctx.fillStyle = col;
-        ctx.fillRect(8, 14, 6, 2); ctx.fillRect(8, 18, 6, 2); ctx.fillRect(8, 22, 6, 2);
-        ctx.fillRect(50, 14, 6, 2); ctx.fillRect(50, 18, 6, 2); ctx.fillRect(50, 22, 6, 2);
+        // Rounded gills
+        for (let i = 0; i < 3; i++) {
+            ctx.beginPath(); ctx.ellipse(11, 15 + i * 4, 4, 2, -0.2, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(53, 15 + i * 4, 4, 2, 0.2, 0, Math.PI * 2); ctx.fill();
+        }
     }
     else if (miscId === 'raccoon_mask') {
         if (!back) {
             ctx.fillStyle = col;
             ctx.fillRect(14, 18, 36, 8);
+            ctx.beginPath(); ctx.moveTo(14, 26); ctx.lineTo(32, 30); ctx.lineTo(50, 26); ctx.fill();
         }
     }
     else if (miscId === 'lion_mane') {
         ctx.fillStyle = col;
         if (!back) {
-            ctx.fillRect(10, 8, 4, 28); ctx.fillRect(50, 8, 4, 28);
-            ctx.fillRect(14, 6, 36, 4);
+            ctx.beginPath(); ctx.roundRect(10, 8, 44, 28, 4); ctx.fill();
+            ctx.clearRect(14, 10, 36, 24); // Clear face area
         } else {
-            ctx.fillRect(10, 8, 44, 28);
+            ctx.beginPath(); ctx.roundRect(10, 8, 44, 28, 4); ctx.fill();
         }
+        // Texture
+        ctx.fillStyle = shade;
+        ctx.beginPath(); ctx.arc(10, 10, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(54, 10, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(10, 36, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(54, 36, 2, 0, Math.PI * 2); ctx.fill();
     }
     else if (miscId === 'penguin_belly') {
         if (!back) {
             ctx.fillStyle = col;
-            ctx.fillRect(24, 35, 16, 20);
+            ctx.beginPath(); ctx.ellipse(32, 45, 10, 14, 0, 0, Math.PI * 2); ctx.fill();
         } else {
             ctx.fillStyle = 'rgba(0,0,0,0.8)';
             ctx.fillRect(20, 30, 24, 30);
         }
     }
     else if (miscId === 'protogen_visor') {
-        // The characteristic protogen visor/helmet - uses custom color
         if (!back) {
             ctx.fillStyle = col;
-            ctx.fillRect(14, 10, 36, 24);
-            // Visor edge highlights (slightly lighter)
-            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(14, 10, 36, 24);
-            // Side vents (darker)
+            ctx.roundRect(14, 10, 36, 24, 4); ctx.fill();
+            // Edge
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+            ctx.roundRect(14, 10, 36, 24, 4); ctx.stroke();
+            // Vents
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
-            ctx.fillRect(14, 14, 3, 4);
-            ctx.fillRect(47, 14, 3, 4);
+            ctx.fillRect(14, 14, 3, 4); ctx.fillRect(47, 14, 3, 4);
             ctx.fillStyle = 'rgba(255,255,255,0.3)';
-            ctx.fillRect(14, 19, 3, 2);
-            ctx.fillRect(47, 19, 3, 2);
+            ctx.fillRect(14, 19, 3, 2); ctx.fillRect(47, 19, 3, 2);
         } else {
-            // Back of visor/helmet
             ctx.fillStyle = col;
-            ctx.fillRect(14, 10, 36, 24);
-            // Back panel lines (lighter)
+            ctx.roundRect(14, 10, 36, 24, 4); ctx.fill();
             ctx.fillStyle = 'rgba(255,255,255,0.5)';
-            ctx.fillRect(30, 12, 4, 2);
-            ctx.fillRect(28, 30, 8, 2);
+            ctx.fillRect(30, 12, 4, 2); ctx.fillRect(28, 30, 8, 2);
         }
     }
-    // --- NEW MISC TYPES ---
     else if (miscId === 'wolf_ruff') {
-        // Fluffy neck ruff
-        ctx.fillStyle = col;
+        const ruffCol = col;
+        ctx.fillStyle = ruffCol;
         if (!back) {
-            ctx.fillRect(18, 32, 28, 6);
+            ctx.beginPath();
+            ctx.moveTo(18, 32);
+            ctx.lineTo(24, 38); ctx.lineTo(32, 34); ctx.lineTo(40, 38);
+            ctx.lineTo(46, 32); ctx.lineTo(46, 38); ctx.lineTo(18, 38);
+            ctx.fill();
         } else {
-            ctx.fillRect(16, 30, 32, 8);
+            ctx.beginPath();
+            ctx.moveTo(16, 30); ctx.lineTo(24, 38); ctx.lineTo(32, 32); ctx.lineTo(40, 38); ctx.lineTo(48, 30);
+            ctx.lineTo(48, 38); ctx.lineTo(16, 38); ctx.fill();
         }
     }
     else if (miscId === 'deer_spots') {
-        // White spots on body
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        ctx.beginPath(); ctx.arc(24, 40, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(40, 38, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(30, 48, 2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(38, 50, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.beginPath(); ctx.arc(24, 40, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(40, 38, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(30, 48, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(38, 50, 2.5, 0, Math.PI * 2); ctx.fill();
     }
     else if (miscId === 'owl_feathers') {
-        // Feathery chest
         if (!back) {
-            ctx.fillStyle = col;
+            ctx.fillStyle = shade;
             for (let y = 36; y < 56; y += 4) {
                 for (let x = 22; x < 42; x += 4) {
-                    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(x + (y % 8) / 2, y, 2.5, 0, Math.PI, false); ctx.fill();
                 }
             }
         }
     }
     else if (miscId === 'bat_wings') {
-        // Bat wings
         ctx.fillStyle = col;
-        ctx.beginPath(); ctx.moveTo(20, 35); ctx.lineTo(0, 20); ctx.lineTo(4, 40); ctx.lineTo(10, 35); ctx.lineTo(12, 50); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(44, 35); ctx.lineTo(64, 20); ctx.lineTo(60, 40); ctx.lineTo(54, 35); ctx.lineTo(52, 50); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(20, 35); ctx.quadraticCurveTo(0, 20, -5, 25); ctx.lineTo(4, 40); ctx.lineTo(10, 35); ctx.lineTo(12, 50);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(44, 35); ctx.quadraticCurveTo(64, 20, 69, 25); ctx.lineTo(60, 40); ctx.lineTo(54, 35); ctx.lineTo(52, 50);
+        ctx.fill();
     }
     else if (miscId === 'shark_fin') {
-        // Dorsal fin on back
         if (back) {
             ctx.fillStyle = col;
-            ctx.beginPath(); ctx.moveTo(28, 40); ctx.lineTo(32, 30); ctx.lineTo(36, 40); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(28, 40); ctx.lineTo(32, 25); ctx.lineTo(36, 40); ctx.fill();
+            // Highlight
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.beginPath(); ctx.moveTo(31, 28); ctx.lineTo(32, 25); ctx.lineTo(33, 28); ctx.fill();
         }
     }
     else if (miscId === 'dolphin_fin') {
-        // Smaller dorsal fin
         if (back) {
             ctx.fillStyle = col;
-            ctx.beginPath(); ctx.moveTo(30, 42); ctx.lineTo(32, 34); ctx.lineTo(34, 42); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(30, 42); ctx.quadraticCurveTo(32, 30, 36, 42); ctx.fill();
         }
     }
     else if (miscId === 'snake_scales') {
-        // Scale pattern
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.fillStyle = 'rgba(0,0,0,0.1)';
         for (let y = 36; y < 58; y += 4) {
             for (let x = 22 + ((y / 4) % 2) * 2; x < 42; x += 4) {
-                ctx.fillRect(x, y, 3, 3);
+                ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
             }
         }
     }
     else if (miscId === 'tiger_stripes') {
-        // Orange tiger stripes
         ctx.fillStyle = '#222';
-        ctx.fillRect(22, 38, 2, 8); ctx.fillRect(28, 36, 2, 10);
-        ctx.fillRect(34, 38, 2, 8); ctx.fillRect(40, 36, 2, 10);
-        // Head stripes
+        // Tapered stripes
+        ctx.beginPath(); ctx.moveTo(22, 38); ctx.lineTo(24, 46); ctx.lineTo(20, 42); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(42, 38); ctx.lineTo(40, 46); ctx.lineTo(44, 42); ctx.fill();
+        ctx.fillRect(28, 36, 2, 12); ctx.fillRect(34, 36, 2, 12);
         ctx.fillRect(18, 16, 2, 6); ctx.fillRect(44, 16, 2, 6);
     }
     else if (miscId === 'leopard_spots') {
-        // Leopard spots
-        ctx.fillStyle = '#222';
-        ctx.beginPath(); ctx.arc(26, 40, 3, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(38, 42, 3, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(30, 50, 3, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(26, 40, 2.5, 0, Math.PI * 1.5); ctx.stroke();
+        ctx.beginPath(); ctx.arc(38, 42, 2.5, 1, Math.PI * 2.5); ctx.stroke();
+        ctx.beginPath(); ctx.arc(30, 50, 2.5, 2, Math.PI * 0.5); ctx.stroke();
     }
     else if (miscId === 'zebra_stripes') {
-        // Black zebra stripes
-        ctx.fillStyle = '#000';
-        ctx.fillRect(22, 36, 2, 20); ctx.fillRect(28, 36, 2, 20);
-        ctx.fillRect(34, 36, 2, 20); ctx.fillRect(40, 36, 2, 20);
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.moveTo(22, 36); ctx.lineTo(24, 56); ctx.lineTo(20, 46); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(42, 36); ctx.lineTo(40, 56); ctx.lineTo(44, 46); ctx.fill();
+        ctx.fillRect(30, 36, 4, 20);
     }
     else if (miscId === 'panda_patches') {
-        // Black eye patches
         if (!back) {
-            ctx.fillStyle = '#000';
-            ctx.beginPath(); ctx.ellipse(22, 20, 6, 5, -0.3, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.ellipse(42, 20, 6, 5, 0.3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#111';
+            ctx.beginPath(); ctx.ellipse(22, 20, 7, 6, -0.3, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(42, 20, 7, 6, 0.3, 0, Math.PI * 2); ctx.fill();
         }
     }
     else if (miscId === 'skunk_stripe') {
-        // White stripe down back
         ctx.fillStyle = '#fff';
         ctx.fillRect(30, 10, 4, 50);
+        // Fluff edges
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillRect(29, 10, 6, 50);
     }
     else if (miscId === 'otter_belly') {
-        // Light belly patch
         if (!back) {
             ctx.fillStyle = col;
-            ctx.fillRect(24, 36, 16, 18);
+            ctx.beginPath(); ctx.ellipse(32, 45, 10, 12, 0, 0, Math.PI * 2); ctx.fill();
         }
     }
     else if (miscId === 'hedgehog_spines') {
-        // Spiky back
         if (back) {
             ctx.fillStyle = '#8B4513';
             for (let x = 18; x < 46; x += 3) {
-                ctx.beginPath(); ctx.moveTo(x, 34); ctx.lineTo(x + 1.5, 28); ctx.lineTo(x + 3, 34); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(x, 34); ctx.lineTo(x + 1.5, 26); ctx.lineTo(x + 3, 34); ctx.fill();
+                // Tip highlight
+                ctx.fillStyle = '#D2691E';
+                ctx.beginPath(); ctx.moveTo(x + 1, 28); ctx.lineTo(x + 1.5, 26); ctx.lineTo(x + 2, 28); ctx.fill();
+                ctx.fillStyle = '#8B4513';
             }
         }
     }
     else if (miscId === 'squirrel_cheeks' || miscId === 'hamster_cheeks') {
-        // Puffy cheeks
         if (!back) {
             ctx.fillStyle = col;
-            ctx.beginPath(); ctx.arc(16, 26, 5, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(48, 26, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(16, 26, 6, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(48, 26, 6, 0, Math.PI * 2); ctx.fill();
+            // Shade
+            ctx.fillStyle = 'rgba(0,0,0,0.05)';
+            ctx.beginPath(); ctx.arc(16, 28, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(48, 28, 4, 0, Math.PI * 2); ctx.fill();
         }
     }
     else if (miscId === 'freckles') {
-        // Cute freckles
         if (!back) {
             ctx.fillStyle = 'rgba(139,69,19,0.5)';
-            ctx.beginPath(); ctx.arc(18, 26, 1, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(22, 28, 1, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(20, 24, 1, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(42, 26, 1, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(46, 28, 1, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(44, 24, 1, 0, Math.PI * 2); ctx.fill();
+            const spots = [[18, 26], [22, 28], [20, 24], [42, 26], [46, 28], [44, 24]];
+            spots.forEach(p => {
+                ctx.beginPath(); ctx.arc(p[0], p[1], 1.2, 0, Math.PI * 2); ctx.fill();
+            });
         }
     }
     else if (miscId === 'blush') {
-        // Blushing cheeks
         if (!back) {
             ctx.fillStyle = 'rgba(255,100,150,0.4)';
-            ctx.beginPath(); ctx.ellipse(18, 26, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.ellipse(46, 26, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.filter = 'blur(1px)';
+            ctx.beginPath(); ctx.ellipse(18, 26, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(46, 26, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.filter = 'none';
         }
     }
     else if (miscId === 'scars') {
-        // Battle scars
         if (!back) {
-            ctx.strokeStyle = 'rgba(100,50,50,0.6)'; ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(100,50,50,0.7)'; ctx.lineWidth = 1.5;
             ctx.beginPath(); ctx.moveTo(16, 18); ctx.lineTo(22, 26); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(18, 18); ctx.lineTo(24, 26); ctx.stroke();
         }
     }
     else if (miscId === 'bandage') {
-        // Bandage on head
         if (!back) {
             ctx.fillStyle = '#f5f5dc';
-            ctx.fillRect(40, 14, 10, 6);
+            ctx.roundRect(40, 14, 10, 6, 2); ctx.fill();
             ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(42, 14); ctx.lineTo(42, 20); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(48, 14); ctx.lineTo(48, 20); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(43, 14); ctx.lineTo(43, 20); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(47, 14); ctx.lineTo(47, 20); ctx.stroke();
         }
     }
     else if (miscId === 'whiskers_long') {
-        // Long whiskers
         if (!back) {
             ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(10, 24); ctx.lineTo(26, 26); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(10, 24); ctx.quadraticCurveTo(18, 25, 26, 26); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(10, 28); ctx.lineTo(26, 28); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(10, 32); ctx.lineTo(26, 30); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(54, 24); ctx.lineTo(38, 26); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(10, 32); ctx.quadraticCurveTo(18, 31, 26, 30); ctx.stroke();
+
+            ctx.beginPath(); ctx.moveTo(54, 24); ctx.quadraticCurveTo(46, 25, 38, 26); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(54, 28); ctx.lineTo(38, 28); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(54, 32); ctx.lineTo(38, 30); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(54, 32); ctx.quadraticCurveTo(46, 31, 38, 30); ctx.stroke();
         }
     }
     else if (miscId === 'angel_wings') {
-        // White feathered wings
         ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.moveTo(20, 38); ctx.lineTo(0, 30); ctx.lineTo(4, 45); ctx.lineTo(10, 40); ctx.lineTo(14, 52); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(44, 38); ctx.lineTo(64, 30); ctx.lineTo(60, 45); ctx.lineTo(54, 40); ctx.lineTo(50, 52); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(20, 38); ctx.quadraticCurveTo(0, 25, 4, 45); ctx.lineTo(10, 40); ctx.lineTo(14, 52); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(44, 38); ctx.quadraticCurveTo(64, 25, 60, 45); ctx.lineTo(54, 40); ctx.lineTo(50, 52); ctx.fill();
+        // Feathers
+        ctx.fillStyle = '#eee';
+        ctx.beginPath(); ctx.arc(5, 40, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(59, 40, 2, 0, Math.PI * 2); ctx.fill();
     }
     else if (miscId === 'demon_horns') {
-        // Red demon horns
-        ctx.fillStyle = '#aa0000';
-        ctx.beginPath(); ctx.moveTo(16, 10); ctx.lineTo(10, -4); ctx.lineTo(22, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(48, 10); ctx.lineTo(54, -4); ctx.lineTo(42, 10); ctx.fill();
+        ctx.fillStyle = '#cc0000';
+        ctx.beginPath(); ctx.moveTo(18, 12); ctx.quadraticCurveTo(10, -5, 22, 10); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(46, 12); ctx.quadraticCurveTo(54, -5, 42, 10); ctx.fill();
+        // Highlight
+        ctx.fillStyle = '#ff4444';
+        ctx.beginPath(); ctx.moveTo(18, 10); ctx.lineTo(14, 0); ctx.lineTo(16, 0); ctx.fill();
     }
     else if (miscId === 'halo') {
-        // Floating golden halo
         ctx.strokeStyle = '#ffdd00'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.ellipse(32, -4, 10, 3, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.shadowColor = '#ffdd00'; ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.ellipse(32, -4, 12, 4, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.shadowBlur = 0;
     }
 }
 
@@ -4323,38 +6207,48 @@ function drawMisc(ctx, miscId, col, bellyCol, back) {
 function drawTail(ctx, tailId, col, bellyCol, back) {
     if (!back || tailId === 'none') return;
 
-    ctx.fillStyle = col;
+    // VISUAL UPGRADES: Gradients, better shapes
+    const shadow = shadeColor(col, -0.2);
+
+    // Gradient for tail
+    const grad = ctx.createLinearGradient(0, 40, 0, 60);
+    grad.addColorStop(0, col);
+    grad.addColorStop(1, shadow);
+
+    ctx.fillStyle = grad;
     // Add subtle outline to all tails for visibility
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1.5;
 
     // Tails draw at back of body (moved up to avoid ground clipping)
     if (tailId === 'cat') {
-        // Simple straight tail with outline
-        ctx.fillRect(28, 48, 8, 10);
-        ctx.strokeRect(28, 48, 8, 10);
+        ctx.beginPath(); ctx.moveTo(32, 48);
+        ctx.quadraticCurveTo(28, 55, 34, 60);
+        ctx.quadraticCurveTo(38, 55, 36, 48);
+        ctx.fill(); ctx.stroke();
     }
     else if (tailId === 'bunny') {
-        // Fluffy puff tail
         ctx.fillStyle = bellyCol || '#fff';
-        ctx.beginPath(); ctx.arc(32, 52, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(32, 52, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.stroke();
+        // Fluff detail
+        ctx.fillStyle = '#eee';
+        ctx.beginPath(); ctx.arc(32, 50, 4, 0, Math.PI * 2); ctx.fill();
     }
     else if (tailId === 'dog') {
-        // Upward wagging tail
+        // Upward wagging
         ctx.beginPath(); ctx.moveTo(28, 50); ctx.lineTo(38, 40); ctx.lineTo(42, 43); ctx.lineTo(32, 55); ctx.closePath(); ctx.fill(); ctx.stroke();
     }
     else if (tailId === 'bear') {
-        // Small round nub
         ctx.beginPath(); ctx.arc(32, 52, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
     else if (tailId === 'fox') {
-        // Big fluffy fox tail - iconic bushy shape
+        // Big fluffy fox tail
         ctx.beginPath();
-        ctx.moveTo(24, 46);  // Start at body
-        ctx.quadraticCurveTo(10, 40, 8, 48);  // Curve out left
-        ctx.quadraticCurveTo(6, 56, 20, 54);  // Bottom curve
-        ctx.lineTo(24, 50);
-        ctx.closePath();
+        ctx.moveTo(28, 46);
+        ctx.quadraticCurveTo(10, 40, 8, 48);
+        ctx.quadraticCurveTo(6, 56, 20, 54);
+        ctx.lineTo(28, 50);
         ctx.fill(); ctx.stroke();
         // White tip
         ctx.fillStyle = 'white';
@@ -4362,90 +6256,59 @@ function drawTail(ctx, tailId, col, bellyCol, back) {
         ctx.moveTo(8, 46);
         ctx.quadraticCurveTo(4, 48, 8, 52);
         ctx.quadraticCurveTo(12, 50, 10, 47);
-        ctx.closePath();
         ctx.fill();
     }
     else if (tailId === 'pig') {
-        // Curly corkscrew tail with outline
         ctx.strokeStyle = col; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.arc(36, 50, 4, 0, Math.PI * 1.5); ctx.stroke();
-        // Outline
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(36, 50, 5, 0, Math.PI * 1.5); ctx.stroke();
     }
     else if (tailId === 'dragon') {
-        // Simple white triangle tail spike
-        ctx.fillStyle = '#eee';
-        ctx.beginPath(); ctx.moveTo(28, 48); ctx.lineTo(32, 60); ctx.lineTo(36, 48); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ddd';
+        ctx.beginPath(); ctx.moveTo(28, 48); ctx.lineTo(32, 62); ctx.lineTo(36, 48); ctx.fill(); ctx.stroke();
     }
     else if (tailId === 'mouse') {
-        // Long thin pink tail
-        ctx.strokeStyle = 'pink'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(32, 48); ctx.quadraticCurveTo(40, 56, 32, 62); ctx.stroke();
+        ctx.strokeStyle = 'pink'; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(32, 48); ctx.quadraticCurveTo(40, 56, 30, 62); ctx.stroke();
     }
     else if (tailId === 'duck') {
-        // Small feathery tail
-        ctx.beginPath(); ctx.moveTo(26, 50); ctx.lineTo(32, 45); ctx.lineTo(38, 50); ctx.lineTo(32, 53); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(26, 50); ctx.lineTo(32, 45); ctx.lineTo(38, 50); ctx.lineTo(32, 53); ctx.fill(); ctx.stroke();
     }
     else if (tailId === 'axolotl') {
-        // Fin-like tail
         ctx.fillStyle = '#ff69b4';
-        ctx.beginPath(); ctx.moveTo(28, 48); ctx.lineTo(26, 58); ctx.lineTo(38, 58); ctx.lineTo(36, 48); ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Stripes
-        ctx.fillStyle = '#ff8da1';
-        ctx.fillRect(30, 50, 4, 6);
+        ctx.beginPath(); ctx.moveTo(28, 48); ctx.lineTo(26, 58); ctx.lineTo(38, 58); ctx.lineTo(36, 48); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ff8da1'; ctx.fillRect(30, 50, 4, 6);
     }
     else if (tailId === 'raccoon') {
-        // Striped bushy tail
         ctx.fillStyle = '#999';
-        ctx.fillRect(28, 48, 8, 12);
-        ctx.strokeRect(28, 48, 8, 12);
+        ctx.fillRect(28, 48, 8, 12); ctx.strokeRect(28, 48, 8, 12);
         ctx.fillStyle = '#333';
         ctx.fillRect(28, 50, 8, 3); ctx.fillRect(28, 55, 8, 3);
     }
     else if (tailId === 'lion') {
-        // Tail with tuft
-        ctx.fillRect(29, 48, 6, 10);
-        ctx.strokeRect(29, 48, 6, 10);
-        // Tuft at end
+        ctx.beginPath(); ctx.moveTo(31, 48); ctx.lineTo(31, 58); ctx.lineTo(33, 58); ctx.lineTo(33, 48); ctx.fill();
         ctx.fillStyle = '#a0522d';
         ctx.beginPath(); ctx.arc(32, 60, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
     else if (tailId === 'monkey') {
-        // Curly prehensile tail with outline
         ctx.strokeStyle = col; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(32, 48); ctx.quadraticCurveTo(45, 52, 42, 60); ctx.quadraticCurveTo(40, 65, 46, 62); ctx.stroke();
-        // Darker outline
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(32, 48); ctx.quadraticCurveTo(45, 52, 42, 60); ctx.quadraticCurveTo(40, 65, 46, 62); ctx.stroke();
     }
     else if (tailId === 'penguin') {
-        // Small wedge tail
         ctx.fillStyle = 'black';
-        ctx.beginPath(); ctx.moveTo(28, 50); ctx.lineTo(32, 56); ctx.lineTo(36, 50); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(28, 50); ctx.lineTo(32, 56); ctx.lineTo(36, 50); ctx.fill(); ctx.stroke();
     }
     else if (tailId === 'frog') {
-        // Frog has no tail, draw subtle shadow spots
-        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.fillStyle = 'rgba(0,0,0,0.1)';
         ctx.beginPath(); ctx.arc(26, 52, 3, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(38, 52, 3, 0, Math.PI * 2); ctx.fill();
     }
     else if (tailId === 'protogen') {
-        // Mechanical segmented tail
         ctx.fillStyle = '#333';
-        // Segments
-        ctx.fillRect(28, 48, 8, 4);
-        ctx.fillRect(27, 53, 10, 3);
-        ctx.fillRect(26, 57, 12, 3);
-        // Glowing accents
+        ctx.fillRect(28, 48, 8, 12);
         ctx.fillStyle = '#00ffff';
-        ctx.fillRect(30, 49, 4, 2);
-        ctx.fillRect(30, 54, 4, 1);
-        ctx.fillRect(30, 58, 4, 1);
-        // Outline
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-        ctx.strokeRect(26, 48, 12, 12);
+        ctx.fillRect(30, 50, 4, 8);
     }
+
     // --- NEW TAIL TYPES ---
     else if (tailId === 'wolf') {
         // Bushy wolf tail
@@ -4666,7 +6529,7 @@ function drawTail(ctx, tailId, col, bellyCol, back) {
 // Main drawing function - accepts either species string (legacy) or parts object
 // partColors is optional: { earsColor, noseColor, miscColor, tailColor }
 function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColors) {
-    ctx.clearRect(0, 0, 64, 64);
+    ctx.clearRect(0, -30, 64, 105); // Clear full area including big ears/hats
 
     // Determine if we're using legacy species or new parts system
     let parts;
@@ -4725,167 +6588,261 @@ function drawShirt(ctx, shirtId, isBack, bodyColor) {
     const shirt = SHIRT_TYPES.find(s => s.id === shirtId);
     if (!shirt || shirt.id === 'none') return;
 
-    // BASE BODY FILL
-    ctx.fillStyle = shirt.color;
+    // BASE BODY FILL WITH SOFT SHADING GRADIENT
+    const sCol = shirt.color || '#ffffff';
+    const sGrad = ctx.createLinearGradient(0, 34, 0, 58);
+    sGrad.addColorStop(0, shadeColor(sCol, 0.08));
+    sGrad.addColorStop(1, shadeColor(sCol, -0.15));
+    ctx.fillStyle = sGrad;
     ctx.fillRect(20, 34, 24, 24); // Body
     ctx.fillRect(18, 35, 28, 6);  // Shoulders
+
+    // Subtle edge hemlines for realism & coherence
+    ctx.fillStyle = shadeColor(sCol, -0.25);
+    ctx.fillRect(20, 57, 24, 1.5); // Bottom hem
+    ctx.fillRect(18, 40, 2, 2);   // Sleeve cuffs
+    ctx.fillRect(44, 40, 2, 2);
 
     // --- TYPES LOGIC ---
 
     // 1. HOODIE
     if (shirt.type === 'hoodie') {
         if (!isBack) {
-            ctx.fillStyle = '#cccccc';
-            ctx.fillRect(29, 34, 2, 8); // Drawstrings
-            ctx.fillRect(33, 34, 2, 8);
+            // Drawstrings with metallic aglets
+            ctx.fillStyle = '#e0e0e0';
+            ctx.fillRect(29, 34, 1.5, 9);
+            ctx.fillRect(33.5, 34, 1.5, 9);
+            ctx.fillStyle = '#b0bec5'; // Metal tips
+            ctx.fillRect(29, 42, 1.5, 2);
+            ctx.fillRect(33.5, 42, 1.5, 2);
 
-            ctx.fillStyle = shirt.secondary || 'rgba(0,0,0,0.1)';
-            ctx.beginPath(); // Kangaroo Pocket
-            ctx.moveTo(24, 58); ctx.lineTo(40, 58); ctx.lineTo(38, 46); ctx.lineTo(26, 46); ctx.fill();
+            // Kangaroo Pocket with curved opening seams
+            ctx.fillStyle = shirt.secondary || shadeColor(sCol, -0.2);
+            ctx.beginPath();
+            ctx.moveTo(23, 57); ctx.lineTo(41, 57); ctx.lineTo(39, 45); ctx.lineTo(25, 45); ctx.closePath();
+            ctx.fill();
+            // Pocket lip highlight
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.fillRect(25, 45, 14, 1);
         } else {
-            ctx.fillStyle = shirt.secondary || shirt.color;
-            if (!shirt.secondary) ctx.filter = 'brightness(85%)';
-            ctx.beginPath(); // Resting Hood
-            ctx.moveTo(22, 34); ctx.quadraticCurveTo(32, 52, 42, 34); ctx.fill();
-            ctx.filter = 'none';
+            // Resting Hood with fabric depth
+            ctx.fillStyle = shirt.secondary || shadeColor(sCol, -0.2);
+            ctx.beginPath();
+            ctx.moveTo(21, 34); ctx.quadraticCurveTo(32, 54, 43, 34); ctx.fill();
+            ctx.strokeStyle = shadeColor(sCol, -0.35); ctx.lineWidth = 1;
+            ctx.stroke();
         }
     }
 
-    // 2. CREW NECK (Fixed)
+    // 2. CREW NECK
     else if (shirt.type === 'crew') {
         if (!isBack) {
-            ctx.fillStyle = bodyColor; // Paint skin color
-            ctx.fillRect(28, 34, 8, 4);
+            ctx.fillStyle = bodyColor; // Skin neck cut
+            ctx.beginPath(); ctx.ellipse(32, 34, 5, 3.5, 0, 0, Math.PI); ctx.fill();
+            // Ribbed collar rim
+            ctx.strokeStyle = shadeColor(sCol, -0.25); ctx.lineWidth = 1.2;
+            ctx.beginPath(); ctx.ellipse(32, 34, 5.5, 4, 0, 0, Math.PI); ctx.stroke();
         }
     }
 
-    // 3. COLLARED
+    // 3. COLLARED (Polos & Button-ups)
     else if (shirt.type === 'collared') {
         if (!isBack) {
-            ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(31, 38, 2, 12);
-            ctx.fillStyle = shirt.color; ctx.filter = 'brightness(80%)';
-            ctx.beginPath(); ctx.moveTo(26, 34); ctx.lineTo(32, 40); ctx.lineTo(38, 34); ctx.fill();
-            ctx.filter = 'none';
+            // Placket line
+            ctx.fillStyle = shadeColor(sCol, -0.25);
+            ctx.fillRect(31, 34, 2, 14);
+            // Tiny pearlescent buttons
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(32, 38, 1, 0, Math.PI * 2); ctx.arc(32, 43, 1, 0, Math.PI * 2); ctx.fill();
+            // Folded crisp collar flaps
+            ctx.fillStyle = shadeColor(sCol, 0.15);
+            ctx.beginPath(); ctx.moveTo(25, 34); ctx.lineTo(32, 40); ctx.lineTo(28, 40); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(39, 34); ctx.lineTo(32, 40); ctx.lineTo(36, 40); ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = shadeColor(sCol, -0.3); ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(25, 34); ctx.lineTo(32, 40); ctx.lineTo(39, 34); ctx.stroke();
         }
     }
 
     // 4. SUIT / TUX
     else if (shirt.type === 'suit' || shirt.type === 'tux') {
         if (!isBack) {
-            ctx.fillStyle = 'white';
-            ctx.beginPath(); ctx.moveTo(32, 34); ctx.lineTo(26, 48); ctx.lineTo(38, 48); ctx.fill();
+            // Crisp white dress shirt V
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.moveTo(32, 34); ctx.lineTo(25, 49); ctx.lineTo(39, 49); ctx.closePath(); ctx.fill();
+
+            // Suit lapels
+            ctx.fillStyle = sCol;
+            ctx.beginPath(); ctx.moveTo(20, 34); ctx.lineTo(26, 49); ctx.lineTo(20, 49); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(44, 34); ctx.lineTo(38, 49); ctx.lineTo(44, 49); ctx.closePath(); ctx.fill();
+
             if (shirt.type === 'suit') {
-                ctx.fillStyle = '#cc0000';
-                ctx.beginPath(); ctx.moveTo(30, 34); ctx.lineTo(34, 34); ctx.lineTo(33, 46); ctx.lineTo(31, 46); ctx.fill();
+                // Red Silk Necktie
+                ctx.fillStyle = '#b71c1c';
+                ctx.beginPath(); ctx.moveTo(30.5, 34); ctx.lineTo(33.5, 34); ctx.lineTo(33, 47); ctx.lineTo(32, 49); ctx.lineTo(31, 47); ctx.closePath(); ctx.fill();
+                // Tie knot
+                ctx.fillStyle = '#d32f2f'; ctx.fillRect(30.5, 34, 3, 2.5);
+                // Gold lapel pin
+                ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(24, 40, 1.2, 0, Math.PI * 2); ctx.fill();
             } else {
-                ctx.fillStyle = 'black';
-                ctx.beginPath(); ctx.arc(32, 38, 2, 0, Math.PI * 2); ctx.fill(); ctx.fillRect(29, 36, 6, 4);
+                // Tuxedo black bowtie & satin buttons
+                ctx.fillStyle = '#111111';
+                // Bowtie wings
+                ctx.beginPath(); ctx.moveTo(32, 36); ctx.lineTo(27, 34); ctx.lineTo(27, 38); ctx.closePath(); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(32, 36); ctx.lineTo(37, 34); ctx.lineTo(37, 38); ctx.closePath(); ctx.fill();
+                ctx.fillRect(31, 35, 2, 2); // Center knot
+                // Studs
+                ctx.fillStyle = '#333';
+                ctx.beginPath(); ctx.arc(32, 41, 1, 0, Math.PI * 2); ctx.arc(32, 45, 1, 0, Math.PI * 2); ctx.fill();
             }
         }
     }
 
-    // 5. STRIPED (Fixed)
+    // 5. STRIPED
     else if (shirt.type === 'striped') {
-        ctx.fillStyle = shirt.secondary || 'rgba(255,255,255,0.3)';
-        for (let i = 36; i < 58; i += 6) ctx.fillRect(20, i, 24, 2);
-        if (!isBack) {
-            ctx.fillStyle = bodyColor; // Paint skin color
-            ctx.fillRect(28, 34, 8, 4);
+        ctx.fillStyle = shirt.secondary || 'rgba(255,255,255,0.45)';
+        for (let i = 37; i < 57; i += 5) {
+            ctx.fillRect(20, i, 24, 2.5);
         }
-    }
-
-    // 6. VERTICAL STRIPE (Fixed)
-    else if (shirt.type === 'vertical_stripe') {
-        ctx.fillStyle = 'black';
-        for (let i = 22; i < 44; i += 6) ctx.fillRect(i, 34, 2, 24);
         if (!isBack) {
             ctx.fillStyle = bodyColor;
-            ctx.fillRect(28, 34, 8, 4);
+            ctx.beginPath(); ctx.ellipse(32, 34, 5, 3, 0, 0, Math.PI); ctx.fill();
         }
     }
 
-    // 7. CHECKERED
+    // 6. VERTICAL STRIPE (Referee / Pin-stripe)
+    else if (shirt.type === 'vertical_stripe') {
+        ctx.fillStyle = shirt.secondary || '#111111';
+        for (let i = 23; i < 43; i += 5) {
+            ctx.fillRect(i, 34, 2.5, 24);
+        }
+        if (!isBack) {
+            ctx.fillStyle = bodyColor;
+            ctx.beginPath(); ctx.ellipse(32, 34, 5, 3, 0, 0, Math.PI); ctx.fill();
+        }
+    }
+
+    // 7. CHECKERED / PLAID
     else if (shirt.type === 'checkered') {
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        for (let i = 36; i < 58; i += 6) ctx.fillRect(20, i, 24, 2);
-        for (let i = 22; i < 44; i += 6) ctx.fillRect(i, 34, 2, 24);
+        for (let i = 36; i < 58; i += 6) ctx.fillRect(20, i, 24, 2.5);
+        for (let i = 22; i < 44; i += 6) ctx.fillRect(i, 34, 2.5, 24);
+        // Accent overcheck line
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        for (let i = 39; i < 58; i += 6) ctx.fillRect(20, i, 24, 1);
+        for (let i = 25; i < 44; i += 6) ctx.fillRect(i, 34, 1, 24);
     }
 
     // 8. OVERALLS
     else if (shirt.type === 'overalls') {
-        ctx.fillStyle = shirt.under || 'white';
+        ctx.fillStyle = shirt.under || '#ffffff';
         ctx.fillRect(20, 34, 24, 24); ctx.fillRect(18, 35, 28, 6);
-        ctx.fillStyle = shirt.color;
-        ctx.fillRect(20, 48, 24, 10);
+        ctx.fillStyle = shirt.color || '#4682B4';
+        ctx.fillRect(20, 47, 24, 11); // Trousers
         if (!isBack) {
-            ctx.fillRect(24, 40, 16, 8); ctx.fillRect(24, 34, 2, 10); ctx.fillRect(38, 34, 2, 10);
-            ctx.fillStyle = '#FFD700'; ctx.fillRect(24, 40, 2, 2); ctx.fillRect(38, 40, 2, 2);
+            ctx.fillRect(23, 39, 18, 9); // Front bib
+            ctx.fillRect(23, 34, 3, 10); ctx.fillRect(38, 34, 3, 10); // Straps
+            // Golden brass buckles
+            ctx.fillStyle = '#ffd700';
+            ctx.fillRect(23, 39, 3, 2.5); ctx.fillRect(38, 39, 3, 2.5);
+            // Center chest pocket
+            ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1;
+            ctx.strokeRect(27, 43, 10, 5);
         } else {
-            ctx.fillRect(24, 42, 16, 6);
-            ctx.beginPath(); ctx.moveTo(24, 42); ctx.lineTo(26, 34); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(40, 42); ctx.lineTo(38, 34); ctx.stroke();
+            ctx.fillRect(23, 42, 18, 6);
+            ctx.fillStyle = shirt.color;
+            // Criss-cross straps
+            ctx.beginPath(); ctx.moveTo(23, 34); ctx.lineTo(39, 45); ctx.lineTo(36, 45); ctx.lineTo(21, 34); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(41, 34); ctx.lineTo(25, 45); ctx.lineTo(28, 45); ctx.lineTo(43, 34); ctx.fill();
         }
     }
 
-    // 9. LOGO TEE (Fixed)
+    // 9. LOGO TEE
     else if (shirt.type === 'logo') {
         if (!isBack) {
-            ctx.fillStyle = bodyColor; // Paint skin color instead of clearing
-            ctx.fillRect(28, 34, 8, 4);
-
-            ctx.fillStyle = 'white';
-            ctx.font = '14px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(shirt.symbol || '?', 32, 46);
+            ctx.fillStyle = bodyColor;
+            ctx.beginPath(); ctx.ellipse(32, 34, 5, 3, 0, 0, Math.PI); ctx.fill();
+            // Emblem graphic
+            if (shirt.symbol === '🍌') {
+                // Crisp Nano Banana graphic print
+                ctx.fillStyle = '#ffe135';
+                ctx.beginPath();
+                ctx.moveTo(27, 47);
+                ctx.quadraticCurveTo(32, 40, 37, 44);
+                ctx.quadraticCurveTo(32, 43, 27, 47);
+                ctx.fill();
+                ctx.fillStyle = '#5d4037'; ctx.fillRect(36.5, 43.5, 1, 1);
+            } else {
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '13px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(shirt.symbol || '?', 32, 46);
+            }
         }
     }
 
     // 10. CAMO
     else if (shirt.type === 'camo') {
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.beginPath();
-        ctx.arc(24, 38, 3, 0, Math.PI * 2); ctx.arc(38, 42, 4, 0, Math.PI * 2);
-        ctx.arc(28, 52, 3, 0, Math.PI * 2); ctx.arc(36, 50, 2, 0, Math.PI * 2);
+        ctx.ellipse(24, 39, 4, 2.5, 0.4, 0, Math.PI * 2);
+        ctx.ellipse(39, 43, 4, 3, -0.3, 0, Math.PI * 2);
+        ctx.ellipse(28, 52, 3.5, 2, 0.2, 0, Math.PI * 2);
+        ctx.ellipse(37, 51, 3, 2.5, -0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.beginPath();
+        ctx.ellipse(32, 45, 3, 2, 0, 0, Math.PI * 2);
+        ctx.ellipse(23, 49, 2.5, 1.8, 0.5, 0, Math.PI * 2);
         ctx.fill();
     }
 
-    // 11. FLORAL (Fixed)
+    // 11. FLORAL / HAWAIIAN
     else if (shirt.type === 'floral') {
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
         if (!isBack) {
-            const df = (x, y) => {
-                ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
-                ctx.beginPath(); ctx.arc(x + 2, y, 2, 0, Math.PI * 2); ctx.fill();
-                ctx.beginPath(); ctx.arc(x, y + 2, 2, 0, Math.PI * 2); ctx.fill();
-                ctx.beginPath(); ctx.arc(x + 2, y + 2, 2, 0, Math.PI * 2); ctx.fill();
+            const drawHibiscus = (cx, cy) => {
+                for (let a = 0; a < 5; a++) {
+                    const ang = (a / 5) * Math.PI * 2;
+                    ctx.beginPath();
+                    ctx.arc(cx + Math.cos(ang) * 2.2, cy + Math.sin(ang) * 2.2, 1.8, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(cx, cy, 1, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,0.6)';
             };
-            df(24, 40); df(36, 48); df(28, 50);
-
-            ctx.fillStyle = bodyColor; // Paint skin
-            ctx.fillRect(28, 34, 8, 4);
+            drawHibiscus(25, 41); drawHibiscus(37, 44); drawHibiscus(28, 51);
+            ctx.fillStyle = bodyColor;
+            ctx.beginPath(); ctx.ellipse(32, 34, 5, 3, 0, 0, Math.PI); ctx.fill();
         }
     }
 
-    // 12. SPECIALS (Fixed Vest)
+    // 12. SPECIALS
     else if (shirt.type === 'coat') {
         if (!isBack) {
-            ctx.fillStyle = '#888'; ctx.fillRect(30, 34, 4, 24);
-            ctx.fillStyle = '#ccc'; ctx.fillRect(22, 40, 6, 1);
+            // Lab coat opening with pen in pocket
+            ctx.fillStyle = '#37474f'; ctx.fillRect(31, 34, 2, 24);
+            ctx.fillStyle = '#eceff1'; ctx.fillRect(23, 43, 6, 4); // Pocket
+            ctx.strokeStyle = '#b0bec5'; ctx.strokeRect(23, 43, 6, 4);
+            ctx.fillStyle = '#00bcd4'; ctx.fillRect(25, 41, 1.5, 3); // Pen
         }
     }
     else if (shirt.type === 'vest') {
-        // Draw yellow vest stripes first (since base is already orange)
-        ctx.fillStyle = 'yellow'; ctx.fillRect(20, 42, 24, 4);
-
+        // High-vis safety vest with reflective silver and neon lime stripes
+        ctx.fillStyle = '#76ff03'; ctx.fillRect(20, 39, 24, 2); ctx.fillRect(20, 48, 24, 2);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(20, 41, 24, 3); ctx.fillRect(20, 50, 24, 3);
         if (!isBack) {
-            // Paint Grey Undershirt Strip instead of clearing
-            ctx.fillStyle = '#888';
-            ctx.fillRect(30, 34, 4, 24);
+            ctx.fillStyle = '#424242'; ctx.fillRect(31, 34, 2, 24); // Center zipper
         }
     }
     else if (shirt.type === 'chain') {
         if (!isBack) {
-            ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(32, 34, 6, 0, Math.PI); ctx.stroke();
+            // Shimmering Golden Cuban Chain with medallion
+            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.arc(32, 34, 7, 0, Math.PI); ctx.stroke();
+            ctx.strokeStyle = '#fff59d'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(32, 34, 6.8, 0, Math.PI); ctx.stroke();
+            // Golden Dollar / Star pendant
+            ctx.fillStyle = '#ffc107'; ctx.beginPath(); ctx.arc(32, 42, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(31.5, 40.5, 1, 3);
         }
     }
 }
@@ -4897,65 +6854,106 @@ function drawCollar(ctx, collarId, isBack) {
     ctx.fillStyle = item.color;
 
     // --- BASIC / SPIKED / BELL ---
-    // Fixed: x=20, width=24 (Matches Body Width)
     if (item.type === 'basic' || item.type === 'spiked' || item.type === 'bell') {
+        // Shaded leather collar band
+        const cGrad = ctx.createLinearGradient(0, 34, 0, 38);
+        cGrad.addColorStop(0, shadeColor(item.color, 0.2));
+        cGrad.addColorStop(1, shadeColor(item.color, -0.3));
+        ctx.fillStyle = cGrad;
         ctx.fillRect(20, 34, 24, 4);
+        ctx.fillStyle = '#ffd700';
+        ctx.fillRect(31, 34.5, 2, 3); // Metal buckle
 
         if (item.type === 'spiked') {
-            ctx.fillStyle = '#ccc';
-            // Adjusted loop to cover full width
+            // Chrome polished spikes
             for (let i = 20; i < 44; i += 4) {
+                ctx.fillStyle = '#f5f5f5';
                 ctx.beginPath();
-                ctx.moveTo(i, 34);
-                ctx.lineTo(i + 2, 31);
-                ctx.lineTo(i + 4, 34);
+                ctx.moveTo(i, 34); ctx.lineTo(i + 2, 30.5); ctx.lineTo(i + 4, 34); ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = '#9e9e9e'; // 3D spike shadow
+                ctx.beginPath();
+                ctx.moveTo(i + 2, 30.5); ctx.lineTo(i + 4, 34); ctx.lineTo(i + 2, 34); ctx.closePath();
                 ctx.fill();
             }
         }
         else if (item.type === 'bell' && !isBack) {
-            ctx.fillStyle = '#FFD700';
-            ctx.beginPath(); ctx.arc(32, 40, 3, 0, Math.PI * 2); ctx.fill();
+            // Golden spherical jingle bell with slit & shine
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath(); ctx.arc(32, 40, 3.5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#fff59d';
+            ctx.beginPath(); ctx.arc(31, 39, 1.2, 0, Math.PI * 2); ctx.fill(); // Highlight
+            ctx.fillStyle = '#8b6508';
+            ctx.beginPath(); ctx.arc(32, 41, 0.9, 0, Math.PI * 2); ctx.fill();
+            ctx.fillRect(30.5, 41.5, 3, 0.8);
         }
     }
 
     // --- BOW TIE ---
     else if (item.type === 'bow') {
         if (!isBack) {
-            ctx.fillStyle = item.color;
+            const bCol = item.color || '#111';
+            ctx.fillStyle = bCol;
+            // Left & Right Wings with soft fabric fold
+            ctx.beginPath(); ctx.moveTo(32, 36); ctx.lineTo(23, 31); ctx.lineTo(23, 41); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(32, 36); ctx.lineTo(41, 31); ctx.lineTo(41, 41); ctx.closePath(); ctx.fill();
+            ctx.fillStyle = shadeColor(bCol, 0.25);
+            ctx.fillRect(25, 34, 2, 4); ctx.fillRect(37, 34, 2, 4);
+            // Center Knot
+            ctx.fillStyle = shadeColor(bCol, -0.2);
             ctx.beginPath(); ctx.arc(32, 36, 3, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(32, 36); ctx.lineTo(24, 32); ctx.lineTo(24, 40); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(32, 36); ctx.lineTo(40, 32); ctx.lineTo(40, 40); ctx.fill();
         } else {
-            // Strap on back (Fixed Width)
+            ctx.fillStyle = item.color || '#111';
             ctx.fillRect(20, 35, 24, 2);
         }
     }
 
     // --- BANDANA ---
     else if (item.type === 'bandana') {
-        // Neck strap (Fixed Width)
+        const bdCol = item.color || '#ff4444';
+        ctx.fillStyle = bdCol;
         ctx.fillRect(20, 34, 24, 3);
         if (!isBack) {
-            ctx.beginPath(); ctx.moveTo(22, 37); ctx.lineTo(42, 37); ctx.lineTo(32, 49); ctx.fill();
+            // Pointed handkerchief with paisley dots
+            ctx.beginPath(); ctx.moveTo(21, 37); ctx.lineTo(43, 37); ctx.lineTo(32, 50); ctx.closePath(); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.beginPath(); ctx.arc(28, 41, 1, 0, Math.PI * 2); ctx.arc(36, 41, 1, 0, Math.PI * 2); ctx.arc(32, 45, 1, 0, Math.PI * 2); ctx.fill();
         }
     }
 
     // --- SCARF ---
     else if (item.type === 'scarf') {
-        ctx.fillRect(20, 33, 24, 5);
+        const scCol = item.color || '#00ccff';
+        ctx.fillStyle = scCol;
+        ctx.fillRect(19, 33, 26, 5); // Neck wrap
+        ctx.fillStyle = shadeColor(scCol, -0.2);
+        ctx.fillRect(19, 37, 26, 1.5); // Shadow
         if (!isBack) {
-            ctx.fillRect(36, 38, 6, 12);
+            // Cascading tail with fringes
+            ctx.fillStyle = scCol;
+            ctx.fillRect(35, 38, 7, 13);
+            ctx.fillStyle = '#ffffff'; // Fringe tips
+            for (let fx = 35; fx <= 41; fx += 2) ctx.fillRect(fx, 50, 1.5, 2);
         } else {
-            ctx.fillRect(38, 34, 4, 8);
+            ctx.fillStyle = shadeColor(scCol, -0.15);
+            ctx.fillRect(37, 34, 4, 8);
         }
     }
 
     // --- PEARLS ---
     else if (item.type === 'pearls') {
-        ctx.fillStyle = 'white';
-        // Adjusted loop for full width
-        for (let i = 20; i < 44; i += 4) {
-            ctx.beginPath(); ctx.arc(i + 2, 36, 2, 0, Math.PI * 2); ctx.fill();
+        // Glowing iridescent pearl necklace
+        for (let i = 20; i <= 44; i += 4) {
+            const py = 36 + Math.sin(((i - 20) / 24) * Math.PI) * 2;
+            // Drop shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath(); ctx.arc(i, py + 0.8, 2.2, 0, Math.PI * 2); ctx.fill();
+            // Pearl body
+            ctx.fillStyle = '#f8f9fa';
+            ctx.beginPath(); ctx.arc(i, py, 2.2, 0, Math.PI * 2); ctx.fill();
+            // Lustrous spec highlight
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(i - 0.7, py - 0.7, 0.9, 0, Math.PI * 2); ctx.fill();
         }
     }
 }
@@ -5086,163 +7084,211 @@ function drawPattern(ctx, patternId, col, back) {
     }
 }
 
+// VISUAL UPGRADE: Detailed Hair with Shading \u0026 Highlights
 function drawHair(ctx, hairId, col, back) {
     if (!hairId || hairId === 'none') return;
     const hair = HAIR_TYPES.find(h => h.id === hairId);
     if (!hair) return;
 
-    // Default to white if no color provided, so it can be tinted? 
-    // Actually, logic expects 'col' to be the chosen color. If empty, maybe default to somewhat visible?
-    // But caller passes hairColor || '#ffffff'.
-    ctx.fillStyle = col || '#ffffff'; // Fallback to white 
+    // Base Color
+    ctx.fillStyle = col || '#ffffff';
+
+    // Highlight Color (Lighten base)
+    const highlight = shadeColor(col || '#ffffff', 0.3);
+    const shadow = shadeColor(col || '#ffffff', -0.2);
 
     if (back) {
-        // --- BACK VIEW ---
+        // --- BACK VIEW (Shading & Highlights) ---
         if (hair.id === 'messy') {
             ctx.beginPath(); ctx.moveTo(18, 14); ctx.lineTo(46, 14); ctx.lineTo(50, 24); ctx.lineTo(42, 32); ctx.lineTo(22, 32); ctx.lineTo(14, 24); ctx.fill();
+            ctx.fillStyle = shadow; ctx.fillRect(20, 28, 4, 4); ctx.fillRect(40, 28, 4, 4);
         } else if (hair.id === 'bob') {
             ctx.fillRect(16, 10, 32, 24);
+            ctx.fillStyle = highlight; ctx.fillRect(16, 12, 32, 4);
+            ctx.fillStyle = shadow; ctx.fillRect(16, 32, 32, 2);
         } else if (hair.id === 'long') {
-            ctx.fillRect(16, 10, 32, 36);
+            ctx.fillRect(16, 10, 32, 38);
+            ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 4);
+            ctx.fillStyle = shadow; ctx.fillRect(16, 42, 32, 6);
         } else if (hair.id === 'spiky') {
             ctx.beginPath(); ctx.moveTo(14, 20); ctx.lineTo(18, 8); ctx.lineTo(24, 20); ctx.lineTo(32, 6); ctx.lineTo(40, 20); ctx.lineTo(46, 8); ctx.lineTo(50, 20); ctx.lineTo(48, 26); ctx.lineTo(16, 26); ctx.fill();
-        } else if (hair.id === 'mohawk') {
-            ctx.fillRect(28, 6, 8, 28);
+            ctx.fillStyle = highlight; ctx.fillRect(20, 18, 4, 4); ctx.fillRect(40, 18, 4, 4);
         } else if (hair.id === 'ponytail') {
             ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI * 2); ctx.fill();
-            ctx.fillRect(28, 20, 8, 24); // Tail down back
-        } else if (hair.id === 'pigtails') {
-            // Two tails
-            ctx.fillRect(12, 16, 6, 24); ctx.fillRect(46, 16, 6, 24);
-            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI, true); ctx.fill(); // Back of head
+            ctx.fillRect(28, 20, 8, 26);
+            ctx.fillStyle = shadow; ctx.fillRect(29, 44, 6, 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(28, 28, 8, 2); // Scrunchie
+        } else if (hair.id === 'pigtails' || hair.id === 'twintails') {
+            ctx.fillRect(11, 16, 7, 26); ctx.fillRect(46, 16, 7, 26);
+            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI, true); ctx.fill();
+            ctx.fillStyle = shadow; ctx.fillRect(11, 40, 7, 2); ctx.fillRect(46, 40, 7, 2);
         } else if (hair.id === 'afro') {
-            ctx.beginPath(); ctx.arc(32, 12, 20, 0, Math.PI * 2); ctx.fill(); // Big circle (higher)
-        } else if (hair.id === 'wavy') {
-            ctx.beginPath(); ctx.moveTo(16, 12); ctx.quadraticCurveTo(8, 24, 16, 36); ctx.lineTo(48, 36); ctx.quadraticCurveTo(56, 24, 48, 12); ctx.fill();
-        } else if (hair.id === 'bangs') {
-            ctx.fillRect(16, 10, 32, 24); // Same as bob from back
-        } else if (hair.id === 'buzzed') {
-            ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Stubble effect
-            ctx.beginPath(); ctx.arc(32, 18, 14, Math.PI, 0); ctx.fill();
-        } else if (hair.id === 'curly') {
-            ctx.beginPath(); ctx.arc(32, 18, 16, 0, Math.PI * 2); ctx.fill();
-            // Texture
-            ctx.fillStyle = 'rgba(0,0,0,0.1)';
-            ctx.beginPath(); ctx.arc(24, 14, 4, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(40, 14, 4, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(32, 24, 4, 0, Math.PI * 2); ctx.fill();
-        } else if (hair.id === 'emo') {
-            ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(50, 12); ctx.lineTo(46, 32); ctx.lineTo(18, 32); ctx.fill();
-        } else if (hair.id === 'bun') {
-            ctx.beginPath(); ctx.arc(32, 18, 14, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(32, 8, 6, 0, Math.PI * 2); ctx.fill(); // Bun
+            ctx.beginPath(); ctx.arc(32, 12, 20, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = shadow; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(25, 12, 3, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(39, 12, 3, 0, Math.PI * 2); ctx.stroke();
+        } else if (hair.id === 'dreads') {
+            ctx.fillRect(16, 10, 32, 14);
+            for (let dx = 16; dx <= 44; dx += 4) {
+                ctx.fillStyle = (dx % 8 === 0) ? shadow : col;
+                ctx.fillRect(dx, 20, 3, 22);
+                ctx.fillStyle = '#d4af37'; ctx.fillRect(dx, 36, 3, 1.5); // Golden dread rings
+            }
         } else if (hair.id === 'braid') {
             ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI * 2); ctx.fill();
-            // Braid down back
-            for (let y = 20; y < 44; y += 4) {
-                ctx.beginPath(); ctx.arc(32, y, 3, 0, Math.PI * 2); ctx.fill();
+            for (let by = 22; by < 46; by += 4) {
+                ctx.fillStyle = (by % 8 === 0) ? highlight : col;
+                ctx.fillRect(29, by, 6, 3.5);
             }
-        } else if (hair.id === 'twintails') {
-            // Long tails
-            ctx.fillRect(10, 16, 6, 36); ctx.fillRect(48, 16, 6, 36);
-            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI, true); ctx.fill();
+            ctx.fillStyle = shadow; ctx.fillRect(30.5, 46, 3, 4); // Tail tip
+        } else if (hair.id === 'curly') {
+            ctx.beginPath(); ctx.arc(32, 14, 18, 0, Math.PI * 2); ctx.fill();
+            for (let cy = 12; cy <= 32; cy += 6) {
+                ctx.fillStyle = shadow;
+                ctx.fillRect(14, cy, 5, 4); ctx.fillRect(45, cy, 5, 4);
+            }
+        } else if (hair.id === 'emo' || hair.id === 'sidepart') {
+            ctx.fillRect(16, 10, 32, 24);
+            ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 4);
+            ctx.fillStyle = shadow; ctx.fillRect(14, 22, 6, 14);
         } else if (hair.id === 'pompadour') {
-            ctx.beginPath(); ctx.moveTo(20, 14); ctx.lineTo(44, 14); ctx.lineTo(40, 26); ctx.lineTo(24, 26); ctx.fill();
+            ctx.fillRect(16, 12, 32, 20);
+            ctx.fillStyle = highlight; ctx.fillRect(22, 4, 20, 8);
         } else if (hair.id === 'shaggy') {
-            ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(50, 12); ctx.lineTo(54, 28); ctx.lineTo(46, 30); ctx.lineTo(32, 28); ctx.lineTo(18, 30); ctx.lineTo(10, 28); ctx.fill();
-        } else if (hair.id === 'undercut') {
-            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill(); // Top only
-        } else if (hair.id === 'mullet') {
-            ctx.fillRect(20, 10, 24, 14); // Top
-            ctx.fillRect(16, 20, 32, 20); // Party in back
-        } else if (hair.id === 'dreads') {
-            ctx.fillRect(16, 12, 4, 24); ctx.fillRect(22, 12, 4, 24);
-            ctx.fillRect(28, 12, 4, 24); ctx.fillRect(34, 12, 4, 24);
-            ctx.fillRect(40, 12, 4, 24); ctx.fillRect(46, 12, 4, 24);
-        } else if (hair.id === 'pixie') {
-            ctx.beginPath(); ctx.arc(32, 18, 14, 0, Math.PI * 2); ctx.fill();
-        } else if (hair.id === 'topknot') {
-            ctx.beginPath(); ctx.arc(32, 18, 14, 0, Math.PI * 2); ctx.fill();
-            ctx.fillRect(30, 4, 4, 6); // Knot
-        } else if (hair.id === 'sidepart') {
-            ctx.fillRect(18, 12, 28, 18);
-        } else if (hair.id === 'slicked') {
-            ctx.fillRect(20, 12, 24, 16);
+            ctx.fillRect(16, 10, 32, 28);
+            ctx.fillStyle = shadow;
+            ctx.fillRect(14, 30, 6, 8); ctx.fillRect(24, 34, 6, 6); ctx.fillRect(34, 34, 6, 6); ctx.fillRect(44, 30, 6, 8);
+        } else if (hair.id === 'topknot' || hair.id === 'bun') {
+            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(32, 6, 7, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = shadow; ctx.beginPath(); ctx.arc(32, 6, 3.5, 0, Math.PI * 2); ctx.fill();
+        } else {
+            // General clean fallback for wavy, bangs, mohawk, buzzed, undercut, mullet, pixie, slicked
+            ctx.fillStyle = col || '#ffffff';
+            if (hair.id === 'wavy') {
+                ctx.beginPath(); ctx.moveTo(16, 12); ctx.quadraticCurveTo(8, 24, 16, 38); ctx.lineTo(48, 38); ctx.quadraticCurveTo(56, 24, 48, 12); ctx.fill();
+                ctx.fillStyle = highlight; ctx.fillRect(20, 14, 24, 4);
+            } else if (hair.id === 'bangs') {
+                ctx.fillRect(16, 10, 32, 26);
+                ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 4);
+            } else if (hair.id === 'mohawk') {
+                ctx.fillRect(27, 4, 10, 30);
+                ctx.fillStyle = highlight; ctx.fillRect(29, 6, 6, 26);
+            } else if (hair.id === 'buzzed') {
+                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.arc(32, 18, 14, Math.PI, 0); ctx.fill();
+            } else if (hair.id === 'undercut') {
+                ctx.fillRect(20, 8, 24, 14);
+                ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(16, 18, 32, 10);
+            } else if (hair.id === 'mullet') {
+                ctx.fillRect(20, 10, 24, 14);
+                ctx.fillRect(16, 20, 32, 24);
+                ctx.fillStyle = shadow; ctx.fillRect(16, 40, 32, 4);
+            } else if (hair.id === 'pixie' || hair.id === 'slicked') {
+                ctx.fillRect(16, 10, 32, 18);
+                ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 3.5);
+            }
         }
     } else {
-        // --- FRONT VIEW ---
+        // --- FRONT VIEW (Shading, Parting & Volumetric Layers) ---
         if (hair.id === 'messy') {
-            ctx.beginPath(); ctx.moveTo(16, 14); ctx.lineTo(24, 20); ctx.lineTo(32, 12); ctx.lineTo(40, 20); ctx.lineTo(48, 14); ctx.lineTo(48, 24); ctx.lineTo(16, 24); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(18, 14); ctx.lineTo(24, 18); ctx.lineTo(32, 12); ctx.lineTo(40, 18); ctx.lineTo(46, 14); ctx.lineTo(50, 22); ctx.lineTo(48, 26); ctx.lineTo(16, 26); ctx.lineTo(14, 22); ctx.fill();
+            ctx.fillStyle = highlight; ctx.fillRect(22, 16, 4, 4); ctx.fillRect(38, 16, 4, 4);
         } else if (hair.id === 'bob') {
-            ctx.fillRect(14, 10, 10, 26); ctx.fillRect(40, 10, 10, 26); // Sides wider
-            ctx.fillRect(14, 10, 36, 10); // Top wider
+            ctx.fillRect(16, 10, 32, 26);
+            ctx.clearRect(24, 26, 16, 10);
+            ctx.fillStyle = highlight; ctx.fillRect(16, 12, 32, 4);
+            ctx.fillStyle = shadow; ctx.fillRect(16, 32, 8, 4); ctx.fillRect(40, 32, 8, 4);
         } else if (hair.id === 'long') {
-            ctx.fillRect(14, 10, 10, 38); ctx.fillRect(40, 10, 10, 38);
-            ctx.fillRect(14, 10, 36, 8);
+            ctx.fillRect(16, 10, 32, 38);
+            ctx.clearRect(22, 26, 20, 22);
+            ctx.fillStyle = highlight; ctx.fillRect(16, 12, 32, 4);
+            ctx.fillStyle = shadow; ctx.fillRect(16, 42, 6, 6); ctx.fillRect(42, 42, 6, 6);
         } else if (hair.id === 'spiky') {
-            ctx.beginPath(); ctx.moveTo(12, 20); ctx.lineTo(18, 6); ctx.lineTo(24, 18); ctx.lineTo(32, 4); ctx.lineTo(40, 18); ctx.lineTo(46, 6); ctx.lineTo(52, 20); ctx.fill();
-        } else if (hair.id === 'mohawk') {
-            ctx.fillRect(28, 4, 8, 12);
-        } else if (hair.id === 'ponytail') {
-            // Pulled back look
-            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
-        } else if (hair.id === 'pigtails') {
-            ctx.fillRect(12, 14, 4, 2); ctx.fillRect(48, 14, 4, 2); // Ties
-            ctx.fillRect(10, 16, 6, 24); ctx.fillRect(48, 16, 6, 24); // Tails
-            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill(); // Head
-        } else if (hair.id === 'afro') {
-            ctx.save();
-            ctx.globalCompositeOperation = 'destination-over';
-            ctx.beginPath(); ctx.arc(32, 22, 24, 0, Math.PI * 2); ctx.fill(); // Big halo behind head
-            ctx.restore();
-        } else if (hair.id === 'wavy') {
-            ctx.fillRect(14, 10, 8, 36); ctx.fillRect(42, 10, 8, 36);
-            ctx.fillRect(14, 10, 36, 6);
+            ctx.beginPath(); ctx.moveTo(14, 20); ctx.lineTo(18, 8); ctx.lineTo(24, 20); ctx.lineTo(32, 6); ctx.lineTo(40, 20); ctx.lineTo(46, 8); ctx.lineTo(50, 20); ctx.lineTo(50, 24); ctx.lineTo(14, 24); ctx.fill();
+            ctx.fillStyle = highlight; ctx.fillRect(22, 12, 6, 6); ctx.fillRect(36, 12, 6, 6);
         } else if (hair.id === 'bangs') {
-            ctx.fillRect(16, 10, 32, 10); // Bangs
-            ctx.fillRect(16, 10, 8, 24); ctx.fillRect(40, 10, 8, 24); // Sides
-        } else if (hair.id === 'buzzed') {
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.beginPath(); ctx.arc(32, 16, 13, Math.PI, 0); ctx.fill();
-            ctx.fillRect(16, 16, 32, 2); // Hairline
-        } else if (hair.id === 'curly') {
-            ctx.beginPath(); ctx.arc(32, 14, 16, Math.PI, 0); ctx.fill();
-            ctx.beginPath(); ctx.arc(18, 20, 6, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(46, 20, 6, 0, Math.PI * 2); ctx.fill();
-        } else if (hair.id === 'emo') {
-            ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(50, 10); ctx.lineTo(50, 20); ctx.lineTo(32, 28); ctx.lineTo(14, 20); ctx.fill();
-            ctx.fillRect(14, 10, 8, 28); // Side drop
-        } else if (hair.id === 'bun') {
+            ctx.fillRect(16, 10, 32, 15);
+            ctx.fillRect(14, 14, 5, 20);
+            ctx.fillRect(45, 14, 5, 20);
+            ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 4);
+            ctx.fillStyle = shadow; ctx.fillRect(18, 24, 28, 1.5);
+        } else if (hair.id === 'ponytail') {
+            ctx.fillStyle = col;
             ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
-            ctx.beginPath(); ctx.arc(32, 6, 6, 0, Math.PI * 2); ctx.fill();
+            ctx.fillRect(14, 16, 4, 12); ctx.fillRect(46, 16, 4, 12);
+            ctx.fillStyle = highlight; ctx.fillRect(20, 12, 24, 3);
+        } else if (hair.id === 'pigtails' || hair.id === 'twintails') {
+            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
+            ctx.fillRect(11, 16, 6, 26); ctx.fillRect(47, 16, 6, 26);
+            ctx.fillStyle = highlight; ctx.fillRect(20, 12, 24, 3);
+            ctx.fillStyle = shadow; ctx.fillRect(11, 38, 6, 4); ctx.fillRect(47, 38, 6, 4);
+        } else if (hair.id === 'afro') {
+            ctx.beginPath(); ctx.arc(32, 12, 20, 1, 2 * Math.PI + 2); ctx.fill();
+            ctx.strokeStyle = highlight; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(32, 12, 16, 3.5, 6); ctx.stroke();
+        } else if (hair.id === 'dreads') {
+            ctx.fillRect(16, 10, 32, 10);
+            for (let dx = 14; dx <= 46; dx += 4) {
+                if (dx > 22 && dx < 38) continue; // Face clearing
+                ctx.fillStyle = (dx % 8 === 0) ? shadow : col;
+                ctx.fillRect(dx, 16, 3.5, 22);
+                ctx.fillStyle = '#d4af37'; ctx.fillRect(dx, 32, 3.5, 1.5);
+            }
         } else if (hair.id === 'braid') {
             ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
-            // Braid over shoulder? No just stick to head
-        } else if (hair.id === 'twintails') {
-            ctx.fillRect(10, 16, 6, 36); ctx.fillRect(48, 16, 6, 36);
-            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
+            ctx.fillRect(14, 16, 5, 14); // Front bangs
+            for (let by = 26; by < 46; by += 4) {
+                ctx.fillStyle = (by % 8 === 0) ? highlight : col;
+                ctx.fillRect(44, by, 6, 3.5); // Side braid draped over shoulder
+            }
+        } else if (hair.id === 'curly') {
+            ctx.beginPath(); ctx.arc(32, 14, 18, 1, 2 * Math.PI + 2); ctx.fill();
+            ctx.clearRect(24, 26, 16, 10);
+            ctx.fillStyle = highlight; ctx.beginPath(); ctx.arc(26, 14, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(38, 14, 4, 0, Math.PI * 2); ctx.fill();
+        } else if (hair.id === 'emo') {
+            // Swept diagonal bangs over one eye
+            ctx.beginPath();
+            ctx.moveTo(14, 12); ctx.lineTo(50, 12); ctx.lineTo(46, 20); ctx.lineTo(20, 32); ctx.lineTo(14, 28); ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = highlight; ctx.fillRect(22, 14, 20, 3);
+        } else if (hair.id === 'sidepart' || hair.id === 'slicked') {
+            ctx.fillRect(16, 10, 32, 12);
+            ctx.fillStyle = highlight; ctx.fillRect(18, 11, 26, 3);
+            ctx.fillStyle = shadow; ctx.fillRect(26, 10, 2, 8); // Part line
         } else if (hair.id === 'pompadour') {
-            ctx.beginPath(); ctx.arc(32, 14, 8, 0, Math.PI * 2); ctx.fill(); // Pomp
-            ctx.fillRect(24, 14, 16, 6); // Base
+            ctx.fillRect(18, 0, 28, 14); // High swept front
+            ctx.fillStyle = highlight; ctx.fillRect(20, 2, 24, 4);
+            ctx.fillStyle = shadow; ctx.fillRect(14, 14, 4, 10); ctx.fillRect(46, 14, 4, 10);
         } else if (hair.id === 'shaggy') {
-            ctx.fillRect(14, 10, 36, 18); // messy coverage
-        } else if (hair.id === 'undercut') {
-            ctx.fillRect(20, 10, 24, 6); // Top patch
-        } else if (hair.id === 'mullet') {
-            ctx.fillRect(20, 10, 24, 8); // Short top
-            ctx.fillRect(14, 20, 6, 12); ctx.fillRect(44, 20, 6, 12); // Long sides visible from front?
-        } else if (hair.id === 'dreads') {
-            for (let i = 16; i <= 46; i += 6) ctx.fillRect(i, 10, 4, 24);
-        } else if (hair.id === 'pixie') {
-            ctx.beginPath(); ctx.moveTo(16, 20); ctx.lineTo(32, 12); ctx.lineTo(48, 20); ctx.lineTo(32, 8); ctx.fill();
-        } else if (hair.id === 'topknot') {
+            ctx.fillRect(16, 10, 32, 18);
+            ctx.fillStyle = shadow;
+            ctx.fillRect(14, 24, 6, 10); ctx.fillRect(44, 24, 6, 10);
+            ctx.fillRect(22, 22, 5, 6); ctx.fillRect(37, 22, 5, 6);
+        } else if (hair.id === 'topknot' || hair.id === 'bun') {
             ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
-            ctx.fillRect(30, 4, 4, 6);
-        } else if (hair.id === 'sidepart') {
-            ctx.fillRect(18, 10, 28, 8);
-            ctx.fillRect(40, 10, 6, 20); // Side sweep
-        } else if (hair.id === 'slicked') {
-            ctx.fillRect(20, 10, 24, 8); // Tight
+            ctx.beginPath(); ctx.arc(32, 5, 6.5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = highlight; ctx.beginPath(); ctx.arc(32, 4, 2.5, 0, Math.PI * 2); ctx.fill();
+        } else {
+            // Fallback front for wavy, mohawk, buzzed, undercut, mullet, pixie
+            if (hair.id === 'mohawk') {
+                ctx.fillRect(27, 3, 10, 16);
+                ctx.fillStyle = highlight; ctx.fillRect(29, 4, 6, 14);
+            } else if (hair.id === 'buzzed') {
+                ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(16, 10, 32, 8);
+            } else if (hair.id === 'undercut') {
+                ctx.fillStyle = col; ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
+                ctx.fillStyle = highlight; ctx.fillRect(20, 12, 24, 3);
+            } else if (hair.id === 'wavy') {
+                ctx.beginPath(); ctx.moveTo(16, 12); ctx.quadraticCurveTo(8, 24, 16, 38); ctx.lineTo(21, 38); ctx.lineTo(21, 22); ctx.lineTo(43, 22); ctx.lineTo(43, 38); ctx.lineTo(48, 38); ctx.quadraticCurveTo(56, 24, 48, 12); ctx.fill();
+                ctx.fillStyle = highlight; ctx.fillRect(20, 13, 24, 3.5);
+            } else if (hair.id === 'mullet') {
+                ctx.fillRect(18, 10, 28, 12);
+                ctx.fillStyle = shadow; ctx.fillRect(14, 22, 5, 18); ctx.fillRect(45, 22, 5, 18);
+            } else if (hair.id === 'pixie') {
+                ctx.fillRect(16, 10, 32, 14);
+                ctx.fillStyle = highlight; ctx.fillRect(18, 12, 20, 3);
+            }
         }
     }
 }
@@ -5250,11 +7296,22 @@ function drawHair(ctx, hairId, col, back) {
 // Main texture compositing function. Combines species, colors, and all cosmetics into one texture.
 // partColors is optional: { earsColor, noseColor, miscColor, tailColor }
 function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none', partColors = null, hairId = 'none', hairColor = null) {
-    const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    // VISUAL UPGRADE: HD Canvas - sized to fit tallest content:
+    // logical y range is -22 (witch hat tip) to 67.5 (feet) = 89.5 units.
+    // Canvas is 94 logical units tall (188px) with a +24 offset => 2u margins.
+    const c = document.createElement('canvas'); c.width = 128; c.height = 188;
     const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-    const col = new THREE.Color(hex).getStyle();
-    const bellyCol = new THREE.Color(bellyHex).getStyle();
-    const eyeCol = new THREE.Color(eyeHex).getStyle();
+
+    // Scale Context by 2x so all existing 64px coordinates work, 
+    // but we can draw sub-pixel (0.5) details for extra resolution.
+    ctx.scale(2, 2);
+    // Offset down to make room for tall ears and hats
+    ctx.translate(0, 24);
+
+    // Fix: Use HEX string for canvas drawing so shadeColor works (getStyle returns rgb())
+    const col = '#' + new THREE.Color(hex).getHexString();
+    const bellyCol = '#' + new THREE.Color(bellyHex).getHexString();
+    const eyeCol = '#' + new THREE.Color(eyeHex).getHexString();
 
     drawSpecies(ctx, species, col, bellyCol, eyeCol, back, partColors);
 
@@ -5545,35 +7602,139 @@ function createRodTexture(rodId) {
     let rod = ROD_TYPES.find(r => r.id === rodId);
     if (!rod) rod = ROD_TYPES[0]; // Fallback to bamboo
 
-    // Draw Rod (Diagonal: Bottom-Left to Top-Right)
-    ctx.strokeStyle = rod.color;
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
+    const rCol = rod.color || '#DAA520';
+    const reelCol = rod.reel || '#8B4513';
 
-    ctx.beginPath();
-    ctx.moveTo(4, 60); // Handle
-    ctx.lineTo(60, 4); // Tip
-    ctx.stroke();
+    // Special effects or themed render
+    if (rod.id === 'banana_rod') {
+        // Nano Banana Rod: Curved organic yellow taper with banana peel tip & leaf guides
+        ctx.strokeStyle = '#ffe135';
+        ctx.lineWidth = 4.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(5, 59);
+        ctx.quadraticCurveTo(34, 30, 59, 5);
+        ctx.stroke();
 
-    // Fancy Effects for specific rods
-    if (rod.id === 'candy' || rod.id === 'rainbow') {
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath(); ctx.moveTo(4, 60); ctx.lineTo(60, 4); ctx.stroke();
-        ctx.setLineDash([]);
+        // Banana ridge highlight
+        ctx.strokeStyle = '#fff59d';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(6, 58);
+        ctx.quadraticCurveTo(34, 29, 58, 6);
+        ctx.stroke();
+
+        // Grip (organic wood/leaf stem)
+        ctx.strokeStyle = '#5d4037';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(5, 59); ctx.lineTo(15, 49);
+        ctx.stroke();
+
+        // Reel: Golden banana wheel
+        ctx.fillStyle = '#ffb300';
+        ctx.beginPath(); ctx.arc(14, 50, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffe082';
+        ctx.beginPath(); ctx.arc(14, 50, 2.5, 0, Math.PI * 2); ctx.fill();
+
+        // Banana leaf line guides
+        ctx.fillStyle = '#7cb342';
+        ctx.fillRect(24, 39, 3, 3);
+        ctx.fillRect(37, 26, 3, 3);
+        ctx.fillRect(50, 13, 3, 3);
+
+        const t = new THREE.CanvasTexture(c);
+        t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+        return t;
     }
 
-    // Reel
-    ctx.fillStyle = rod.reel;
-    ctx.beginPath(); ctx.arc(12, 52, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#ccc';
-    ctx.beginPath(); ctx.arc(12, 52, 2, 0, Math.PI * 2); ctx.fill();
+    // Glow effect for magical/legendary rods
+    if (rod.id === 'lava') {
+        ctx.shadowColor = '#ff3d00'; ctx.shadowBlur = 8;
+    } else if (rod.id === 'ice') {
+        ctx.shadowColor = '#00e5ff'; ctx.shadowBlur = 8;
+    } else if (rod.id === 'void') {
+        ctx.shadowColor = '#7c4dff'; ctx.shadowBlur = 10;
+    } else if (rod.id === 'diamond' || rod.id === 'golden') {
+        ctx.shadowColor = rCol; ctx.shadowBlur = 7;
+    }
 
-    // Guides (Rings)
-    ctx.fillStyle = '#aaa';
-    ctx.fillRect(18, 46, 3, 3);
-    ctx.fillRect(32, 32, 3, 3);
-    ctx.fillRect(46, 18, 3, 3);
+    // 1. ROD BLANK (Diagonal)
+    ctx.strokeStyle = rCol;
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(5, 59);
+    ctx.lineTo(59, 5);
+    ctx.stroke();
+
+    // Blank top highlight reflection
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(6, 58);
+    ctx.lineTo(58, 6);
+    ctx.stroke();
+    ctx.shadowBlur = 0; // Clear glow
+
+    // Fancy wraps / patterns for candy or rainbow
+    if (rod.id === 'candy') {
+        ctx.strokeStyle = '#ffffff';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(5, 59); ctx.lineTo(59, 5); ctx.stroke();
+        ctx.setLineDash([]);
+    } else if (rod.id === 'rainbow') {
+        for (let i = 0; i < 5; i++) {
+            ctx.fillStyle = `hsl(${i * 60}, 100%, 60%)`;
+            const pos = 18 + i * 8;
+            ctx.fillRect(pos - 1, 64 - pos - 2, 4, 4);
+        }
+    }
+
+    // 2. ERGONOMIC GRIP (Handle - cork / carbon / foam)
+    ctx.strokeStyle = (rod.id === 'carbon') ? '#111' : (rod.id === 'bamboo') ? '#c29b38' : '#3e2723';
+    ctx.lineWidth = 5.5;
+    ctx.lineCap = 'butt';
+    ctx.beginPath();
+    ctx.moveTo(4, 60); ctx.lineTo(15, 49);
+    ctx.stroke();
+    // Grip rings
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(7, 56, 2, 2); ctx.fillRect(11, 52, 2, 2);
+
+    // 3. SPINNING REEL & SEAT
+    // Reel seat mount
+    ctx.fillStyle = '#424242';
+    ctx.fillRect(12, 48, 5, 4);
+
+    // Spool body
+    ctx.fillStyle = reelCol;
+    ctx.beginPath(); ctx.arc(13, 53, 5.5, 0, Math.PI * 2); ctx.fill();
+    // Reel rotor / inner spool rim
+    ctx.fillStyle = shadeColor(reelCol, 0.3);
+    ctx.beginPath(); ctx.arc(13, 53, 3, 0, Math.PI * 2); ctx.fill();
+    // Crank handle
+    ctx.fillStyle = '#b0bec5';
+    ctx.fillRect(7, 52, 3, 2);
+    ctx.beginPath(); ctx.arc(7, 51, 1.5, 0, Math.PI * 2); ctx.fill();
+
+    // 4. LINE GUIDES WITH CERAMIC INSERTS
+    const guides = [
+        { x: 22, y: 42, size: 4 },
+        { x: 34, y: 30, size: 3.5 },
+        { x: 46, y: 18, size: 3 },
+        { x: 57, y: 7, size: 2.5 }
+    ];
+
+    guides.forEach(g => {
+        // Guide frame
+        ctx.fillStyle = '#78909c';
+        ctx.fillRect(g.x, g.y, g.size, g.size);
+        // Ceramic insert hole
+        ctx.fillStyle = '#263238';
+        ctx.fillRect(g.x + 0.8, g.y + 0.8, g.size - 1.6, g.size - 1.6);
+    });
 
     const t = new THREE.CanvasTexture(c);
     t.magFilter = THREE.NearestFilter;
@@ -5590,14 +7751,15 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
     const tb = createSpeciesTexture(species, col, '#ffffff', true, hatId, 'none', 'none', eyeHex, 'none', null, hairId, hairColor);
     const m1 = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
     const m2 = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-    const s = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m1);
-    s.position.y = 1.0; s.name = "playerSprite"; s.userData = { matFront: m1, matBack: m2 };
+    // Texture is 128x188 - match plane aspect so ears/hats aren't squashed or clipped
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.9375), m1);
+    s.position.y = 1.46875; s.name = "playerSprite"; s.userData = { matFront: m1, matBack: m2 };
     g.add(s);
 
     // Name & Title
     const ntMat = new THREE.SpriteMaterial({ map: createNameTagTexture(name), depthWrite: false, depthTest: false });
     const nt = new THREE.Sprite(ntMat);
-    nt.position.y = 2.1; nt.scale.set(3, 0.75, 1); nt.name = "nameTag";
+    nt.position.y = 3.05; nt.scale.set(3, 0.75, 1); nt.name = "nameTag";
     nt.renderOrder = 100;
     g.add(nt);
 
@@ -5605,17 +7767,17 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
     if (tTex) {
         const titleMat = new THREE.SpriteMaterial({ map: tTex, depthWrite: false, depthTest: false });
         const titleSprite = new THREE.Sprite(titleMat);
-        titleSprite.position.y = 2.5; titleSprite.scale.set(3, 0.75, 1);
+        titleSprite.position.y = 3.45; titleSprite.scale.set(3, 0.75, 1);
         titleSprite.name = "titleSprite";
         titleSprite.renderOrder = 101;
-        titleSprite.visible = saveState.showTitles;
+        titleSprite.visible = hudVisible && saveState.showTitles;
         g.add(titleSprite);
     }
 
     const st = createSpeakerTexture();
     const sm = new THREE.SpriteMaterial({ map: st, transparent: true, depthWrite: false, depthTest: false });
     const sp = new THREE.Sprite(sm);
-    sp.position.y = 3.0; sp.scale.set(0.5, 0.5, 1); sp.name = "talkingIcon"; sp.visible = false;
+    sp.position.y = 3.95; sp.scale.set(0.5, 0.5, 1); sp.name = "talkingIcon"; sp.visible = false;
     sp.renderOrder = 102;
     g.add(sp);
 
@@ -5633,7 +7795,7 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
 
     // 2. Position at Right Hand
     // x=0.6 (Right shoulder), y=0.8 (Hand height), z=0.1 (Slightly forward)
-    r.position.set(0.6, 0.8, 0.1);
+    r.position.set(0.6, 0.96, 0.1);
 
     // 3. Rotation
     // Y = -90 degrees (-1.57 rad): Points the flat plane forward (Z-axis).
@@ -5834,6 +7996,7 @@ function setupInputs() {
             if (canSell) sellFish();
             else if (interactTarget === 'stylist') toggleShop();
             else if (interactTarget === 'bait') toggleBaitShop();
+            else if (interactTarget === 'tutorial') toggleTutorial();
             else if (interactTarget === 'lava_keeper') {
                 if (saveState.lavaUnlocked) {
                     enterLavaWorld();
@@ -5852,14 +8015,33 @@ function setupInputs() {
                     }
                 }
             }
+            // Try to pick nearby flower
+            else {
+                let pickedFlower = false;
+                for (let i = 0; i < pickableFlowers.length; i++) {
+                    const flower = pickableFlowers[i];
+                    if (flower && !flower.userData.isPicked && flower.visible) {
+                        const dist = player.position.distanceTo(flower.position);
+                        if (dist < 2) {
+                            pickFlower(i);
+                            pickedFlower = true;
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
-        // --- TOOLS ---
+        // --- TOOLS (HOTBAR 1-5) ---
+        if (e.key === '1') selectTool(0);
+        if (e.key === '2') selectTool(1);
+        if (e.key === '3') selectTool(2);
+        if (e.key === '4') selectTool(3);
+        if (e.key === '5') selectTool(4);
+        if (e.key === '6') selectTool(5);
+
         if (e.code === k.voice) toggleMic();
-        if (e.code === k.guitar) toggleGuitar();
-        if (e.code === k.glove) toggleGlove();
         if (e.code === k.showFish) toggleShowFish();
-        if (e.code === 'KeyN') toggleEmptyHands(); // 'N' for Nothing/Empty
         if (e.code === k.hideHud) toggleHud();
 
         // Meow
@@ -5907,6 +8089,29 @@ function setupInputs() {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         if (e.button === 0) { isLeftMouseDown = true; handleAction(true); }
         else if (e.button === 2) { isRightMouseDown = true; renderer.domElement.requestPointerLock(); }
+
+        // AXE CHOPPING (Left Click)
+        if (e.button === 0 && saveState.unlockedTools[saveState.activeToolIndex] === 'axe') {
+            // Raycast for trees
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+            // Check against treeColliders (We need mesh references really, treeMeshes)
+            // We can check intersections with 'scene.children' filtering for rocks/trees
+            const intersects = raycaster.intersectObjects(treeMeshes, false);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                if (hit.distance < 8) { // Range check
+                    // Find index in treeMeshes
+                    const idx = treeMeshes.indexOf(hit.object);
+                    if (idx !== -1) {
+                        chopTree(idx);
+                        // Broadcast
+                        broadcastToClients({ type: 'chop_tree', index: idx });
+                    }
+                }
+            }
+        }
     };
 
     document.onmouseup = e => {
@@ -6103,9 +8308,10 @@ function setupInputs() {
     // --- UPDATED MOBILE ACTION HANDLER ---
     btnAct.ontouchstart = e => {
         stopCam(e);
-        if (canSell) sellFish();
+        if (canSell) toggleMerchant();
         else if (interactTarget === 'stylist') toggleShop();
         else if (interactTarget === 'bait') toggleBaitShop();
+        else if (interactTarget === 'tutorial') toggleTutorial();
 
         // --- ADDED LAVA KEEPER CHECK FOR MOBILE ---
         else if (interactTarget === 'lava_keeper') {
@@ -6195,8 +8401,46 @@ function setupInputs() {
 }
 
 
-
+let chopInterval = null;
 function handleAction(down) {
+
+    // --- AXE LOGIC (Block Fishing) ---
+    if (saveState.activeToolIndex === 2) { // Axe
+        if (down) {
+            // Start Auto-Chop
+            if (chopInterval) clearInterval(chopInterval);
+            performChop();
+            chopInterval = setInterval(performChop, 500);
+        } else {
+            // Stop Auto-Chop
+            if (chopInterval) clearInterval(chopInterval);
+            chopInterval = null;
+
+            // Reset Axe Rotation
+            const axe = player.getObjectByName("axe");
+            if (axe) axe.rotation.set(-0.2, -Math.PI / 2, 0);
+        }
+        return;
+    }
+
+    // --- PICKAXE LOGIC ---
+    if (saveState.activeToolIndex === 5) { // Pickaxe
+        if (down) {
+            // Start Auto-Mine
+            if (chopInterval) clearInterval(chopInterval);
+            performMine();
+            chopInterval = setInterval(performMine, 500);
+        } else {
+            // Stop Auto-Mine
+            if (chopInterval) clearInterval(chopInterval);
+            chopInterval = null;
+
+            // Reset Pickaxe Rotation
+            const pick = player.getObjectByName("pickaxe");
+            if (pick) pick.rotation.set(-0.2, -Math.PI / 2, 0);
+        }
+        return;
+    }
 
     // --- NEW: COOLDOWN CHECK ---
     if (Date.now() - lastCatchTime < 500) {
@@ -6293,9 +8537,72 @@ function releaseCast() {
         fishingZone = 'secret';
     } else if (dist < LAKE_RADIUS) {
         fishingZone = 'lake';
-    } else {
-        stopFishing(false, "Can't fish on land!");
-        return;
+    }
+    // Check Pond (Light Pond at -60, -30)
+    else if (window.pondCollider) {
+        const distPond = Math.sqrt(
+            Math.pow(targetPos.x - window.pondCollider.x, 2) +
+            Math.pow(targetPos.z - window.pondCollider.z, 2)
+        );
+        // Dark Pond at (60, 50)
+        const distDarkPond = Math.sqrt(
+            Math.pow(targetPos.x - 60, 2) +
+            Math.pow(targetPos.z - 50, 2)
+        );
+        if (distPond < window.pondCollider.radius) {
+            fishingZone = 'pond';
+        } else if (distDarkPond < 14) {
+            fishingZone = 'pond'; // Dark pond uses same fish pool
+        } else {
+            // Check River
+            let inRiver = false;
+            if (window.riverColliders) {
+                for (const rc of window.riverColliders) {
+                    const distRiver = Math.sqrt(
+                        Math.pow(targetPos.x - rc.x, 2) +
+                        Math.pow(targetPos.z - rc.z, 2)
+                    );
+                    if (distRiver < rc.radius) {
+                        inRiver = true;
+                        break;
+                    }
+                }
+            }
+            if (inRiver) {
+                fishingZone = 'river';
+            }
+            // Check Ocean (beyond island radius)
+            else if (dist > ISLAND_RADIUS - 5) {
+                fishingZone = 'ocean';
+            } else {
+                stopFishing(false, "Can't fish on land!");
+                return;
+            }
+        }
+    }
+    // Fallback checks for river/ocean if pond not loaded yet
+    else {
+        let inRiver = false;
+        if (window.riverColliders) {
+            for (const rc of window.riverColliders) {
+                const distRiver = Math.sqrt(
+                    Math.pow(targetPos.x - rc.x, 2) +
+                    Math.pow(targetPos.z - rc.z, 2)
+                );
+                if (distRiver < rc.radius) {
+                    inRiver = true;
+                    break;
+                }
+            }
+        }
+        if (inRiver) {
+            fishingZone = 'river';
+        } else if (dist > ISLAND_RADIUS - 5) {
+            fishingZone = 'ocean';
+        } else {
+            stopFishing(false, "Can't fish on land!");
+            return;
+        }
     }
 
     if (activeBaitId !== 'none') {
@@ -6367,11 +8674,26 @@ function createBobber(targetPos) {
     // Use selected skin
     bobber = createBobberMesh(saveState.currentBobber);
 
-    // Set position
-    bobber.position.copy(targetPos);
+    // Start bobber at player height, it will fall to water
+    bobber.position.set(targetPos.x, player.position.y + 2, targetPos.z);
 
-    // Save initial Y for the bobbing animation in the game loop
-    bobberInitialY = targetPos.y;
+    // Initialize bobber velocity for gravity
+    window.bobberVelocityY = 0;
+
+    // Determine water level based on location (ocean is at Y=-3, ponds/lake at Y=0)
+    const dist = Math.sqrt(targetPos.x * targetPos.x + targetPos.z * targetPos.z);
+    if (dist > ISLAND_RADIUS - 5 || targetPos.z > 100) {
+        // Ocean (beyond island or on dock)
+        window.bobberTargetY = -2.9;
+    } else {
+        // Lake, pond, or secret pool
+        window.bobberTargetY = 0.1;
+    }
+
+    window.bobberFalling = true;
+
+    // Save initial Y for the bobbing animation (will be set when bobber lands)
+    bobberInitialY = window.bobberTargetY;
 
     scene.add(bobber);
 }
@@ -6481,7 +8803,7 @@ function animatePunch(mesh) {
         if (p < 1) glove.position.z = originalZ + (punchZ - originalZ) * p;
         else glove.position.z = punchZ - (punchZ - originalZ) * (p - 1);
 
-        glove.position.y = 1.0 + Math.random() * 0.1;
+        glove.position.y = 1.25 + Math.random() * 0.1;
 
         // Track ID
         punchAnimFrameId = requestAnimationFrame(loop);
@@ -6530,6 +8852,12 @@ function startMinigame() {
     // BAR SIZE (formerly Click Power): Base 15% + 1.5% per level
     const powerLvl = saveState.clickPowerLevel || 1;
     let barSize = 15 + (powerLvl * 1.5);
+
+    // FISHING SKILL BONUS: +0.15% bar size per fishing level (up to +14.85% at level 99)
+    if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 } };
+    const fishingXP = saveState.skills.fishing?.xp || 0;
+    const fishingLevel = getLevelFromXP(fishingXP);
+    barSize += fishingLevel * 0.15;
 
     // STABILITY (formerly Auto Reel): Reduces drain rate
     const stabLvl = saveState.autoReelLevel || 0;
@@ -6625,6 +8953,17 @@ function stopFishing(success, msg) {
             broadcastSound('catch');
             saveState.inventory.push(minigame.targetFish);
             updateJournal(minigame.targetFish, minigame.targetFish.tierId);
+
+            // Award Fishing XP based on rarity
+            let fishingXPGain = 20; // Base XP
+            const rarity = minigame.targetFish.rarity;
+            if (rarity === 'Common') fishingXPGain = 15;
+            else if (rarity === 'Uncommon') fishingXPGain = 30;
+            else if (rarity === 'Rare') fishingXPGain = 60;
+            else if (rarity === 'Epic') fishingXPGain = 120;
+            else if (rarity === 'Legendary') fishingXPGain = 250;
+            addSkillXP('fishing', fishingXPGain);
+
             saveGame();
 
             const tierStr = minigame.targetFish.tierId !== 'normal' ? ` (${minigame.targetFish.tierName})` : '';
@@ -6792,7 +9131,9 @@ function spawnGhostMesh(x, z) {
     s.material = s.userData.matFront;
     s.material.needsUpdate = true;
 
-    ghostMesh.position.set(x, 0, z);
+    // Get terrain height for proper Y positioning
+    const terrainY = (typeof getTerrainHeight === 'function') ? getTerrainHeight(x, z) : 0;
+    ghostMesh.position.set(x, terrainY, z);
     scene.add(ghostMesh);
 
     ghostDespawnTime = Date.now() + 30000;
@@ -6835,7 +9176,7 @@ function updateGhost() {
         ghostMesh.lookAt(player.position.x, 0, player.position.z);
         updateSpriteDirection(ghostMesh, camera.position);
         const s = ghostMesh.getObjectByName('playerSprite');
-        if (s) s.position.y = 1.0 + Math.sin(now * 0.002) * 0.05;
+        if (s) s.position.y = 1.46875 + Math.sin(now * 0.002) * 0.07;
     }
 }
 
@@ -6930,6 +9271,7 @@ function animate() {
     if (npcMerchant) updateSpriteDirection(npcMerchant, camera.position);
     if (npcStylist) updateSpriteDirection(npcStylist, camera.position);
     if (npcBait) updateSpriteDirection(npcBait, camera.position);
+    if (npcTutorial) updateSpriteDirection(npcTutorial, camera.position);
     if (npcLavaKeeper) updateSpriteDirection(npcLavaKeeper, camera.position);
     // NEW: Update Lava World NPC Sprites
     if (npcLavaMerchant) updateSpriteDirection(npcLavaMerchant, camera.position);
@@ -7007,7 +9349,7 @@ function animate() {
 
         // 1. DETERMINE FLOOR HEIGHT
         // Main World & Lava World both use Y=0 as the ground level
-        let floorY = 0;
+        let floorY = getTerrainHeight(player.position.x, player.position.z);
         if (isInVoid) floorY = 2000;
 
         // 2. KNOCKBACK (PvP)
@@ -7030,6 +9372,26 @@ function animate() {
                         testPos.z > b.minZ - 0.5 && testPos.z < b.maxZ + 0.5) hitWall = true;
                 }
                 if (testPos.length() < LAKE_RADIUS + 0.5) hitWall = true;
+
+                // Pond collision
+                if (window.pondCollider) {
+                    const distPond = Math.sqrt(
+                        Math.pow(testPos.x - window.pondCollider.x, 2) +
+                        Math.pow(testPos.z - window.pondCollider.z, 2)
+                    );
+                    if (distPond < window.pondCollider.radius + 0.5) hitWall = true;
+                }
+
+                // River collision
+                if (window.riverColliders) {
+                    for (const rc of window.riverColliders) {
+                        const distRiver = Math.sqrt(
+                            Math.pow(testPos.x - rc.x, 2) +
+                            Math.pow(testPos.z - rc.z, 2)
+                        );
+                        if (distRiver < rc.radius + 0.5) hitWall = true;
+                    }
+                }
             }
             // (Simplified knockback checks for other worlds)
 
@@ -7089,6 +9451,18 @@ function animate() {
                     if (np.x > b.minX - 0.5 && np.x < b.maxX + 0.5 &&
                         np.z > b.minZ - 0.5 && np.z < b.maxZ + 0.5) col = true;
                 }
+                // Water Collision (Lake, Pond, Dark Pond)
+                if (np.length() < LAKE_RADIUS + 0.5) col = true; // Main Lake
+
+                if (window.pondCollider) {
+                    if (np.distanceTo(_optVec3.set(window.pondCollider.x, 0, window.pondCollider.z)) < window.pondCollider.radius + 0.5) col = true;
+                }
+
+                if (window.darkPondCollider) {
+                    if (np.distanceTo(_optVec3.set(window.darkPondCollider.x, 0, window.darkPondCollider.z)) < window.darkPondCollider.radius + 0.5) col = true;
+                }
+
+                // River checks removed (River is gone)
             }
 
             if (!col) {
@@ -7109,7 +9483,7 @@ function animate() {
             // Animation
             const time = Date.now() * 0.012;
             if (sprite) {
-                sprite.position.y = 1.0 + Math.abs(Math.sin(time)) * 0.2;
+                sprite.position.y = 1.46875 + Math.abs(Math.sin(time)) * 0.3;
                 sprite.rotation.z = Math.sin(time) * 0.15;
             }
             if (audioCtx.currentTime - lastFootstepTime > 0.35) {
@@ -7118,7 +9492,7 @@ function animate() {
             }
         } else {
             if (sprite) {
-                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.0, 10 * dt);
+                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.46875, 10 * dt);
                 sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
             }
         }
@@ -7159,7 +9533,9 @@ function animate() {
         }
         else if (!isInVoid) {
             // Main Island Boundaries
-            if (player.position.length() > ISLAND_RADIUS - 1) player.position.setLength(ISLAND_RADIUS - 1);
+            // Exception: Allow walking past edge if on the dock (Z > 85, X close to 0)
+            const onDock = (player.position.z > 85 && player.position.z < 170 && Math.abs(player.position.x) < 6);
+            if (!onDock && player.position.length() > ISLAND_RADIUS - 1) player.position.setLength(ISLAND_RADIUS - 1);
             if (player.position.length() < LAKE_RADIUS + 0.5) player.position.setLength(LAKE_RADIUS + 0.5);
         }
 
@@ -7181,8 +9557,8 @@ function animate() {
             player.visible = true;
             camera.position.x = player.position.x + Math.sin(cameraRotationY) * cameraDistance * Math.cos(cameraRotationX);
             camera.position.z = player.position.z + Math.cos(cameraRotationY) * cameraDistance * Math.cos(cameraRotationX);
-            camera.position.y = player.position.y + Math.sin(cameraRotationX) * cameraDistance + 3;
-            camera.lookAt(player.position.x, player.position.y + 1, player.position.z);
+            camera.position.y = player.position.y + Math.sin(cameraRotationX) * cameraDistance + 3.47;
+            camera.lookAt(player.position.x, player.position.y + 1.47, player.position.z);
         }
 
 
@@ -7210,6 +9586,36 @@ function animate() {
                 const distToSecret = Math.sqrt(markerPos.x * markerPos.x + (markerPos.z - -95) * (markerPos.z - -95));
                 const distFromLakeCenter = Math.sqrt(markerPos.x * markerPos.x + markerPos.z * markerPos.z);
                 if (distToSecret < 12 || distFromLakeCenter < LAKE_RADIUS) validCast = true;
+
+                // Check pond (light pond)
+                if (window.pondCollider) {
+                    const distPond = Math.sqrt(
+                        Math.pow(markerPos.x - window.pondCollider.x, 2) +
+                        Math.pow(markerPos.z - window.pondCollider.z, 2)
+                    );
+                    if (distPond < window.pondCollider.radius) validCast = true;
+                }
+
+                // Check dark pond (60, 50)
+                const distDarkPond = Math.sqrt(
+                    Math.pow(markerPos.x - 60, 2) +
+                    Math.pow(markerPos.z - 50, 2)
+                );
+                if (distDarkPond < 14) validCast = true;
+
+                // Check river
+                if (window.riverColliders) {
+                    for (const rc of window.riverColliders) {
+                        const distRiver = Math.sqrt(
+                            Math.pow(markerPos.x - rc.x, 2) +
+                            Math.pow(markerPos.z - rc.z, 2)
+                        );
+                        if (distRiver < rc.radius) validCast = true;
+                    }
+                }
+
+                // Check ocean (beyond island)
+                if (distFromLakeCenter > ISLAND_RADIUS - 5) validCast = true;
             }
 
             if (validCast) {
@@ -7228,6 +9634,7 @@ function animate() {
         const prompt = document.getElementById('npc-prompt');
         const btn = isMobile ? document.getElementById('btn-action') : null;
         prompt.style.display = 'none';
+        prompt.style.color = 'white'; // Reset color
         if (btn) btn.innerText = "FISH";
 
         // --- MAIN WORLD INTERACTIONS ---
@@ -7239,8 +9646,8 @@ function animate() {
 
             if (dMerchant < 3) {
                 canSell = true; interactTarget = 'merchant';
-                prompt.innerText = "PRESS E TO SELL"; prompt.style.display = 'block';
-                if (btn) btn.innerText = "SELL";
+                prompt.innerText = "PRESS E TO TRADE"; prompt.style.display = 'block';
+                if (btn) btn.innerText = "TRADE";
             }
             else if (dStylist < 3) {
                 interactTarget = 'stylist';
@@ -7251,6 +9658,11 @@ function animate() {
                 interactTarget = 'bait';
                 prompt.innerText = "PRESS E FOR BAIT"; prompt.style.display = 'block';
                 if (btn) btn.innerText = "BAIT";
+            }
+            else if (npcTutorial && player.position.distanceTo(npcTutorial.position) < 3) {
+                interactTarget = 'tutorial';
+                prompt.innerText = "PRESS E FOR GUIDE"; prompt.style.display = 'block';
+                if (btn) btn.innerText = "GUIDE";
             }
             else if (dLava < 3) {
                 interactTarget = 'lava_keeper';
@@ -7288,6 +9700,30 @@ function animate() {
                 if (btn) btn.innerText = "BAIT";
             }
         }
+
+        // --- FLOWER PROMPT ---
+        if (prompt.style.display === 'none' && !isInVoid && !isInLavaWorld) {
+            for (let i = 0; i < pickableFlowers.length; i++) {
+                const flower = pickableFlowers[i];
+                if (flower && !flower.userData.isPicked && flower.visible) {
+                    const dist = player.position.distanceTo(flower.position);
+                    if (dist < 2.5) { // Slightly larger radius than pick range (2) so prompt appears before click works
+                        const typeId = flower.userData.typeId || 'daisy';
+                        const flowerType = FLOWER_TYPES.find(f => f.id === typeId) || FLOWER_TYPES[0];
+
+                        prompt.innerText = `PRESS E TO COLLECT ${flowerType.name.toUpperCase()}`;
+                        prompt.style.display = 'block';
+                        prompt.style.color = flowerType.color; // Bonus: color match!
+                        if (btn) btn.innerText = "COLLECT";
+
+                        // Reset color if we move away? No, innerText rewrite handles it.
+                        // But we should ensure default white color for other prompts next frame.
+                        // Actually, prompts are recreated/reset every frame: prompt.style.display = 'none';
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     // --- REMOTE PLAYERS ---
@@ -7302,10 +9738,10 @@ function animate() {
             updateSpriteDirection(p.mesh, camera.position);
             if (isMoving) {
                 const time = Date.now() * 0.012;
-                s.position.y = 1.0 + Math.abs(Math.sin(time)) * 0.2;
+                s.position.y = 1.46875 + Math.abs(Math.sin(time)) * 0.3;
                 s.rotation.z = Math.sin(time) * 0.15;
             } else {
-                s.position.y = THREE.MathUtils.lerp(s.position.y, 1.0, 10 * dt);
+                s.position.y = THREE.MathUtils.lerp(s.position.y, 1.46875, 10 * dt);
                 s.rotation.z = THREE.MathUtils.lerp(s.rotation.z, 0, 10 * dt);
             }
         }
@@ -7322,8 +9758,23 @@ function animate() {
         }
     });
 
-    // Bobber Animation (Waiting)
-    if (bobber && fishingState === 'waiting') {
+    // Bobber Gravity (when falling)
+    if (bobber && window.bobberFalling) {
+        window.bobberVelocityY -= 20 * dt; // Gravity
+        bobber.position.y += window.bobberVelocityY * dt;
+
+        // Hit water?
+        if (bobber.position.y <= window.bobberTargetY) {
+            bobber.position.y = window.bobberTargetY;
+            window.bobberFalling = false;
+            bobberInitialY = window.bobberTargetY;
+            // Play splash sound
+            if (typeof Sound !== 'undefined') Sound.playSpatial('cast', bobber.position);
+        }
+    }
+
+    // Bobber Animation (Waiting - only when not falling)
+    if (bobber && fishingState === 'waiting' && !window.bobberFalling) {
         // Use bobberInitialY for consistent water level relative to cast
         bobber.position.y = bobberInitialY + Math.sin(Date.now() * 0.003) * 0.05;
     }
@@ -7477,10 +9928,4005 @@ function openPatreon() {
 
 // Run when DOM is ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initPatreonBanner);
+    document.addEventListener('DOMContentLoaded', () => {
+        initPatreonBanner();
+        setupHotbar();
+    });
 } else {
     // DOM is already ready, run immediately
     initPatreonBanner();
+    setupHotbar(); // Initialize Hotbar
+}
+
+// --- SKILLS UI ---
+window.toggleSkillsUI = function () {
+    const ui = document.getElementById('skills-ui');
+    const isOpen = ui.style.display === 'flex';
+
+    if (!isOpen) {
+        ui.style.display = 'flex';
+        renderSkillsUI();
+        if (document.pointerLockElement) document.exitPointerLock();
+    } else {
+        ui.style.display = 'none';
+        const canvas = renderer?.domElement;
+        if (canvas && !document.pointerLockElement) canvas.requestPointerLock();
+    }
+};
+
+function renderSkillsUI() {
+    const list = document.getElementById('skills-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 }, floristry: { xp: 0 } };
+
+    const skillData = [
+        { id: 'fishing', name: 'Fishing', icon: '🎣', color: '#4a90d9' },
+        { id: 'lumberjack', name: 'Lumberjack', icon: '🪓', color: '#8B4513' },
+        { id: 'mining', name: 'Mining', icon: '⛏️', color: '#808080' },
+        { id: 'floristry', name: 'Floristry', icon: '🌸', color: '#FF69B4' }
+    ];
+
+    skillData.forEach(skill => {
+        const xp = saveState.skills[skill.id]?.xp || 0;
+        const level = getLevelFromXP(xp);
+        const xpForCurrent = getXPForLevel(level);
+        const xpForNext = level < 99 ? getXPForLevel(level + 1) : xp;
+        const xpProgress = level >= 99 ? 100 : ((xp - xpForCurrent) / (xpForNext - xpForCurrent)) * 100;
+
+        const div = document.createElement('div');
+        div.style.cssText = 'background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;';
+        div.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 18px;">${skill.icon} ${skill.name}</span>
+                <span style="font-size: 20px; font-weight: bold; color: ${skill.color};">Level ${level}</span>
+            </div>
+            <div style="background: #333; border-radius: 4px; height: 12px; overflow: hidden;">
+                <div style="width: ${xpProgress.toFixed(1)}%; height: 100%; background: ${skill.color}; transition: width 0.3s;"></div>
+            </div>
+            <div style="font-size: 11px; color: #888; margin-top: 4px; text-align: right;">
+                ${level >= 99 ? 'MAX LEVEL' : `${xp.toLocaleString()} / ${xpForNext.toLocaleString()} XP`}
+            </div>
+        `;
+        list.appendChild(div);
+    });
 }
 
 
+// --- HOTBAR & AXE SYSTEM ---
+
+function setupHotbar() {
+    const container = document.getElementById('hotbar-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    for (let i = 0; i < 6; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'hotbar-slot';
+        slot.onclick = () => selectTool(i);
+
+        const num = document.createElement('span');
+        num.className = 'hotbar-number';
+        num.innerText = i + 1;
+        slot.appendChild(num);
+
+        const icon = document.createElement('span');
+        icon.className = 'hotbar-icon';
+        icon.id = `hotbar-icon-${i}`;
+        slot.appendChild(icon);
+
+        container.appendChild(slot);
+    }
+    updateHotbarVisuals();
+}
+
+function updateHotbarVisuals() {
+    for (let i = 0; i < 6; i++) {
+        const iconEl = document.getElementById(`hotbar-icon-${i}`);
+        if (!iconEl) continue;
+        const slotEl = iconEl.parentElement;
+
+        // Slot order: Rod, Hands, Axe, Guitar, Glove, Pickaxe
+        const toolMap = ['rod', 'hands', 'axe', 'guitar', 'glove', 'pickaxe'];
+        const toolId = toolMap[i];
+
+        // Handle undefined saveState gracefully if init is weird
+        if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod', 'glove'];
+
+        const isUnlocked = saveState.unlockedTools.includes(toolId);
+
+        if (isUnlocked) {
+            const tool = TOOLS.find(t => t.id === toolId);
+            iconEl.innerText = tool ? tool.icon : '?';
+            slotEl.style.opacity = 1;
+        } else {
+            iconEl.innerText = '🔒';
+            slotEl.style.opacity = 0.5;
+        }
+
+        if (i === saveState.activeToolIndex) slotEl.classList.add('active');
+        else slotEl.classList.remove('active');
+    }
+}
+
+function selectTool(index) {
+    // Slot order: Rod, Hands, Axe, Guitar, Glove, Pickaxe
+    const toolMap = ['rod', 'hands', 'axe', 'guitar', 'glove', 'pickaxe'];
+    const toolId = toolMap[index];
+
+    if (!saveState.unlockedTools.includes(toolId)) {
+        showToast("Tool locked!");
+        return;
+    }
+
+    // Don't re-select if already active
+    if (saveState.activeToolIndex === index) {
+        return;
+    }
+
+    saveState.activeToolIndex = index;
+    updateHotbarVisuals();
+    saveGame();
+
+    // --- RESET ALL TOOLS ---
+    // 1. Clear held fish
+    if (localHeldFish) {
+        localHeldFish = null;
+        if (fishHoldTimer) clearTimeout(fishHoldTimer);
+        fishHoldTimer = null;
+    }
+
+    // 2. Disable guitar if not selected
+    if (toolId !== 'guitar' && isGuitarActive) toggleGuitar();
+
+    // 3. Disable glove if not selected  
+    if (toolId !== 'glove' && isGloveActive) toggleGlove();
+
+    // 4. Hide rod if not selected
+    const rod = player.getObjectByName("rod");
+    if (rod) rod.visible = (toolId === 'rod');
+
+    // 5. Hide axe if not selected
+    const axe = player.getObjectByName("axe");
+    if (axe) axe.visible = (toolId === 'axe');
+
+    // 6. Hide pickaxe if not selected
+    const pick = player.getObjectByName("pickaxe");
+    if (pick) pick.visible = (toolId === 'pickaxe');
+
+    // 7. Set isHandsHidden based on tool (hands = hidden means empty hands mode)
+    isHandsHidden = (toolId === 'hands');
+
+    // --- EQUIP SELECTED TOOL ---
+    if (toolId === 'guitar') {
+        if (!isGuitarActive) toggleGuitar();
+    } else if (toolId === 'glove') {
+        if (!isGloveActive) toggleGlove();
+    } else if (toolId === 'axe') {
+        equipAxe();
+    } else if (toolId === 'pickaxe') {
+        equipPickaxe();
+        if (pick) pick.visible = false;
+    }
+}
+
+// --- HELPER: AXE TEXTURE ---
+function createAxeTexture() {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const ctx = c.getContext('2d');
+
+    // Handle (Diagonal)
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(10, 54); ctx.lineTo(54, 10); ctx.stroke();
+
+    // Axe Head
+    ctx.fillStyle = '#aaa';
+    ctx.beginPath();
+    // Blade shape
+    ctx.moveTo(54, 10);
+    ctx.quadraticCurveTo(40, 0, 30, 10); // Top curve
+    ctx.lineTo(20, 20); // Edge
+    ctx.quadraticCurveTo(40, 30, 54, 10);
+    ctx.fill();
+
+    // Blade Edge
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(20, 20);
+    ctx.quadraticCurveTo(25, 15, 30, 10);
+    ctx.stroke();
+
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    return t;
+}
+
+function equipAxe() {
+    let axe = player.getObjectByName("axe");
+    if (!axe) {
+        // Create 2D Axe Plane (Like Rod)
+        const tex = createAxeTexture();
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+        const geo = new THREE.PlaneGeometry(2.5, 2.5);
+
+        // Pivot adjustment
+        geo.translate(0.5, 0.5, 0);
+
+        axe = new THREE.Mesh(geo, mat);
+        axe.name = "axe";
+
+        // Match Rod Position/Rotation
+        axe.position.set(0.6, 0.96, 0.1);
+        axe.rotation.set(-0.2, -Math.PI / 2, 0);
+        axe.scale.x = -1; // FLIP SPRITE
+
+        player.add(axe);
+    }
+    axe.visible = true;
+    showToast("Axe Equipped! Hold Click to chop.");
+}
+
+function createPickaxeTexture() {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const ctx = c.getContext('2d');
+
+    // Handle (Diagonal)
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(10, 54); ctx.lineTo(54, 10); ctx.stroke();
+
+    // Pickaxe Head (Curved Arc)
+    ctx.strokeStyle = '#555'; // Dark Grey
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    // Arc across the top
+    ctx.moveTo(35, 5);
+    ctx.quadraticCurveTo(54, 10, 60, 25); // Right point
+    ctx.moveTo(35, 5);
+    ctx.quadraticCurveTo(25, 15, 20, 25); // Left point (shorter?)
+    // Actually let's draw a nice pick shape
+    ctx.moveTo(15, 25);
+    ctx.quadraticCurveTo(34, 0, 55, 15);
+    ctx.stroke();
+
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    return t;
+}
+
+function equipPickaxe() {
+    let pick = player.getObjectByName("pickaxe");
+    if (!pick) {
+        const tex = createPickaxeTexture();
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+        const geo = new THREE.PlaneGeometry(2.5, 2.5);
+        geo.translate(0.5, 0.5, 0);
+
+        pick = new THREE.Mesh(geo, mat);
+        pick.name = "pickaxe";
+
+        pick.position.set(0.6, 0.96, 0.1);
+        pick.rotation.set(-0.2, -Math.PI / 2, 0);
+        pick.scale.x = -1; // Flip like axe
+
+        player.add(pick);
+    }
+    pick.visible = true;
+    showToast("Pickaxe Equipped! Hold Click to mine.");
+}
+
+function performChop() {
+    // Animate Axe
+    const axe = player.getObjectByName("axe");
+    if (axe) {
+        // Swing Animation (Twitch Y rotation)
+        const startRot = -Math.PI / 2;
+        axe.rotation.y = startRot - 0.5;
+        setTimeout(() => { if (axe) axe.rotation.y = startRot; }, 100);
+    }
+
+    // Raycast from player in facing direction (not camera)
+    const raycaster = new THREE.Raycaster();
+    const playerPos = player.position.clone();
+    playerPos.y += 1; // Raycast from player chest height
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
+    raycaster.set(playerPos, dir);
+    const intersects = raycaster.intersectObjects(treeMeshes, true); // Recursive
+
+    if (intersects.length > 0) {
+        const hit = intersects[0];
+        if (hit.distance < 6) { // Closer range since it's from player
+            let target = hit.object;
+            while (target && !treeMeshes.includes(target)) {
+                target = target.parent;
+            }
+            const idx = treeMeshes.indexOf(target);
+            if (idx !== -1) chopTree(idx);
+        }
+    }
+}
+
+function chopTree(index, fromNetwork = false) {
+    if (index < 0 || index >= treeMeshes.length) return;
+    const mesh = treeMeshes[index];
+    if (!mesh || mesh.userData.isStump) return;
+
+    // Skip rocks - they can only be mined with the pickaxe
+    if (mesh.userData.isRock) return;
+
+    // Initialize Health
+    if (typeof mesh.userData.health === 'undefined') {
+        const size = (mesh.scale.x || 1);
+        mesh.userData.maxHealth = Math.floor(size * 4);
+        if (mesh.userData.maxHealth < 2) mesh.userData.maxHealth = 2;
+        mesh.userData.health = mesh.userData.maxHealth;
+    }
+
+    // Decrement Health
+    mesh.userData.health--;
+
+    // Play Sound
+    Sound.playSpatial('punch'); // Hit sound
+
+    // VISUAL FEEDBACK (Shake)
+    if (mesh.userData.health > 0) {
+        // Small shake
+        const origX = mesh.position.x;
+        mesh.position.x += (Math.random() - 0.5) * 0.2;
+        setTimeout(() => mesh.position.x = origX, 50);
+        return; // NOT chopped yet
+    }
+
+    // --- TIMBER! (Health <= 0) ---
+
+    // Visual Transformation
+    mesh.scale.set(mesh.scale.x, 0.2, mesh.scale.z);
+
+    // Hide leaves (children 1, 2, 3) to make it look like a stump
+    // Child 0 is trunk
+    if (mesh.children && mesh.children.length > 1) {
+        for (let i = 1; i < mesh.children.length; i++) {
+            if (mesh.children[i]) mesh.children[i].visible = false;
+        }
+    }
+
+    mesh.userData.isStump = true;
+
+    // Respawn after 3 minutes
+    setTimeout(() => {
+        respawnTree(index);
+    }, 180000);
+
+    // Grant Wood (Only if local action)
+    if (!fromNetwork) {
+        // Get lumberjack level and determine wood type
+        if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 } };
+        const lumberjackXP = saveState.skills.lumberjack?.xp || 0;
+        const lumberjackLevel = getLevelFromXP(lumberjackXP);
+
+        const woodType = getResourceForLevel(lumberjackLevel, WOOD_TYPES);
+
+        // Add to typed inventory
+        if (!saveState.woodInventory) saveState.woodInventory = {};
+        saveState.woodInventory[woodType.id] = (saveState.woodInventory[woodType.id] || 0) + 1;
+
+        // Award XP
+        addSkillXP('lumberjack', woodType.xp);
+
+        saveGame();
+        showToast(`Chopped Tree! (+1 ${woodType.name}, +${woodType.xp} XP)`);
+
+        // Broadcast to others
+        const msg = { type: 'chop_tree', index: index };
+
+        // Send to Dedicated Server if connected
+        if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+            dedicatedSocket.send(JSON.stringify(msg));
+            // Sync resource inventories to server
+            dedicatedSocket.send(JSON.stringify({
+                type: 'syncResources',
+                woodInventory: saveState.woodInventory,
+                oreInventory: saveState.oreInventory || {},
+                wood: saveState.wood || 0,
+                stone: saveState.stone || 0,
+                skills: saveState.skills
+            }));
+        }
+        // Host Broadcast
+        else if (isHost) {
+            broadcastToClients(msg);
+        }
+        // Client Send to Host
+        else if (hostConn && hostConn.open) {
+            hostConn.send(msg);
+        }
+    }
+}
+
+function performMine() {
+    // Animate Pickaxe
+    const pick = player.getObjectByName("pickaxe");
+    if (pick) {
+        const startRot = -Math.PI / 2;
+        pick.rotation.y = startRot - 0.5;
+        setTimeout(() => { if (pick) pick.rotation.y = startRot; }, 100);
+    }
+
+    // Raycast from player in facing direction (not camera)
+    const raycaster = new THREE.Raycaster();
+    const playerPos = player.position.clone();
+    playerPos.y += 1; // Raycast from player chest height
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
+    raycaster.set(playerPos, dir);
+    const intersects = raycaster.intersectObjects(treeMeshes, true); // contains trees and rocks
+
+    if (intersects.length > 0) {
+        const hit = intersects[0];
+        if (hit.distance < 6) { // Closer range since it's from player
+            let target = hit.object;
+            // Rock mesh might be the hit object itself, but let's traverse up just in case
+            while (target && !treeMeshes.includes(target)) {
+                target = target.parent;
+            }
+            const idx = treeMeshes.indexOf(target);
+            if (idx !== -1) mineRock(idx);
+        }
+    }
+}
+
+function mineRock(index, fromNetwork = false) {
+    if (index < 0 || index >= treeMeshes.length) return;
+    const mesh = treeMeshes[index];
+    if (!mesh || !mesh.userData.isRock || mesh.visible === false) return;
+
+    // Initialize Health (Harder than trees)
+    if (typeof mesh.userData.health === 'undefined') {
+        const size = (mesh.scale.x || 1);
+        mesh.userData.maxHealth = Math.floor(size * 6); // Tougher
+        if (mesh.userData.maxHealth < 3) mesh.userData.maxHealth = 3;
+        mesh.userData.health = mesh.userData.maxHealth;
+    }
+
+    // Decrement Health
+    mesh.userData.health--;
+
+    // Play Sound
+    Sound.playSpatial('punch'); // Reuse punch for now
+
+    // VISUAL FEEDBACK (Shake)
+    if (mesh.userData.health > 0) {
+        const origX = mesh.position.x;
+        mesh.position.x += (Math.random() - 0.5) * 0.1; // Stiffer shake
+        setTimeout(() => mesh.position.x = origX, 50);
+        return;
+    }
+
+    // --- CRUMBLE! Shrink rock instead of hiding ---
+    mesh.userData.originalScale = mesh.scale.clone(); // Store original scale
+    mesh.scale.set(0.3, 0.3, 0.3); // Shrink to 30% size
+    mesh.userData.isMined = true;
+
+    // Respawn after 3 minutes
+    setTimeout(() => {
+        respawnRock(index);
+    }, 180000);
+
+    // Grant Ore
+    if (!fromNetwork) {
+        // Get mining level and determine ore type
+        if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 } };
+        const miningXP = saveState.skills.mining?.xp || 0;
+        const miningLevel = getLevelFromXP(miningXP);
+
+        const oreType = getResourceForLevel(miningLevel, ORE_TYPES);
+
+        // Add to typed inventory
+        if (!saveState.oreInventory) saveState.oreInventory = {};
+        saveState.oreInventory[oreType.id] = (saveState.oreInventory[oreType.id] || 0) + 1;
+
+        // Award XP
+        addSkillXP('mining', oreType.xp);
+
+        saveGame();
+        showToast(`Mined Rock! (+1 ${oreType.name}, +${oreType.xp} XP)`);
+
+        // Reset Health
+        mesh.userData.health = mesh.userData.maxHealth;
+
+        // Broadcast (reuse chop_tree type since it works by index + treeMeshes array)
+        // Actually, chop_tree logic in network listener calls chopTree().
+        // I should stick to chop_tree msg but handle index correctly on receiver?
+        // Wait, if I send 'chop_tree' index 50, receiver calls chopTree(50).
+        // chopTree(50) checks if it's a STUMP.
+        // But Rock doesn't have stump logic. It checks `isStump`.
+        // I need to update chopTree/mineRock checks or add a new msg type.
+        // For now, I'll send 'mine_rock' message.
+
+        const msg = { type: 'mine_rock', index: index };
+        if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+            dedicatedSocket.send(JSON.stringify(msg));
+            // Sync resource inventories to server
+            dedicatedSocket.send(JSON.stringify({
+                type: 'syncResources',
+                woodInventory: saveState.woodInventory || {},
+                oreInventory: saveState.oreInventory,
+                wood: saveState.wood || 0,
+                stone: saveState.stone || 0,
+                skills: saveState.skills
+            }));
+        } else if (isHost) {
+            broadcastToClients(msg);
+        } else if (hostConn && hostConn.open) {
+            hostConn.send(msg);
+        }
+    }
+}
+
+function respawnRock(index) {
+    if (index < 0 || index >= treeMeshes.length) return;
+    const mesh = treeMeshes[index];
+    if (mesh && mesh.userData.isRock) {
+        // Restore original scale
+        if (mesh.userData.originalScale) {
+            mesh.scale.copy(mesh.userData.originalScale);
+        } else {
+            mesh.scale.set(1, 1, 1);
+        }
+        mesh.userData.health = mesh.userData.maxHealth;
+        mesh.userData.isMined = false;
+    }
+}
+
+// Ensure init calls setupHotbar
+// (Hooked into end of file block)
+
+
+function mulberry32(a) { return function () { var t = a += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; } }
+function xmur3(str) { for (var i = 0, h = 1779033703 ^ str.length; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 3432918353), h = h << 13 | h >>> 19; return function () { h = Math.imul(h ^ h >>> 16, 2246822507); h = Math.imul(h ^ h >>> 13, 3266489909); return (h ^= h >>> 16) >>> 0; } }
+
+
+function loadSave() {
+    const s = localStorage.getItem('islandFisherSave');
+    if (s) {
+        try {
+            const d = JSON.parse(s);
+
+            // Initialize default unlocked tools checks immediately
+            if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod'];
+
+            // --- FIX: LOAD UNLOCKED TOOLS FROM SAVE ---
+            if (d.unlockedTools) {
+                saveState.unlockedTools = d.unlockedTools;
+            }
+
+            // Sync Legacy Flags (Fix for Hotbar not showing unlocked items)
+            if (d.hasGuitar) { saveState.hasGuitar = true; if (!saveState.unlockedTools.includes('guitar')) saveState.unlockedTools.push('guitar'); }
+            if (d.hasGlove) { saveState.hasGlove = true; if (!saveState.unlockedTools.includes('glove')) saveState.unlockedTools.push('glove'); }
+
+            // Basic stats
+            if (d.money !== undefined) saveState.money = d.money;
+            if (d.inventory) saveState.inventory = d.inventory;
+            if (d.displayName) saveState.displayName = d.displayName;
+            if (d.journal) saveState.journal = d.journal;
+
+            // Visuals
+            if (d.unlockedHats) saveState.unlockedHats = d.unlockedHats;
+            if (d.currentHat) saveState.currentHat = d.currentHat;
+            if (d.catColor) saveState.catColor = d.catColor;
+            if (d.bellyColor) saveState.bellyColor = d.bellyColor;
+            if (d.eyeColor) saveState.eyeColor = d.eyeColor;
+            if (d.species) saveState.species = d.species;
+
+            // New modular parts
+            if (d.currentEars) saveState.currentEars = d.currentEars;
+            if (d.currentEyes) saveState.currentEyes = d.currentEyes;
+            if (d.currentNose) saveState.currentNose = d.currentNose;
+            if (d.currentMisc) saveState.currentMisc = d.currentMisc;
+            if (d.currentTail) saveState.currentTail = d.currentTail;
+
+            // Part-specific colors
+            if (d.earsColor !== undefined) saveState.earsColor = d.earsColor;
+            if (d.noseColor !== undefined) saveState.noseColor = d.noseColor;
+            if (d.miscColor !== undefined) saveState.miscColor = d.miscColor;
+            if (d.tailColor !== undefined) saveState.tailColor = d.tailColor;
+
+            // Hair
+            if (d.unlockedHair) saveState.unlockedHair = d.unlockedHair;
+            if (d.currentHair) saveState.currentHair = d.currentHair;
+            if (d.hairColor !== undefined) saveState.hairColor = d.hairColor;
+
+            // Bobbers
+            if (d.unlockedBobbers) saveState.unlockedBobbers = d.unlockedBobbers;
+            if (d.currentBobber) saveState.currentBobber = d.currentBobber;
+
+            // Migration: Convert old species to new parts system
+            if (d.species && !d.currentEars) {
+                const speciesMapping = {
+                    cat: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'cat' },
+                    bunny: { ears: 'bunny', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'bunny' },
+                    dog: { ears: 'dog', eyes: 'standard', nose: 'dog', misc: 'none', tail: 'dog' },
+                    bear: { ears: 'bear', eyes: 'standard', nose: 'bear', misc: 'none', tail: 'bear' },
+                    fox: { ears: 'fox', eyes: 'standard', nose: 'dog', misc: 'fox_cheeks', tail: 'fox' },
+                    pig: { ears: 'pig', eyes: 'standard', nose: 'pig', misc: 'none', tail: 'pig' },
+                    dragon: { ears: 'dragon', eyes: 'dragon', nose: 'dragon', misc: 'dragon_wings', tail: 'dragon' },
+                    mouse: { ears: 'mouse', eyes: 'standard', nose: 'mouse', misc: 'none', tail: 'mouse' },
+                    duck: { ears: 'none', eyes: 'standard', nose: 'duck', misc: 'none', tail: 'duck' },
+                    axolotl: { ears: 'none', eyes: 'standard', nose: 'axolotl', misc: 'axolotl_gills', tail: 'axolotl' },
+                    raccoon: { ears: 'raccoon', eyes: 'standard', nose: 'dog', misc: 'raccoon_mask', tail: 'raccoon' },
+                    koala: { ears: 'koala', eyes: 'standard', nose: 'koala', misc: 'none', tail: 'none' },
+                    lion: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'lion_mane', tail: 'lion' },
+                    cow: { ears: 'cow', eyes: 'standard', nose: 'cow', misc: 'none', tail: 'cat' },
+                    frog: { ears: 'none', eyes: 'frog', nose: 'frog', misc: 'none', tail: 'frog' },
+                    monkey: { ears: 'monkey', eyes: 'standard', nose: 'monkey', misc: 'none', tail: 'monkey' },
+                    penguin: { ears: 'none', eyes: 'standard', nose: 'penguin', misc: 'penguin_belly', tail: 'penguin' },
+                };
+                const parts = speciesMapping[d.species] || speciesMapping.cat;
+                saveState.currentEars = parts.ears;
+                saveState.currentEyes = parts.eyes;
+                saveState.currentNose = parts.nose;
+                saveState.currentMisc = parts.misc;
+                saveState.currentTail = parts.tail;
+            }
+
+            // Items
+            if (d.baitInventory) saveState.baitInventory = d.baitInventory;
+            if (d.hasGlove !== undefined) saveState.hasGlove = d.hasGlove;
+            if (d.hasGuitar !== undefined) saveState.hasGuitar = d.hasGuitar;
+            if (d.autoReelLevel !== undefined) saveState.autoReelLevel = d.autoReelLevel;
+            if (d.clickPowerLevel !== undefined) saveState.clickPowerLevel = d.clickPowerLevel;
+
+            // New Cosmetics (Rods, Shirts, Collars)
+            if (d.unlockedRods) saveState.unlockedRods = d.unlockedRods;
+            if (d.currentRod) saveState.currentRod = d.currentRod;
+            if (d.unlockedShirts) saveState.unlockedShirts = d.unlockedShirts;
+            if (d.currentShirt) saveState.currentShirt = d.currentShirt;
+            if (d.unlockedCollars) saveState.unlockedCollars = d.unlockedCollars;
+            if (d.currentCollar) saveState.currentCollar = d.currentCollar;
+
+            // Patterns (Fur Patterns)
+            if (d.unlockedPatterns) saveState.unlockedPatterns = d.unlockedPatterns;
+            if (d.currentPattern) saveState.currentPattern = d.currentPattern;
+
+            // Titles
+            if (d.unlockedTitles) saveState.unlockedTitles = d.unlockedTitles;
+            if (d.currentTitle) saveState.currentTitle = d.currentTitle;
+            if (d.showTitles !== undefined) saveState.showTitles = d.showTitles;
+
+            // Audio
+            if (d.micId) saveState.micId = d.micId;
+            if (d.masterVolume !== undefined) saveState.masterVolume = d.masterVolume;
+            if (d.sfxVolume !== undefined) saveState.sfxVolume = d.sfxVolume;
+            if (d.midiVolume !== undefined) saveState.midiVolume = d.midiVolume;
+            if (d.voiceVolume !== undefined) saveState.voiceVolume = d.voiceVolume;
+            if (d.musicMuted !== undefined) saveState.musicMuted = d.musicMuted;
+            if (d.midiMuted !== undefined) saveState.midiMuted = d.midiMuted;
+
+            if (d.lavaUnlocked !== undefined) saveState.lavaUnlocked = d.lavaUnlocked;
+
+            // Skills (Mining, Lumberjack, Fishing)
+            if (d.skills) saveState.skills = d.skills;
+            if (d.oreInventory) saveState.oreInventory = d.oreInventory;
+            if (d.woodInventory) saveState.woodInventory = d.woodInventory;
+
+            // --- WARDROBE FIX HERE ---
+            // This tells the game to remember your outfits when you reload!
+            if (d.savedOutfits) saveState.savedOutfits = d.savedOutfits;
+            else saveState.savedOutfits = [];
+
+            // Keybinds
+            if (d.keybinds) {
+                saveState.keybinds = { ...DEFAULT_KEYBINDS, ...d.keybinds };
+            }
+        } catch (e) { console.error("Save Load Error", e); }
+    }
+
+    // Sync visual elements
+    if (masterGain) masterGain.gain.value = saveState.masterVolume;
+    if (sfxGain) sfxGain.gain.value = saveState.sfxVolume;
+    if (midiGain) midiGain.gain.value = saveState.midiVolume;
+
+    const usernameInput = document.getElementById('username-input');
+    const furPicker = document.getElementById('fur-color-picker');
+    const bellyPicker = document.getElementById('belly-color-picker');
+    const eyePicker = document.getElementById('eye-color-picker');
+
+    if (usernameInput) usernameInput.value = saveState.displayName;
+    if (furPicker) furPicker.value = saveState.catColor;
+    if (bellyPicker) bellyPicker.value = saveState.bellyColor;
+    if (eyePicker) eyePicker.value = saveState.eyeColor;
+
+    // Populate part selectors (new modular system)
+    populatePartSelectors();
+
+    const volS = document.getElementById('volume-slider'); if (volS) volS.value = saveState.masterVolume;
+    const sfxS = document.getElementById('sfx-slider'); if (sfxS) sfxS.value = saveState.sfxVolume;
+    const midS = document.getElementById('midi-slider'); if (midS) midS.value = saveState.midiVolume;
+    const vocS = document.getElementById('voice-slider'); if (vocS) vocS.value = saveState.voiceVolume;
+
+    myData.name = saveState.displayName;
+    myData.color = saveState.catColor;
+    myData.belly = saveState.bellyColor;
+    myData.eye = saveState.eyeColor;
+    myData.hat = saveState.currentHat;
+    myData.shirt = saveState.currentShirt;
+    myData.collar = saveState.currentCollar;
+    myData.rod = saveState.currentRod;
+    myData.pattern = saveState.currentPattern;
+    // Modular parts
+    myData.ears = saveState.currentEars;
+    myData.eyes = saveState.currentEyes;
+    myData.nose = saveState.currentNose;
+    myData.misc = saveState.currentMisc;
+    myData.tail = saveState.currentTail;
+    myData.hair = saveState.currentHair;
+    myData.hairColor = saveState.hairColor || '';
+
+    updateBaitSelector();
+    updateUI();
+    updateMusicUI();
+    updateMidiUI();
+}
+
+function saveGame() {
+    saveState.displayName = document.getElementById('username-input').value.substring(0, 12) || "Fisher";
+
+    myData.name = saveState.displayName;
+    // Update myData with parts
+    myData.ears = saveState.currentEars;
+    myData.eyes = saveState.currentEyes;
+    myData.nose = saveState.currentNose;
+    myData.misc = saveState.currentMisc;
+    myData.tail = saveState.currentTail;
+    myData.hair = saveState.currentHair;
+
+    // Update myData with part colors
+    myData.earsColor = saveState.earsColor || '';
+    myData.noseColor = saveState.noseColor || '';
+    myData.miscColor = saveState.miscColor || '';
+    myData.tailColor = saveState.tailColor || '';
+    myData.hairColor = saveState.hairColor || '';
+
+    // Update myData with base colors
+    myData.color = saveState.catColor;
+    myData.belly = saveState.bellyColor;
+    myData.eye = saveState.eyeColor;
+
+    updateUI();
+    updateLocalVisuals();
+    updateHotbarVisuals(); // FIX: Refresh hotbar after load
+
+    // --- Sync with Dedicated Server if connected ---
+    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+        // Sync name/visuals with full saveState
+        dedicatedSocket.send(JSON.stringify({
+            type: 'setName',
+            name: saveState.displayName,
+            peerId: myPeerId,
+            saveState: saveState // Send full saveState for visuals sync
+        }));
+
+        // Sync money to prevent desync after shop purchases
+        dedicatedSocket.send(JSON.stringify({
+            type: 'syncMoney',
+            money: saveState.money
+        }));
+    }
+    // ---------------------
+
+    try {
+        localStorage.setItem('islandFisherSave', JSON.stringify(saveState));
+    } catch (e) {
+        console.warn("Save failed", e);
+    }
+}
+
+function updateWeatherVisuals() {
+    // 1. Determine active state
+    const isRainActive = isRaining && !isInVoid;
+
+    // 2. Handle Particles (Show/Hide only)
+    if (rainSystem) {
+        rainSystem.visible = isRainActive;
+    }
+
+    // 3. Handle Audio
+    if (typeof RainAudio !== 'undefined') RainAudio.toggle(isRainActive);
+
+    // 4. Fade out sky elements during rain (overcast effect)
+    const targetSkyOpacity = isRainActive ? 0.1 : 1.0;
+
+    if (sunMesh && sunMesh.material) {
+        sunMesh.material.opacity += (targetSkyOpacity - sunMesh.material.opacity) * 0.05;
+    }
+    if (moonMesh && moonMesh.material) {
+        moonMesh.material.opacity += (targetSkyOpacity - moonMesh.material.opacity) * 0.05;
+    }
+    if (window.starSystem && window.starSystem.material) {
+        // Stars fade completely during rain
+        const starTarget = isRainActive ? 0 : (worldTime < 5 || worldTime > 19 ? 1.0 : 0);
+        window.starSystem.material.opacity += (starTarget - window.starSystem.material.opacity) * 0.05;
+    }
+    if (window.cloudSprites) {
+        // Clouds become darker/grayer during rain
+        const cloudTarget = isRainActive ? 0.3 : 0.7;
+        window.cloudSprites.forEach(cloud => {
+            cloud.material.opacity += (cloudTarget - cloud.material.opacity) * 0.05;
+        });
+    }
+
+    // Note: Scene background color is handled exclusively by updateDayNightCycle().
+}
+
+// --- UI TOGGLE & UPDATE FUNCTIONS ---
+window.toggleShowTitles = function () {
+    saveState.showTitles = !saveState.showTitles;
+    saveGame();
+    updateTitleUI();
+    refreshAllTitles();
+}
+
+function updateTitleUI() {
+    const btn = document.getElementById('btn-titles-toggle');
+    if (btn) {
+        btn.innerText = saveState.showTitles ? "🏷️ Titles: ON" : "🏷️ Titles: OFF";
+        btn.style.color = saveState.showTitles ? '#44ff44' : '#ff4444';
+    }
+}
+
+function refreshAllTitles() {
+    // Only show titles if HUD is visible AND titles are enabled
+    const shouldShow = hudVisible && saveState.showTitles;
+
+    if (player) {
+        const t = player.getObjectByName('titleSprite');
+        if (t) t.visible = shouldShow;
+        const n = player.getObjectByName('nameTag');
+        if (n) n.visible = hudVisible;
+    }
+
+    Object.values(otherPlayers).forEach(p => {
+        const t = p.mesh.getObjectByName('titleSprite');
+        if (t) t.visible = shouldShow;
+        const n = p.mesh.getObjectByName('nameTag');
+        if (n) n.visible = hudVisible;
+    });
+}
+
+let chatFadeTimer = null;
+
+function refreshChatFade() {
+    const ui = document.getElementById('chat-ui');
+    if (!ui) return;
+
+    // 1. Show immediately
+    ui.style.opacity = '1';
+
+    // 2. Clear any pending fade
+    if (chatFadeTimer) clearTimeout(chatFadeTimer);
+
+    // 3. If typing, KEEP it open. If not typing, schedule fade.
+    if (document.activeElement !== document.getElementById('chat-input')) {
+        chatFadeTimer = setTimeout(() => {
+            // Check again in case user clicked focus during the timer
+            if (document.activeElement !== document.getElementById('chat-input')) {
+                ui.style.opacity = '0';
+            }
+        }, 5000); // 5 Seconds
+    }
+}
+
+function toggleFullScreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.log(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+}
+
+function toggleShowFish() {
+    // 1. If holding something, put it away
+    if (localHeldFish) {
+        localHeldFish = null;
+        if (fishHoldTimer) clearTimeout(fishHoldTimer);
+        fishHoldTimer = null;
+        updateLocalVisuals();
+        return;
+    }
+
+    // 2. Check Inventory
+    if (saveState.inventory.length === 0) {
+        showToast("Your inventory is empty!");
+        return;
+    }
+
+    // 3. Unequip other items
+    if (isGuitarActive) toggleGuitar();
+    if (isGloveActive) toggleGlove();
+    if (fishingState !== 'idle') stopFishing(false);
+
+    // 4. Get last fish
+    const lastFish = saveState.inventory[saveState.inventory.length - 1];
+
+    // 5. Equip it
+    localHeldFish = {
+        name: lastFish.name,
+        color: lastFish.color,
+        size: lastFish.size || 1.0 // Default to 1.0 for old saves
+    };
+
+    updateLocalVisuals();
+    showToast(`Showing off: ${lastFish.name} (${lastFish.sizeLabel || 'Normal'})`);
+}
+
+function isFishCatchable(fish, tierId) {
+    // 1. Calculate Player CPS (Clicks Per Second)
+    // We assume a decent manual click rate of ~10 CPS + AutoReel
+    // Multiply manual CPS by Click Power Level
+    const power = CLICK_POWER_RATES[saveState.clickPowerLevel] || 1;
+    const manualCPS = 10 * power;
+    const autoCPS = (AUTO_CLICK_RATES[saveState.autoReelLevel] || 0) * power;
+    const totalCPS = manualCPS + autoCPS;
+
+    // 2. Calculate Difficulty (Mirroring startMinigame logic)
+    let clicks = 15;
+    let time = 5.0;
+
+    const r = fish.rarity;
+    if (r === 'Common') { clicks = 15; time = 5.0; }
+    else if (r === 'Uncommon') { clicks = 30; time = 4.5; }
+    else if (r === 'Rare') { clicks = 55; time = 4.0; }
+    else if (r === 'Epic') { clicks = 90; time = 3.5; }
+    else if (r === 'Legendary') { clicks = 120; time = 3.0; }
+
+    // Tier Modifiers (Reduced)
+    if (tierId === 'glistening') { clicks += 5; }
+    else if (tierId === 'shining') { clicks += 10; }
+    else if (tierId === 'opalescent') { clicks += 20; }
+
+    // Lava World Modifiers
+    if (fish.isLava) {
+        clicks *= 2.0;
+        time *= 0.7;
+
+        const b = activeBaitId;
+        if (b === 'magic' || b === 'shrimp' || b === 'jig') {
+            clicks *= 0.6;
+            time *= 1.2;
+        } else if (b === 'grub' || b === 'spinner') {
+            clicks *= 0.8;
+        }
+
+        const rod = saveState.currentRod;
+        if (rod === 'lava' || rod === 'admin' || rod === 'golden' || rod === 'diamond' || rod === 'omega_milestone') {
+            clicks *= 0.85;
+            time *= 1.1;
+        }
+    }
+
+    // Bait Time Bonus
+    const bait = BAIT_TYPES.find(b => b.id === activeBaitId);
+    const timeBonus = bait ? (bait.power * 0.3) : 0;
+    const maxTime = Math.max(0.5, time + timeBonus);
+
+    // 3. Check if possible
+    // We add a small safety margin (0.5s) to account for reaction time / lag
+    const effectiveTime = Math.max(0, maxTime - 0.5);
+    const potentialClicks = totalCPS * effectiveTime;
+
+    return potentialClicks >= clicks;
+}
+
+function selectFish() {
+    let bait = BAIT_TYPES.find(b => b.id === activeBaitId);
+    if (!bait) bait = BAIT_TYPES[0];
+
+    // 1. Filter Pool based on Zone
+    let basePool = [];
+
+    if (fishingZone === 'void') {
+        // Void logic: mostly void fish
+        if (Math.random() < 0.40) {
+            basePool = FISH_TYPES.filter(f => f.condition === 'void');
+        } else {
+            basePool = FISH_TYPES.filter(f => !f.condition);
+        }
+    }
+    else if (fishingZone === 'lava') {
+        // Lava world: combine Regular Fish + Lava Fish
+        basePool = [...FISH_TYPES.filter(f => !f.condition), ...LAVA_FISH];
+    }
+    else if (fishingZone === 'secret') {
+        // Secret pool: all non-conditional fish except trash
+        basePool = FISH_TYPES.filter(f => f.condition !== 'void' && f.condition !== 'rain' && f.name !== "Old Boot");
+    }
+    else if (isRaining && Math.random() < 0.40) {
+        // Rain: chance for rain fish
+        basePool = FISH_TYPES.filter(f => f.condition === 'rain');
+    }
+    else {
+        // --- ZONE-SPECIFIC FISH POOLS ---
+        // Map fishing zones to fish zone categories
+        let zoneCategory = 'lake'; // Default
+        if (fishingZone === 'ocean') zoneCategory = 'ocean';
+        else if (fishingZone === 'pond') {
+            // Differentiate light pond vs dark pond by player position
+            const distToDarkPond = Math.sqrt(Math.pow(player.position.x - 60, 2) + Math.pow(player.position.z - 50, 2));
+            zoneCategory = distToDarkPond < 30 ? 'darkpond' : 'lightpond';
+        }
+        else if (fishingZone === 'lake') zoneCategory = 'lake';
+
+        // Get zone-specific fish
+        basePool = getFishForZone(zoneCategory);
+    }
+
+    // Safety check
+    if (basePool.length === 0) basePool = FISH_TYPES.filter(f => !f.condition);
+
+    // 2. BAIT FILTERING & WEIGHTED RANDOM
+    let pool = [];
+    basePool.forEach(fish => {
+        let chance = fish.chance; // Base chance (Common~30 ... Legendary~1)
+
+        // --- NEW: WEIGHTED LOGIC (Relaxes Hard Locks) ---
+        // Instead of returning (removing fish), we punish weights for weak bait.
+
+        // 1. Weak Bait Penalty (Massive reduction but non-zero)
+        // Checks if bait is "under-leveled" for this rarity
+        let underpowered = false;
+        if (fish.rarity === 'Rare' && bait.power < 2) underpowered = true;
+        else if (fish.rarity === 'Epic' && bait.power < 4) underpowered = true;
+        else if (fish.rarity === 'Legendary' && bait.power < 8) underpowered = true;
+
+        if (underpowered) {
+            chance *= 0.02; // 2% of normal chance. VERY hard but possible.
+        }
+
+        // 2. Standard Bait Multiplier (If matched or better)
+        else {
+            // Apply the bait's multiplier (1.0 to 10.0) based on loop below
+            // Note: We use the bait's defined rarityMult directly now.
+            if (fish.rarity === 'Rare') chance *= (bait.rarityMult * 0.8);
+            if (fish.rarity === 'Epic') chance *= (bait.rarityMult * 1.0);
+            if (fish.rarity === 'Legendary') chance *= (bait.rarityMult * 1.2);
+        }
+
+        // 3. Filter Low Tier Junk if using GODLY bait
+        // (Quality of Life: Don't catch boots with Magic Lure)
+        if (fish.rarity === 'Common' && bait.power >= 10) {
+            chance *= 0.1; // Reduce common junk chance significantly
+        }
+
+        pool.push({ ...fish, chance: chance });
+    });
+
+    // --- CATCHABILITY FILTER ---
+    // (Consolidated logic)
+    // We still filter 'impossible' manual click fish to save frustration,
+    // assuming a bare minimum CPS (click power).
+    // ... Actually user wants "Everything Possible". 
+    // Let's remove the isFishCatchable check OR make it very lenient.
+    // The previous code block called isFishCatchable... let's keep it but trust the math.
+
+    // ... (Keeping the rest of logic) ...
+    // Wait, we need to match the replacement target.
+
+    // --- 3. Pick Fish using Total Weights ---
+    const totalChance = pool.reduce((acc, f) => acc + f.chance, 0);
+    let random = Math.random() * totalChance;
+    let selectedType = pool[0];
+    for (let fish of pool) {
+        if (random < fish.chance) { selectedType = fish; break; }
+        random -= fish.chance;
+    }
+
+    // 4. Tier Logic (Shiny/Gold/Opalescent)
+    const totalTierChance = TIERS.reduce((acc, t) => acc + t.chance, 0);
+    let tierRandom = Math.random() * totalTierChance;
+
+    if (bait.tierLuck > 1.0) {
+        if (tierRandom < TIERS[0].chance && Math.random() < (bait.tierLuck - 1.0)) {
+            tierRandom = Math.random() * totalTierChance;
+        }
+    }
+
+    let selectedTier = TIERS[0];
+    for (let tier of TIERS) {
+        if (tierRandom < tier.chance) { selectedTier = tier; break; }
+        tierRandom -= tier.chance;
+    }
+
+    // NOTE: Tier downgrade removed - let players experience tiered fish!
+
+    // 5. Size Logic
+    let sizeMult = 0.5 + Math.pow(Math.random(), 2) * 2.0;
+    if (bait.power > 20) sizeMult += 0.15;
+
+    let sizeLabel = "Normal";
+    if (sizeMult < 0.7) sizeLabel = "Tiny";
+    else if (sizeMult < 0.9) sizeLabel = "Small";
+    else if (sizeMult > 2.2) sizeLabel = "MASSIVE";
+    else if (sizeMult > 1.8) sizeLabel = "Huge";
+    else if (sizeMult > 1.3) sizeLabel = "Big";
+
+    // 6. Final Calculation
+    return {
+        name: selectedType.name,
+        basePrice: selectedType.price,
+        rarity: selectedType.rarity,
+        color: selectedType.color,
+        drain: selectedType.drain,
+        tierId: selectedTier.id,
+        tierName: selectedTier.name,
+        size: parseFloat(sizeMult.toFixed(2)),
+        sizeLabel: sizeLabel,
+        price: Math.ceil(selectedType.price * selectedTier.priceMult * sizeMult),
+        drainRate: (selectedType.drain * selectedTier.drainMult) * 0.9,
+        isLava: selectedType.isLava // Preserve this flag
+    };
+}
+
+function updateJournal(fish, tierId) {
+    if (!saveState.journal[fish.name]) saveState.journal[fish.name] = [];
+    if (!saveState.journal[fish.name].includes(tierId)) saveState.journal[fish.name].push(tierId);
+}
+
+let isMobileInventoryOpen = false; // Initialize inventory state as closed for both mobile and desktop
+
+window.toggleMobileInventory = function () {
+    const ui = document.getElementById('fish-log');
+
+    isMobileInventoryOpen = !isMobileInventoryOpen;
+
+    // Toggle the display property
+    ui.style.display = isMobileInventoryOpen ? 'block' : 'none';
+
+    // Ensure content is fresh when opening
+    if (isMobileInventoryOpen) {
+        updateUI();
+        showToast("Inventory opened.");
+    } else {
+        showToast("Inventory closed.");
+    }
+
+    // This is the correct logic now, regardless of screen width.
+    // The logic for displaying the button only on mobile must be handled in CSS (see below).
+}
+
+// Ensure this stays as the Journal toggle, separate from the Inventory toggle.
+window.toggleJournal = function () {
+    const ui = document.getElementById('journal-overlay');
+    ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
+    if (ui.style.display === 'flex') { document.exitPointerLock(); renderJournal(); }
+}
+
+window.toggleOptions = function () {
+    const ui = document.getElementById('options-overlay');
+
+    if (ui.style.display === 'flex') {
+        ui.style.display = 'none';
+        // Cleanup if they closed menu while binding
+        document.removeEventListener('keydown', handleRebind);
+    } else {
+        populateAudioInputs();
+        updateMusicUI();
+        updateMidiUI();
+        updateTitleUI();
+        updateDebugUI();
+
+        const volSlider = document.getElementById('volume-slider');
+        if (volSlider) volSlider.value = saveState.masterVolume;
+
+        // NEW: Render the controls, but only for desktop
+        if (!isMobile) { // Keybinds are not relevant on mobile devices.
+            renderKeybinds();
+        }
+
+        document.exitPointerLock(); // Unlock Mouse
+        ui.style.display = 'flex';
+    }
+}
+
+window.toggleShop = function () {
+    const ui = document.getElementById('shop-overlay');
+    ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
+    if (ui.style.display === 'flex') { document.exitPointerLock(); renderShop(); }
+}
+
+window.toggleBaitShop = function () {
+    const ui = document.getElementById('bait-shop-overlay');
+    ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
+    if (ui.style.display === 'flex') { document.exitPointerLock(); renderBaitShop(); }
+}
+
+// --- TUTORIAL NPC GUIDE ---
+let npcTutorial = null;
+
+window.toggleTutorial = function () {
+    const ui = document.getElementById('tutorial-overlay');
+    if (!ui) return;
+    ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
+    if (ui.style.display === 'flex') {
+        document.exitPointerLock();
+        // Reset to basics tab
+        showTutorialTab('basics');
+    }
+}
+
+window.showTutorialTab = function (tabName) {
+    // Hide all panels
+    const panels = document.querySelectorAll('#tutorial-content .tutorial-panel');
+    panels.forEach(p => p.style.display = 'none');
+
+    // Show selected panel
+    const target = document.getElementById('tab-' + tabName);
+    if (target) target.style.display = 'block';
+
+    // Update tab button styles
+    const tabs = document.querySelectorAll('.tutorial-tab');
+    tabs.forEach(t => t.classList.remove('active'));
+
+    // Find and activate the clicked tab
+    tabs.forEach(t => {
+        if (t.textContent.toLowerCase().includes(tabName.substring(0, 4))) {
+            t.classList.add('active');
+        }
+    });
+}
+
+window.toggleHostPanel = function () {
+    const ui = document.getElementById('host-overlay');
+    ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
+    if (ui.style.display === 'flex') { document.exitPointerLock(); updateHostPanel(); }
+}
+
+window.changeVolume = function (val) {
+    saveState.masterVolume = parseFloat(val);
+    if (masterGain) masterGain.gain.setTargetAtTime(saveState.masterVolume, audioCtx.currentTime, 0.1);
+    saveGame();
+}
+
+window.changeSFXVolume = function (val) {
+    saveState.sfxVolume = parseFloat(val);
+    if (sfxGain) sfxGain.gain.setTargetAtTime(saveState.sfxVolume, audioCtx.currentTime, 0.1);
+    saveGame();
+}
+
+window.changeMidiVolume = function (val) {
+    saveState.midiVolume = parseFloat(val);
+    if (midiGain) midiGain.gain.setTargetAtTime(saveState.midiVolume, audioCtx.currentTime, 0.1);
+    saveGame();
+}
+
+window.changeVoiceVolume = function (val) {
+    saveState.voiceVolume = parseFloat(val);
+
+
+    saveGame();
+}
+
+// --- MODULAR PART CHANGE FUNCTIONS ---
+window.changeEars = function (val) {
+    saveState.currentEars = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+window.changeHair = function (val) {
+    saveState.currentHair = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+window.changeEyes = function (val) {
+    saveState.currentEyes = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+window.changeNose = function (val) {
+    saveState.currentNose = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+window.changeMisc = function (val) {
+    saveState.currentMisc = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+window.changeTail = function (val) {
+    saveState.currentTail = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+}
+
+// --- PART COLOR CHANGE FUNCTIONS ---
+window.changeEarsColor = function (val) {
+    saveState.earsColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+window.changeHairColor = function (val) {
+    saveState.hairColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+window.changeNoseColor = function (val) {
+    saveState.noseColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+window.changeMiscColor = function (val) {
+    saveState.miscColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+window.changeTailColor = function (val) {
+    saveState.tailColor = val;
+    saveGame();
+    if (player) updateLocalVisuals();
+    updateCharacterPreview();
+}
+
+// Helper function to populate part selector dropdowns
+function populatePartSelectors() {
+    const populate = (selectId, types, currentVal) => {
+        const sel = document.getElementById(selectId);
+        if (!sel) return;
+        sel.innerHTML = '';
+        types.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            opt.textContent = t.name;
+            if (t.id === currentVal) opt.selected = true;
+            sel.appendChild(opt);
+        });
+    };
+
+    populate('ears-select', EAR_TYPES, saveState.currentEars);
+    populate('hair-select', HAIR_TYPES, saveState.currentHair);
+    populate('eyes-select', EYE_TYPES, saveState.currentEyes);
+    populate('nose-select', NOSE_TYPES, saveState.currentNose);
+    populate('misc-select', MISC_TYPES, saveState.currentMisc);
+    populate('tail-select', TAIL_TYPES, saveState.currentTail);
+
+    // Set part color pickers (default to fur color if not set)
+    const furCol = saveState.catColor || '#ff6347';
+    const earsColorPicker = document.getElementById('ears-color-picker');
+    const hairColorPicker = document.getElementById('hair-color-picker');
+    const noseColorPicker = document.getElementById('nose-color-picker');
+    const miscColorPicker = document.getElementById('misc-color-picker');
+    const tailColorPicker = document.getElementById('tail-color-picker');
+
+    if (earsColorPicker) earsColorPicker.value = saveState.earsColor || furCol;
+    if (hairColorPicker) hairColorPicker.value = saveState.hairColor || '#ffffff';
+    if (noseColorPicker) noseColorPicker.value = saveState.noseColor || furCol;
+    if (miscColorPicker) miscColorPicker.value = saveState.miscColor || furCol;
+    if (tailColorPicker) tailColorPicker.value = saveState.tailColor || furCol;
+}
+
+// Legacy: Keep for NPC/backwards compatibility
+window.changeSpecies = function (species) {
+    saveState.species = species;
+    if (player) updateLocalVisuals();
+    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
+    saveGame();
+}
+
+window.toggleMusic = function () {
+    saveState.musicMuted = !saveState.musicMuted;
+    saveGame();
+    updateMusicUI();
+
+    if (saveState.musicMuted) Music.stop();
+    else Music.init();
+}
+
+window.deleteSave = function () {
+    if (confirm("⚠️ ARE YOU SURE? ⚠️\n\nThis will PERMANENTLY delete your money, items, and unlocks.\n\nPress OK to wipe your save and restart.")) {
+        localStorage.removeItem('islandFisherSave');
+        location.reload();
+    }
+}
+
+window.leaveGame = function () {
+    if (confirm("Are you sure you want to leave the room?")) {
+        Object.keys(otherPlayers).forEach(pid => removePlayer(pid));
+
+        // FIX: Close dedicated socket
+        if (dedicatedSocket) {
+            dedicatedSocket.close();
+            dedicatedSocket = null;
+        }
+
+        if (peer) peer.destroy();
+        location.reload();
+    }
+}
+
+window.changeFurColor = function (c) {
+    saveState.catColor = c;
+    saveGame();
+    updateLocalVisuals();
+    renderShop();
+}
+
+window.changeBellyColor = function (c) {
+    saveState.bellyColor = c;
+    updateLocalVisuals();
+    renderShop();
+    saveGame();
+}
+
+window.changeBait = function (val) {
+
+    if (fishingState !== 'idle') {
+        showToast("Can't change bait while fishing!");
+
+
+
+        updateBaitSelector();
+        return;
+    }
+
+
+    activeBaitId = val;
+}
+
+window.changeEyeColor = function (c) {
+    saveState.eyeColor = c;
+    updateLocalVisuals();
+    renderShop();
+    saveGame();
+}
+function updateMusicUI() {
+    const btn = document.getElementById('btn-music-toggle');
+    if (btn) {
+        btn.innerText = saveState.musicMuted ? "🎵 Music: OFF" : "🎵 Music: ON";
+        btn.style.color = saveState.musicMuted ? '#ff4444' : '#44ff44';
+    }
+}
+
+function updateLocalVisuals() {
+    if (player) {
+        const s = player.getObjectByName('playerSprite');
+
+        if (s.userData.matFront.map) disposeTexture(s.userData.matFront.map);
+        if (s.userData.matBack.map) disposeTexture(s.userData.matBack.map);
+
+        // Create parts object from current saveState
+        const parts = {
+            ears: saveState.currentEars,
+            eyes: saveState.currentEyes,
+            nose: saveState.currentNose,
+            misc: saveState.currentMisc,
+            tail: saveState.currentTail
+        };
+
+        // Build part colors object
+        const partColors = {
+            earsColor: saveState.earsColor || '',
+            noseColor: saveState.noseColor || '',
+            miscColor: saveState.miscColor || '',
+            tailColor: saveState.tailColor || ''
+        };
+
+        // Generate textures based on current save state with modular parts
+        const texF = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, false, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors, saveState.currentHair, saveState.hairColor);
+        const texB = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, true, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors, saveState.currentHair, saveState.hairColor);
+
+        s.userData.matFront.map = texF;
+        s.userData.matBack.map = texB;
+
+        // Force update
+        s.userData.matFront.needsUpdate = true;
+        s.userData.matBack.needsUpdate = true;
+
+        // Title Update
+        const oldT = player.getObjectByName('titleSprite');
+        if (oldT) player.remove(oldT);
+
+        const tTex = createTitleTexture(saveState.currentTitle);
+        if (tTex) {
+            const tMat = new THREE.SpriteMaterial({ map: tTex, depthWrite: false, depthTest: false });
+            const tSprite = new THREE.Sprite(tMat);
+            tSprite.position.y = 3.45; tSprite.scale.set(3, 0.75, 1); tSprite.name = "titleSprite";
+            tSprite.renderOrder = 201; // Higher than remote players (101)
+            // Only show if setting is enabled
+            tSprite.visible = saveState.showTitles;
+            player.add(tSprite);
+        }
+
+        // Name Tag Update
+        const oldName = player.getObjectByName('nameTag');
+        if (oldName) {
+            const nameTex = createNameTagTexture(saveState.displayName);
+            oldName.material.map.dispose();
+            oldName.material.map = nameTex;
+            oldName.material.needsUpdate = true;
+        }
+
+        // --- HELD ITEMS LOGIC ---
+        const oldFish = player.getObjectByName('heldFishSprite');
+        if (oldFish) player.remove(oldFish);
+
+        const oldRod = player.getObjectByName('rod');
+        if (oldRod) player.remove(oldRod);
+
+        // 1. Showing a Fish?
+        if (localHeldFish && !isGuitarActive && !isGloveActive) {
+            // FIX: Ensure color fallback and explicit visibility
+            const color = localHeldFish.color || '#ffffff';
+            const fTex = createFishTexture(localHeldFish.name, color);
+            const fMat = new THREE.SpriteMaterial({
+                map: fTex,
+                transparent: true,
+                alphaTest: 0.5
+            });
+
+            const fSprite = new THREE.Sprite(fMat);
+            fSprite.name = 'heldFishSprite';
+            fSprite.position.set(0.6, 1.5, 0.5);
+            fSprite.visible = true; // Explicity set visible
+            fSprite.renderOrder = 999; // Force on top
+
+            const size = localHeldFish.size || 1.0;
+            fSprite.scale.set(1.5 * size, 1.5 * size, 1);
+
+            player.add(fSprite);
+        }
+        // 2. Holding Rod? (Check isHandsHidden and active tool here)
+        // Don't show rod when Axe (2) or Pickaxe (5) is equipped
+        else {
+            const isAxeOrPickActive = (saveState.activeToolIndex === 2 || saveState.activeToolIndex === 5);
+            if (!isGuitarActive && !isGloveActive && !isHandsHidden && !isAxeOrPickActive) {
+                // Create Rod with current skin
+                const rodId = saveState.currentRod || 'bamboo';
+                const rodTex = createRodTexture(rodId);
+                const rodMat = new THREE.MeshBasicMaterial({ map: rodTex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+
+                const rodGeo = new THREE.PlaneGeometry(3.0, 3.0);
+                rodGeo.translate(1.5, 1.5, 0);
+
+                const r = new THREE.Mesh(rodGeo, rodMat);
+                r.position.set(0.6, 0.96, 0.1);
+                r.rotation.set(-0.2, -Math.PI / 2, 0);
+                r.name = "rod";
+                player.add(r);
+            }
+        }
+    }
+    window.renderJournal = function renderJournal(zoneFilter = 'all') {
+        const container = document.getElementById('journal-container');
+        container.innerHTML = '';
+
+        const rarityMap = { "Common": 1, "Uncommon": 2, "Rare": 3, "Epic": 4, "Legendary": 5 };
+
+        // --- ZONE TABS ---
+        const tabsDiv = document.createElement('div');
+        tabsDiv.style.cssText = 'grid-column: 1 / -1; display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px;';
+
+        const zones = [
+            { id: 'all', name: '🌍 All', color: '#666' },
+            { id: 'lake', name: '💧 Lake', color: '#4488ff' },
+            { id: 'lightpond', name: '☀️ Light Pond', color: '#88cc44' },
+            { id: 'darkpond', name: '🌙 Dark Pond', color: '#6644aa' },
+            { id: 'ocean', name: '🌊 Ocean', color: '#0066aa' },
+            { id: 'lava', name: '🔥 Lava', color: '#ff4400' },
+            { id: 'special', name: '⭐ Special', color: '#ffaa00' }
+        ];
+
+        zones.forEach(zone => {
+            const btn = document.createElement('button');
+            btn.textContent = zone.name;
+            btn.style.cssText = `padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; background: ${zoneFilter === zone.id ? zone.color : '#333'}; color: ${zoneFilter === zone.id ? '#fff' : '#aaa'};`;
+            btn.onclick = () => renderJournal(zone.id);
+            tabsDiv.appendChild(btn);
+        });
+        container.appendChild(tabsDiv);
+
+        // --- 1. AGGREGATE ALL FISH LISTS ---
+        const fishMap = new Map();
+        const addList = (list) => {
+            if (list && Array.isArray(list)) {
+                list.forEach(f => fishMap.set(f.name, f));
+            }
+        };
+
+        addList(FISH_TYPES);
+        if (typeof LAVA_FISH !== 'undefined') addList(LAVA_FISH);
+        if (typeof RAIN_FISH !== 'undefined') addList(RAIN_FISH);
+        if (typeof VOID_FISH !== 'undefined') addList(VOID_FISH);
+
+        let allFish = Array.from(fishMap.values());
+
+        // --- FILTER BY ZONE ---
+        if (zoneFilter !== 'all') {
+            allFish = allFish.filter(fish => {
+                // Special tab: rain/void conditional fish
+                if (zoneFilter === 'special') {
+                    return fish.condition === 'rain' || fish.condition === 'void';
+                }
+                // Lava tab: lava fish only
+                if (zoneFilter === 'lava') {
+                    return fish.isLava === true;
+                }
+                // Skip conditional/lava fish for normal zones
+                if (fish.condition || fish.isLava) return false;
+                // Use getFishZone to categorize
+                return typeof getFishZone === 'function' && getFishZone(fish.name) === zoneFilter;
+            });
+        }
+
+        // --- 2. SORTING ---
+        const sortedFish = allFish.sort((a, b) => {
+            const rarityDiff = rarityMap[a.rarity] - rarityMap[b.rarity];
+            if (rarityDiff !== 0) return rarityDiff;
+            return a.name.localeCompare(b.name);
+        });
+
+        // --- 3. PROGRESS HEADER ---
+        const totalFishCount = sortedFish.length;
+        const totalTierCount = totalFishCount * 4;
+
+        let caughtTierCount = 0;
+        let caughtSpeciesCount = 0;
+        sortedFish.forEach(fish => {
+            const tiers = saveState.journal[fish.name];
+            if (tiers && Array.isArray(tiers)) {
+                caughtTierCount += tiers.length;
+                if (tiers.length > 0) caughtSpeciesCount++;
+            }
+        });
+
+        const header = document.createElement('div');
+        header.style.gridColumn = "1 / -1";
+        header.style.textAlign = "center";
+        header.style.marginBottom = "15px";
+        header.style.color = "#fff";
+        header.style.background = "rgba(0,0,0,0.5)";
+        header.style.padding = "10px";
+        header.style.borderRadius = "8px";
+        header.innerHTML = `<h3 style="margin:0">Discovery Progress: ${caughtTierCount} / ${totalTierCount}</h3>
+        <div style="font-size:12px; color:#888; margin-top:5px;">${caughtSpeciesCount} / ${totalFishCount} species discovered</div>`;
+        container.appendChild(header);
+
+        // --- 4. RENDER GRID ---
+        const fragment = document.createDocumentFragment();
+
+        sortedFish.forEach(fish => {
+            const entry = document.createElement('div');
+            const caughtData = saveState.journal[fish.name];
+            const isCaught = caughtData && caughtData.length > 0;
+
+            entry.className = isCaught ? 'journal-entry unlocked' : 'journal-entry';
+            entry.style.display = 'flex';
+            entry.style.flexDirection = 'column';
+            entry.style.alignItems = 'center';
+            entry.style.justifyContent = 'center';
+            entry.style.padding = '10px';
+            entry.style.gap = '5px';
+
+            if (isCaught) {
+                const tex = createFishTexture(fish.name, fish.color);
+                const canvas = document.createElement('canvas');
+                canvas.width = 64; canvas.height = 64;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(tex.image, 0, 0);
+                entry.appendChild(canvas);
+            } else {
+                const placeholder = document.createElement('div');
+                placeholder.style.width = '64px';
+                placeholder.style.height = '64px';
+                placeholder.style.display = 'flex';
+                placeholder.style.alignItems = 'center';
+                placeholder.style.justifyContent = 'center';
+                placeholder.style.fontSize = '32px';
+                placeholder.style.color = '#333';
+                placeholder.style.fontWeight = 'bold';
+                placeholder.innerText = '?';
+                entry.appendChild(placeholder);
+            }
+
+            let html = `<div class="journal-name" style="color:${isCaught ? fish.color : '#555'}; font-weight:bold; font-size:12px; text-shadow: 1px 1px 0 #000; text-align:center;">${isCaught ? fish.name : "???"}</div>`;
+            html += `<div class="journal-rarity" style="font-size:10px; color:#888;">${fish.rarity}</div>`;
+
+            const textContainer = document.createElement('div');
+            textContainer.innerHTML = html;
+
+            if (isCaught) {
+                const medalsDiv = document.createElement('div');
+                medalsDiv.className = 'journal-medals';
+                medalsDiv.style.justifyContent = 'center';
+
+                TIERS.forEach(tier => {
+                    const hasTier = caughtData && caughtData.includes(tier.id);
+                    const m = document.createElement('div');
+                    m.className = `medal ${hasTier ? 'got-' + tier.id : ''}`;
+                    m.title = tier.name;
+                    medalsDiv.appendChild(m);
+                });
+                textContainer.appendChild(medalsDiv);
+            }
+
+            entry.appendChild(textContainer);
+            fragment.appendChild(entry);
+        });
+
+        container.appendChild(fragment);
+    }
+
+    /**
+             * Purges all chat messages sent by a specific peerId from the UI.
+             * @param {string} bannedId - The ID of the peer whose messages to remove.
+             */
+    function purgeUserMessages(bannedId) {
+        const chatMessages = document.getElementById('chat-messages');
+        if (!chatMessages) return;
+
+        // Select all messages and filter down to the ones from the banned user
+        const messages = Array.from(chatMessages.children);
+
+        messages.forEach(msg => {
+            // We store the sender ID in a data attribute (we'll add this next)
+            if (msg.dataset.senderId === bannedId) {
+                msg.remove();
+            }
+        });
+        showToast(`Messages by ${bannedId} purged.`);
+    }
+
+
+    // --- WARDROBE SYSTEM ---
+
+    window.saveCurrentOutfit = function saveCurrentOutfit() {
+        if (saveState.savedOutfits.length >= 10) {
+            showToast("Wardrobe full! Delete an outfit first.");
+            return;
+        }
+
+        const name = prompt("Name this outfit:", `Outfit ${saveState.savedOutfits.length + 1}`);
+        if (!name) return;
+
+        const outfit = {
+            id: Date.now(),
+            name: name.substring(0, 12),
+            // Modular parts instead of species
+            ears: saveState.currentEars,
+            eyes: saveState.currentEyes,
+            nose: saveState.currentNose,
+            misc: saveState.currentMisc,
+            tail: saveState.currentTail,
+            color: saveState.catColor,
+            belly: saveState.bellyColor,
+            eye: saveState.eyeColor,
+            earsColor: saveState.earsColor,
+            noseColor: saveState.noseColor,
+            miscColor: saveState.miscColor,
+            tailColor: saveState.tailColor,
+            hat: saveState.currentHat,
+            shirt: saveState.currentShirt,
+            collar: saveState.currentCollar,
+            rod: saveState.currentRod,
+            title: saveState.currentTitle,
+            pattern: saveState.currentPattern,
+            hair: saveState.currentHair,
+            hairColor: saveState.hairColor
+        };
+
+        saveState.savedOutfits.push(outfit);
+        saveGame();
+        renderOutfitList();
+        showToast("Outfit Saved!");
+    }
+
+    window.loadOutfit = function loadOutfit(id) {
+        const outfit = saveState.savedOutfits.find(o => o.id === id);
+        if (!outfit) return;
+
+        // Apply colors
+        saveState.catColor = outfit.color || '#ff0000';
+        saveState.bellyColor = outfit.belly || '#ffffff';
+        saveState.eyeColor = outfit.eye || '#000000';
+
+        // Part-specific colors
+        saveState.earsColor = outfit.earsColor || '';
+        saveState.noseColor = outfit.noseColor || '';
+        saveState.miscColor = outfit.miscColor || '';
+        saveState.tailColor = outfit.tailColor || '';
+
+        // Apply modular parts (with fallback migration from old species-based outfits)
+        if (outfit.ears) {
+            saveState.currentEars = outfit.ears;
+            saveState.currentEyes = outfit.eyes;
+            saveState.currentNose = outfit.nose;
+            saveState.currentMisc = outfit.misc;
+            saveState.currentTail = outfit.tail;
+        } else if (outfit.species) {
+            // Migrate old outfit with species
+            const speciesMapping = {
+                cat: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'cat' },
+                bunny: { ears: 'bunny', eyes: 'standard', nose: 'cat', misc: 'none', tail: 'bunny' },
+                dog: { ears: 'dog', eyes: 'standard', nose: 'dog', misc: 'none', tail: 'dog' },
+                bear: { ears: 'bear', eyes: 'standard', nose: 'bear', misc: 'none', tail: 'bear' },
+                fox: { ears: 'fox', eyes: 'standard', nose: 'dog', misc: 'fox_cheeks', tail: 'fox' },
+                pig: { ears: 'pig', eyes: 'standard', nose: 'pig', misc: 'none', tail: 'pig' },
+                dragon: { ears: 'dragon', eyes: 'dragon', nose: 'dragon', misc: 'dragon_wings', tail: 'dragon' },
+                mouse: { ears: 'mouse', eyes: 'standard', nose: 'mouse', misc: 'none', tail: 'mouse' },
+                duck: { ears: 'none', eyes: 'standard', nose: 'duck', misc: 'none', tail: 'duck' },
+                axolotl: { ears: 'none', eyes: 'standard', nose: 'axolotl', misc: 'axolotl_gills', tail: 'axolotl' },
+                raccoon: { ears: 'raccoon', eyes: 'standard', nose: 'dog', misc: 'raccoon_mask', tail: 'raccoon' },
+                koala: { ears: 'koala', eyes: 'standard', nose: 'koala', misc: 'none', tail: 'none' },
+                lion: { ears: 'cat', eyes: 'standard', nose: 'cat', misc: 'lion_mane', tail: 'lion' },
+                cow: { ears: 'cow', eyes: 'standard', nose: 'cow', misc: 'none', tail: 'cat' },
+                frog: { ears: 'none', eyes: 'frog', nose: 'frog', misc: 'none', tail: 'frog' },
+                monkey: { ears: 'monkey', eyes: 'standard', nose: 'monkey', misc: 'none', tail: 'monkey' },
+                penguin: { ears: 'none', eyes: 'standard', nose: 'penguin', misc: 'penguin_belly', tail: 'penguin' },
+            };
+            const parts = speciesMapping[outfit.species] || speciesMapping.cat;
+            saveState.currentEars = parts.ears;
+            saveState.currentEyes = parts.eyes;
+            saveState.currentNose = parts.nose;
+            saveState.currentMisc = parts.misc;
+            saveState.currentMisc = parts.misc;
+            saveState.currentTail = parts.tail;
+            saveState.currentHair = 'none'; // Default for legacy species
+        } else {
+            // Fallback
+            saveState.currentHair = outfit.hair || 'none';
+        }
+
+        saveState.hairColor = outfit.hairColor || '';
+
+        // Apply cosmetics
+        saveState.currentHat = saveState.unlockedHats.includes(outfit.hat) ? outfit.hat : 'none';
+        saveState.currentShirt = saveState.unlockedShirts.includes(outfit.shirt) ? outfit.shirt : 'none';
+        saveState.currentCollar = saveState.unlockedCollars.includes(outfit.collar) ? outfit.collar : 'none';
+        saveState.currentRod = saveState.unlockedRods.includes(outfit.rod) ? outfit.rod : 'bamboo';
+        saveState.currentTitle = saveState.unlockedTitles.includes(outfit.title) ? outfit.title : 'none';
+        saveState.currentPattern = saveState.unlockedPatterns.includes(outfit.pattern) ? outfit.pattern : 'none';
+
+        // Update UI
+        populatePartSelectors();
+        document.getElementById('fur-color-picker').value = saveState.catColor;
+        document.getElementById('belly-color-picker').value = saveState.bellyColor;
+        document.getElementById('eye-color-picker').value = saveState.eyeColor;
+
+        // Update part color pickers
+        if (document.getElementById('ears-color-picker')) document.getElementById('ears-color-picker').value = saveState.earsColor || saveState.catColor;
+        if (document.getElementById('nose-color-picker')) document.getElementById('nose-color-picker').value = saveState.noseColor || saveState.catColor;
+        if (document.getElementById('misc-color-picker')) document.getElementById('misc-color-picker').value = saveState.miscColor || saveState.catColor;
+        if (document.getElementById('misc-color-picker')) document.getElementById('misc-color-picker').value = saveState.miscColor || saveState.catColor;
+        if (document.getElementById('tail-color-picker')) document.getElementById('tail-color-picker').value = saveState.tailColor || saveState.catColor;
+        if (document.getElementById('hair-color-picker')) document.getElementById('hair-color-picker').value = saveState.hairColor || '#ffffff';
+
+        saveGame();
+        updateLocalVisuals();
+        renderShop();
+        showToast(`Loaded: ${outfit.name}`);
+    }
+
+    window.deleteOutfit = function deleteOutfit(id) {
+        if (confirm("Delete this outfit?")) {
+            saveState.savedOutfits = saveState.savedOutfits.filter(o => o.id !== id);
+            saveGame();
+            renderOutfitList();
+        }
+    }
+
+    window.renderOutfitList = function renderOutfitList() {
+        const container = document.getElementById('outfit-list');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (saveState.savedOutfits.length === 0) {
+            container.innerHTML = '<div style="color:#888; text-align:center; font-size:12px; margin-top:20px;">No saved outfits.</div>';
+            return;
+        }
+
+        saveState.savedOutfits.forEach(outfit => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.background = 'rgba(255,255,255,0.1)';
+            row.style.borderRadius = '6px';
+            row.style.padding = '5px';
+            row.style.gap = '5px';
+
+            // Load Button (The Outfit Name)
+            const btnLoad = document.createElement('button');
+            btnLoad.className = 'btn-sm';
+            btnLoad.style.flex = '1';
+            btnLoad.style.textAlign = 'left';
+            btnLoad.innerText = outfit.name;
+            btnLoad.onclick = () => loadOutfit(outfit.id);
+
+            // Delete Button
+            const btnDel = document.createElement('button');
+            btnDel.className = 'btn-sm btn-danger';
+            btnDel.style.padding = '2px 8px';
+            btnDel.innerText = '×';
+            btnDel.onclick = () => deleteOutfit(outfit.id);
+
+            row.appendChild(btnLoad);
+            row.appendChild(btnDel);
+            container.appendChild(row);
+        });
+    }
+
+    let shopMode = 'hats';
+
+    /**
+     * Updates the character preview canvases in the shop wardrobe sidebar.
+     * Shows front and back views of the player's current outfit.
+     */
+    window.updateCharacterPreview = function updateCharacterPreview() {
+        const frontCanvas = document.getElementById('preview-front');
+        const backCanvas = document.getElementById('preview-back');
+
+        if (!frontCanvas || !backCanvas) return;
+
+        const frontCtx = frontCanvas.getContext('2d');
+        const backCtx = backCanvas.getContext('2d');
+
+        // Clear canvases
+        frontCtx.clearRect(0, 0, 96, 96);
+        backCtx.clearRect(0, 0, 96, 96);
+
+        // Disable smoothing for pixel art
+        frontCtx.imageSmoothingEnabled = false;
+        backCtx.imageSmoothingEnabled = false;
+
+        // Create a temp canvas at 64x88 to draw sprite (extra height for tall ears), then scale up
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = 64;
+        tempCanvas.height = 94;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.imageSmoothingEnabled = false;
+        // Offset down to make room for tall ears (matches createSpeciesTexture)
+        tempCtx.translate(0, 24);
+
+        // Create parts object from current saveState
+        const parts = {
+            ears: saveState.currentEars,
+            eyes: saveState.currentEyes,
+            nose: saveState.currentNose,
+            misc: saveState.currentMisc,
+            tail: saveState.currentTail,
+            hair: saveState.currentHair
+        };
+
+        // Build part colors object
+        const partColors = {
+            earsColor: saveState.earsColor || '',
+            noseColor: saveState.noseColor || '',
+            miscColor: saveState.miscColor || '',
+            tailColor: saveState.tailColor || '',
+            hairColor: saveState.hairColor || ''
+        };
+
+        // Draw front view with modular parts
+        drawSpecies(tempCtx, parts, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false, partColors);
+        drawPattern(tempCtx, saveState.currentPattern, saveState.catColor, false);
+        drawShirt(tempCtx, saveState.currentShirt, false);
+        drawCollar(tempCtx, saveState.currentCollar, false);
+        drawHair(tempCtx, saveState.currentHair, saveState.hairColor, false);
+        drawHat(tempCtx, saveState.currentHat, false);
+
+        // Scale to preview canvas (centered, scaled to fit 96x96)
+        const scale = 96 / 94;
+        const drawW = 64 * scale;
+        const drawH = 94 * scale;
+        const offsetX = (96 - drawW) / 2;
+        frontCtx.drawImage(tempCanvas, 0, 0, 64, 94, offsetX, 0, drawW, drawH);
+
+        // Clear temp and draw back view
+        tempCtx.clearRect(0, 0, 64, 94);
+        drawSpecies(tempCtx, parts, saveState.catColor, saveState.bellyColor, saveState.eyeColor, true, partColors);
+        drawPattern(tempCtx, saveState.currentPattern, saveState.catColor, true);
+        drawShirt(tempCtx, saveState.currentShirt, true);
+        drawCollar(tempCtx, saveState.currentCollar, true);
+        drawHair(tempCtx, saveState.currentHair, saveState.hairColor, true);
+        drawHat(tempCtx, saveState.currentHat, true);
+
+        backCtx.drawImage(tempCanvas, 0, 0, 64, 94, offsetX, 0, drawW, drawH);
+    }
+
+    window.drawBobberIcon = function drawBobberIcon(ctx, type, size) {
+        const cx = size / 2, cy = size / 2;
+
+        if (type.model === 'duck') {
+            ctx.fillStyle = '#ffdd00';
+            ctx.beginPath(); ctx.arc(cx, cy + 5, 12, 0, Math.PI * 2); ctx.fill(); // Body
+            ctx.beginPath(); ctx.arc(cx - 5, cy - 8, 9, 0, Math.PI * 2); ctx.fill(); // Head
+            ctx.fillStyle = '#ffaa00';
+            // Bigger Beak
+            ctx.beginPath(); ctx.moveTo(cx - 12, cy - 8); ctx.lineTo(cx - 24, cy - 5); ctx.lineTo(cx - 12, cy - 11); ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.beginPath(); ctx.arc(cx - 8, cy - 10, 2, 0, Math.PI * 2); ctx.fill(); // Eye
+        }
+        else if (type.model === 'cube') {
+            ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
+            ctx.fillRect(cx - 12, cy - 12, 24, 24);
+            ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.strokeRect(cx - 12, cy - 12, 24, 24);
+        }
+        else if (type.model === 'heart') {
+            ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
+            ctx.font = '32px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('❤', cx, cy + 2);
+        }
+        else if (type.model === 'star') {
+            ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
+            ctx.font = '32px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('★', cx, cy + 2);
+        }
+        else if (type.model === 'skull') {
+            ctx.fillStyle = '#ddd';
+            ctx.beginPath(); ctx.arc(cx, cy - 4, 11, 0, Math.PI * 2); ctx.fill(); // Head
+            ctx.fillRect(cx - 6, cy + 5, 12, 7); // Jaw
+            ctx.fillStyle = '#111';
+            // Big Sockets
+            ctx.beginPath(); ctx.arc(cx - 4, cy - 4, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(cx + 4, cy - 4, 4, 0, Math.PI * 2); ctx.fill();
+            // Nose
+            ctx.beginPath(); ctx.moveTo(cx, cy + 2); ctx.lineTo(cx - 2, cy + 5); ctx.lineTo(cx + 2, cy + 5); ctx.fill();
+        }
+        else {
+            // Sphere
+            ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
+            ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.fill();
+            // Shine
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.beginPath(); ctx.arc(cx - 5, cy - 5, 5, 0, Math.PI * 2); ctx.fill();
+
+            if (type.metallic) {
+                ctx.strokeStyle = 'rgba(255,255,200,0.5)';
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI * 2); ctx.stroke();
+            }
+        }
+    }
+
+    window.renderShop = function renderShop() {
+        const container = document.getElementById('shop-container');
+        container.innerHTML = '';
+
+        // Populate part dropdowns
+        populatePartSelectors();
+
+        // --- NAVIGATION TABS ---
+        const navDiv = document.createElement('div');
+        navDiv.style.gridColumn = "1 / -1";
+        navDiv.style.width = '100%';
+        navDiv.style.display = 'flex';
+        navDiv.style.justifyContent = 'center';
+        navDiv.style.gap = '5px';
+        navDiv.style.marginBottom = '15px';
+
+        const createTab = (id, label) => {
+            const btn = document.createElement('button');
+            btn.className = 'btn-lg';
+            btn.style.fontSize = '12px';
+            btn.style.padding = '8px 10px';
+            btn.style.flex = '1';
+            const isActive = shopMode === id;
+            btn.style.background = isActive ? '#44ff44' : '#444';
+            btn.style.color = isActive ? '#000' : '#fff';
+            btn.style.border = isActive ? '2px solid #fff' : '1px solid #555';
+            btn.innerText = label;
+            btn.onclick = () => { shopMode = id; renderShop(); };
+            navDiv.appendChild(btn);
+        };
+
+        createTab('hats', '🎩 Hats');
+        createTab('rods', '🎣 Rods');
+        createTab('shirts', '👕 Shirts');
+        createTab('collars', '🔔 Collars');
+        createTab('patterns', '🐾 Patterns');
+        createTab('titles', '🏷️ Titles');
+        createTab('misc', '🎸 Misc');
+        createTab('bobbers', '🔴 Bobbers');
+        container.appendChild(navDiv);
+
+        // --- COLLAR TAB ---
+        if (shopMode === 'collars') {
+            const sortedCollars = [...COLLAR_TYPES].sort((a, b) => a.price - b.price);
+            sortedCollars.forEach(item => {
+                const entry = document.createElement('div');
+                const isOwned = saveState.unlockedCollars.includes(item.id);
+                const isEquipped = saveState.currentCollar === item.id;
+                entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 64; canvas.height = 94;
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = false;
+                ctx.translate(0, 24);
+                drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
+                drawShirt(ctx, saveState.currentShirt, false);
+                drawCollar(ctx, item.id, false);
+                drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
+                entry.appendChild(canvas);
+
+                const name = document.createElement('div');
+                name.style.fontWeight = 'bold'; name.innerText = item.name;
+                entry.appendChild(name);
+
+                const btn = document.createElement('button');
+                if (isEquipped) {
+                    btn.innerText = "Equipped";
+                    btn.disabled = true;
+                } else if (isOwned) {
+                    btn.innerText = "Equip";
+                    btn.onclick = () => {
+                        saveState.currentCollar = item.id;
+                        saveGame();
+                        updateLocalVisuals();
+                        renderShop();
+                    };
+                } else {
+                    btn.innerText = `$${item.price}`;
+                    btn.style.color = saveState.money >= item.price ? '#00cc00' : '#ff4444';
+                    btn.onclick = () => {
+                        if (saveState.money >= item.price) {
+                            saveState.money -= item.price;
+                            saveState.unlockedCollars.push(item.id);
+                            Sound.sell();
+                            saveGame();
+                            renderShop();
+                        } else showToast("Not enough money!");
+                    };
+                }
+                entry.appendChild(btn);
+                container.appendChild(entry);
+            });
+        }
+
+        // --- PATTERNS TAB ---
+        else if (shopMode === 'patterns') {
+            const sortedPatterns = [...PATTERN_TYPES].sort((a, b) => a.price - b.price);
+            sortedPatterns.forEach(pattern => {
+                const entry = document.createElement('div');
+                const isOwned = saveState.unlockedPatterns.includes(pattern.id);
+                const isEquipped = saveState.currentPattern === pattern.id;
+                entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 64; canvas.height = 94;
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = false;
+                ctx.translate(0, 24);
+                drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
+
+
+                drawPattern(ctx, pattern.id, saveState.catColor, false);
+                drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
+                entry.appendChild(canvas);
+
+                const name = document.createElement('div');
+                name.style.fontWeight = 'bold'; name.innerText = pattern.name;
+                entry.appendChild(name);
+
+                const btn = document.createElement('button');
+                if (isEquipped) {
+                    btn.innerText = "Equipped";
+                    btn.disabled = true;
+                } else if (isOwned) {
+                    btn.innerText = "Equip";
+                    btn.onclick = () => {
+                        saveState.currentPattern = pattern.id;
+                        saveGame();
+                        updateLocalVisuals();
+                        renderShop();
+                    };
+                } else {
+                    btn.innerText = `$${pattern.price}`;
+                    btn.style.color = saveState.money >= pattern.price ? '#00cc00' : '#ff4444';
+                    btn.onclick = () => {
+                        if (saveState.money >= pattern.price) {
+                            saveState.money -= pattern.price;
+                            saveState.unlockedPatterns.push(pattern.id);
+                            Sound.sell();
+                            saveGame();
+                            renderShop();
+                        } else showToast("Not enough money!");
+                    };
+                }
+                entry.appendChild(btn);
+                container.appendChild(entry);
+            });
+        }
+
+        // --- SHIRTS TAB ---
+        else if (shopMode === 'shirts') {
+            const sortedShirts = [...SHIRT_TYPES].sort((a, b) => a.price - b.price);
+            sortedShirts.forEach(shirt => {
+                const entry = document.createElement('div');
+                const isOwned = saveState.unlockedShirts.includes(shirt.id);
+                const isEquipped = saveState.currentShirt === shirt.id;
+                entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 64; canvas.height = 94;
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = false;
+                ctx.translate(0, 24);
+                drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
+                drawShirt(ctx, shirt.id, false);
+                drawCollar(ctx, saveState.currentCollar, false);
+                drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
+                drawHat(ctx, saveState.currentHat, false); // Add drawHat here
+                entry.appendChild(canvas);
+
+                const name = document.createElement('div');
+                name.style.fontWeight = 'bold'; name.innerText = shirt.name;
+                entry.appendChild(name);
+
+                const btn = document.createElement('button');
+                if (isEquipped) { btn.innerText = "Equipped"; btn.disabled = true; }
+                else if (isOwned) {
+                    btn.innerText = "Equip";
+                    btn.onclick = () => {
+                        saveState.currentShirt = shirt.id;
+                        saveGame();
+                        updateLocalVisuals();
+                        renderShop();
+                    };
+                } else {
+                    btn.innerText = `$${shirt.price}`;
+                    btn.style.color = saveState.money >= shirt.price ? '#00cc00' : '#ff4444';
+                    btn.onclick = () => {
+                        if (saveState.money >= shirt.price) {
+                            saveState.money -= shirt.price;
+                            saveState.unlockedShirts.push(shirt.id);
+                            Sound.sell();
+                            saveGame();
+                            renderShop();
+                        } else showToast("Not enough money!");
+                    };
+                }
+                entry.appendChild(btn);
+                container.appendChild(entry);
+            });
+        }
+
+        // --- HATS TAB ---
+        else if (shopMode === 'hats') {
+            const sortedHats = [...HAT_TYPES].sort((a, b) => a.price - b.price);
+            sortedHats.forEach(hat => {
+                const entry = document.createElement('div');
+                const isOwned = saveState.unlockedHats.includes(hat.id);
+                const isEquipped = saveState.currentHat === hat.id;
+                entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 64; canvas.height = 94;
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = false;
+                ctx.translate(0, 24);
+                drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
+                drawShirt(ctx, saveState.currentShirt, false);
+                drawCollar(ctx, saveState.currentCollar, false);
+                drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
+                drawHat(ctx, hat.id, false);
+                entry.appendChild(canvas);
+
+                const name = document.createElement('div');
+                name.style.fontWeight = 'bold'; name.innerText = hat.name;
+                entry.appendChild(name);
+
+                const btn = document.createElement('button');
+                if (isEquipped) { btn.innerText = "Equipped"; btn.disabled = true; }
+                else if (isOwned) { btn.innerText = "Equip"; btn.onclick = () => equipHat(hat.id); }
+                else {
+                    btn.innerText = `$${hat.price}`;
+                    btn.style.color = saveState.money >= hat.price ? '#00cc00' : '#ff4444';
+                    btn.onclick = () => buyHat(hat);
+                }
+                entry.appendChild(btn);
+                container.appendChild(entry);
+            });
+        }
+
+        // --- RODS TAB ---
+        else if (shopMode === 'rods') {
+            const uniqueFishCount = Object.keys(saveState.journal).length;
+            const sortedRods = [...ROD_TYPES].sort((a, b) => {
+                if (a.price === b.price) return (a.unlockCount || 0) - (b.unlockCount || 0);
+                return a.price - b.price;
+            });
+
+            sortedRods.forEach(item => {
+                const entry = document.createElement('div');
+                const isOwned = saveState.unlockedRods.includes(item.id);
+                const isEquipped = saveState.currentRod === item.id;
+                entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 64; canvas.height = 94;
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = false;
+                ctx.translate(0, 24);
+                const rodTex = createRodTexture(item.id);
+                ctx.drawImage(rodTex.image, 0, 0);
+                entry.appendChild(canvas);
+
+                const name = document.createElement('div');
+                name.style.fontWeight = 'bold'; name.innerText = item.name;
+                entry.appendChild(name);
+
+                const btn = document.createElement('button');
+
+                if (isEquipped) {
+                    btn.innerText = "Equipped";
+                    btn.disabled = true;
+                } else if (isOwned) {
+                    btn.innerText = "Equip";
+                    btn.onclick = () => {
+                        saveState.currentRod = item.id;
+                        saveGame();
+                        updateLocalVisuals();
+                        renderShop();
+                    };
+                } else {
+                    if (item.unlockCount) {
+                        if (uniqueFishCount >= item.unlockCount) {
+                            btn.innerText = "Claim Reward!";
+                            btn.style.color = '#00ffff';
+                            btn.onclick = () => {
+                                saveState.unlockedRods.push(item.id);
+                                Sound.sell();
+                                saveGame();
+                                renderShop();
+                                showToast(`Unlocked ${item.name}!`);
+                            };
+                        } else {
+                            btn.innerText = `Need ${item.unlockCount} Fish`;
+                            btn.style.fontSize = '10px';
+                            btn.style.color = '#888';
+                            btn.disabled = true;
+                            const prog = document.createElement('div');
+                            prog.style.fontSize = '9px'; prog.style.color = '#666';
+                            prog.innerText = `(${uniqueFishCount} / ${item.unlockCount})`;
+                            entry.appendChild(prog);
+                        }
+                    } else {
+                        btn.innerText = `$${item.price}`;
+                        btn.style.color = saveState.money >= item.price ? '#00cc00' : '#ff4444';
+                        btn.onclick = () => {
+                            if (saveState.money >= item.price) {
+                                saveState.money -= item.price;
+                                saveState.unlockedRods.push(item.id);
+                                Sound.sell();
+                                saveGame();
+                                renderShop();
+                            } else showToast("Not enough money!");
+                        };
+                    }
+                }
+                entry.appendChild(btn);
+                container.appendChild(entry);
+            });
+        }
+
+        // --- TITLES & MISC ---
+        else if (shopMode === 'titles') {
+            const sortedTitles = [...TITLE_TYPES].sort((a, b) => a.price - b.price);
+            sortedTitles.forEach(title => {
+                const entry = document.createElement('div');
+                const isOwned = saveState.unlockedTitles.includes(title.id);
+                const isEquipped = saveState.currentTitle === title.id;
+                entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+                const preview = document.createElement('div');
+                preview.innerText = `< ${title.text || "No Title"} >`;
+                preview.style.color = title.color || '#87CEEB';
+                preview.style.fontWeight = 'bold';
+                entry.appendChild(preview);
+                const btn = document.createElement('button');
+                if (isEquipped) { btn.innerText = "Equipped"; btn.disabled = true; }
+                else if (isOwned) {
+                    btn.innerText = "Equip";
+                    btn.onclick = () => { saveState.currentTitle = title.id; saveGame(); updateLocalVisuals(); renderShop(); };
+                } else {
+                    btn.innerText = `$${title.price}`;
+                    btn.onclick = () => { if (saveState.money >= title.price) { saveState.money -= title.price; saveState.unlockedTitles.push(title.id); Sound.sell(); saveGame(); renderShop(); } else showToast("Not enough money!"); };
+                }
+                entry.appendChild(btn);
+                container.appendChild(entry);
+            });
+        }
+
+
+
+        // --- BOBBERS TAB ---
+        else if (shopMode === 'bobbers') {
+            const sortedBobbers = [...BOBBER_TYPES].sort((a, b) => a.price - b.price);
+            sortedBobbers.forEach(item => {
+                const entry = document.createElement('div');
+                const isOwned = saveState.unlockedBobbers.includes(item.id);
+                const isEquipped = saveState.currentBobber === item.id;
+                entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 64; canvas.height = 64;
+                const ctx = canvas.getContext('2d');
+
+                // Draw Preview
+                drawBobberIcon(ctx, item, 64);
+
+                entry.appendChild(canvas);
+
+                const name = document.createElement('div');
+                name.style.fontWeight = 'bold'; name.innerText = item.name;
+                entry.appendChild(name);
+
+                const btn = document.createElement('button');
+                if (isEquipped) {
+                    btn.innerText = "Equipped";
+                    btn.disabled = true;
+                } else if (isOwned) {
+                    btn.innerText = "Equip";
+                    btn.onclick = () => {
+                        saveState.currentBobber = item.id;
+                        saveGame();
+                        updateLocalVisuals();
+                        renderShop();
+                    };
+                } else {
+                    btn.innerText = `$${item.price}`;
+                    btn.style.color = saveState.money >= item.price ? '#00cc00' : '#ff4444';
+                    btn.onclick = () => {
+                        if (saveState.money >= item.price) {
+                            saveState.money -= item.price;
+                            saveState.unlockedBobbers.push(item.id);
+                            Sound.sell();
+                            saveGame();
+                            renderShop();
+                        } else showToast("Not enough money!");
+                    };
+                }
+                entry.appendChild(btn);
+                container.appendChild(entry);
+            });
+        } else if (shopMode === 'misc') {
+            // --- 1. GUITAR ---
+            const guitarDiv = document.createElement('div');
+            guitarDiv.className = 'grid-entry';
+            const hasGuitar = saveState.unlockedTools.includes('guitar');
+
+            const gTitle = document.createElement('div');
+            gTitle.innerHTML = "<b>🎸 Acoustic Guitar</b>";
+            guitarDiv.appendChild(gTitle);
+
+            const gDesc = document.createElement('div');
+            gDesc.className = 'item-desc';
+            gDesc.innerText = "Play music! Full MIDI support.";
+            guitarDiv.appendChild(gDesc);
+
+            if (hasGuitar) {
+                const btn = document.createElement('button');
+                btn.innerText = "Owned";
+                btn.disabled = true;
+                guitarDiv.appendChild(btn);
+            } else {
+                const btn = document.createElement('button');
+                btn.innerText = "Buy ($500)";
+                btn.style.color = saveState.money >= 500 ? '#44ff44' : '#ff4444';
+                btn.onclick = () => {
+                    if (saveState.money >= 500) {
+                        saveState.money -= 500;
+                        saveState.unlockedTools.push('guitar');
+                        if (!saveState.hasGuitar) saveState.hasGuitar = true;
+                        Sound.sell();
+                        saveGame();
+                        renderShop();
+                        setupHotbar();
+                    } else showToast("Not enough money!");
+                };
+                guitarDiv.appendChild(btn);
+            }
+            container.appendChild(guitarDiv);
+
+            // --- 2. WOODCUTTER'S AXE ---
+            const axeDiv = document.createElement('div');
+            axeDiv.className = 'grid-entry';
+            const hasAxe = saveState.unlockedTools.includes('axe');
+
+            const aTitle = document.createElement('div');
+            aTitle.innerHTML = "<b>🪓 Woodcutter's Axe</b>";
+            axeDiv.appendChild(aTitle);
+
+            const aDesc = document.createElement('div');
+            aDesc.className = 'item-desc';
+            aDesc.innerText = "Chop trees for wood.";
+            axeDiv.appendChild(aDesc);
+
+            if (hasAxe) {
+                const btn = document.createElement('button');
+                btn.innerText = "Owned";
+                btn.disabled = true;
+                axeDiv.appendChild(btn);
+            } else {
+                const btn = document.createElement('button');
+                btn.innerText = "Buy ($150)";
+                btn.style.color = saveState.money >= 150 ? '#44ff44' : '#ff4444';
+                btn.onclick = () => {
+                    if (saveState.money >= 150) {
+                        saveState.money -= 150;
+                        saveState.unlockedTools.push('axe');
+                        Sound.sell();
+                        saveGame();
+                        renderShop();
+                        setupHotbar();
+                    } else showToast("Not enough money!");
+                };
+                axeDiv.appendChild(btn);
+            }
+            container.appendChild(axeDiv);
+
+            // --- 3. PVP GLOVE ---
+            const gloveDiv = document.createElement('div');
+            gloveDiv.className = 'grid-entry';
+            const hasGlove = saveState.unlockedTools.includes('glove');
+
+            const glTitle = document.createElement('div');
+            glTitle.innerHTML = "<b>🥊 PvP Glove</b>";
+            gloveDiv.appendChild(glTitle);
+
+            const glDesc = document.createElement('div');
+            glDesc.className = 'item-desc';
+            glDesc.innerText = "Punch other players!";
+            gloveDiv.appendChild(glDesc);
+
+            if (hasGlove) {
+                const btn = document.createElement('button');
+                btn.innerText = "Owned";
+                btn.disabled = true;
+                gloveDiv.appendChild(btn);
+            } else {
+                const btn = document.createElement('button');
+                btn.innerText = "Buy ($1000)";
+                btn.style.color = saveState.money >= 1000 ? '#44ff44' : '#ff4444';
+                btn.onclick = () => {
+                    if (saveState.money >= 1000) {
+                        saveState.money -= 1000;
+                        saveState.unlockedTools.push('glove');
+                        if (!saveState.hasGlove) saveState.hasGlove = true;
+                        Sound.sell();
+                        saveGame();
+                        renderShop();
+                        setupHotbar();
+                    } else showToast("Not enough money!");
+                };
+                gloveDiv.appendChild(btn);
+            }
+            container.appendChild(gloveDiv);
+
+            // --- 4. PICKAXE ---
+            const pickDiv = document.createElement('div');
+            pickDiv.className = 'grid-entry';
+            const hasPick = saveState.unlockedTools.includes('pickaxe');
+
+            const pTitle = document.createElement('div');
+            pTitle.innerHTML = "<b>⛏️ Pickaxe</b>";
+            pickDiv.appendChild(pTitle);
+
+            const pDesc = document.createElement('div');
+            pDesc.className = 'item-desc';
+            pDesc.innerText = "Mine rocks for stone.";
+            pickDiv.appendChild(pDesc);
+
+            if (hasPick) {
+                const btn = document.createElement('button');
+                btn.innerText = "Owned";
+                btn.disabled = true;
+                pickDiv.appendChild(btn);
+            } else {
+                const btn = document.createElement('button');
+                btn.innerText = "Buy ($800)";
+                btn.style.color = saveState.money >= 800 ? '#44ff44' : '#ff4444';
+                btn.onclick = () => {
+                    if (saveState.money >= 800) {
+                        saveState.money -= 800;
+                        if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod'];
+                        if (!saveState.unlockedTools.includes('pickaxe')) saveState.unlockedTools.push('pickaxe');
+                        Sound.sell();
+                        saveGame();
+                        renderShop();
+                        setupHotbar();
+                    } else showToast("Not enough money!");
+                };
+                pickDiv.appendChild(btn);
+            }
+            container.appendChild(pickDiv);
+        }
+
+        // --- IMPORTANT: RENDER OUTFITS EVERY TIME SHOP UPDATES ---
+        renderOutfitList();
+
+        // Update the character preview canvases
+        updateCharacterPreview();
+    }
+
+    function renderBaitShop() {
+        const container = document.getElementById('bait-shop-container');
+        container.innerHTML = '';
+
+        // --- 1. RENDER STABILIZER (formerly Auto-Reel) UPGRADE ---
+        const lvl = saveState.autoReelLevel;
+        const maxLvl = AUTO_CLICK_RATES.length - 1;
+
+        const upgradeDiv = document.createElement('div');
+        upgradeDiv.className = 'grid-entry';
+        upgradeDiv.style.borderColor = '#00ffff';
+        upgradeDiv.style.background = '#002233';
+
+        const upTitle = document.createElement('div');
+        upTitle.innerHTML = `<b>⚓ Stabilizer v${lvl}</b>`;
+        upgradeDiv.appendChild(upTitle);
+
+        const upDesc = document.createElement('div');
+        upDesc.style.fontSize = '12px';
+        upDesc.style.margin = '5px 0';
+        if (lvl < maxLvl) {
+            upDesc.innerHTML = "Reduces bar drain.<br>Makes catching safer.";
+        } else {
+            upDesc.innerHTML = "Max Level.<br>Perfect stability!";
+        }
+        upgradeDiv.appendChild(upDesc);
+
+        if (lvl < maxLvl) {
+            const cost = AUTO_CLICK_PRICES[lvl];
+            const btn = document.createElement('button');
+            btn.innerText = `Upgrade ($${cost})`;
+            btn.style.marginTop = 'auto';
+            btn.style.color = saveState.money >= cost ? '#44ff44' : '#ff4444';
+            btn.onclick = () => buyAutoReelUpgrade(cost);
+            upgradeDiv.appendChild(btn);
+        } else {
+            const lbl = document.createElement('div');
+            lbl.innerText = "MAXED";
+            lbl.style.color = '#ffff00';
+            lbl.style.marginTop = 'auto';
+            upgradeDiv.appendChild(lbl);
+        }
+        container.appendChild(upgradeDiv);
+
+        // --- 2. RENDER BAR SIZE (formerly Click Power) UPGRADE ---
+        const cLvl = saveState.clickPowerLevel;
+        const cMax = CLICK_POWER_RATES.length - 1;
+
+        const pDiv = document.createElement('div');
+        pDiv.className = 'grid-entry';
+        pDiv.style.borderColor = '#ff00ff';
+        pDiv.style.background = '#330033';
+
+        const pTitle = document.createElement('div');
+        pTitle.innerHTML = `<b>📏 Bar Size v${cLvl}</b>`;
+        pDiv.appendChild(pTitle);
+
+        const pDesc = document.createElement('div');
+        pDesc.style.fontSize = '12px';
+        pDesc.style.margin = '5px 0';
+        if (cLvl < cMax) {
+            pDesc.innerHTML = "Increases catch area.<br>Easier validation.";
+        } else {
+            pDesc.innerHTML = "Max Size.<br>Huge bar!";
+        }
+        pDiv.appendChild(pDesc);
+
+        if (cLvl < cMax) {
+            const cost = CLICK_POWER_PRICES[cLvl];
+            const btn = document.createElement('button');
+            btn.innerText = `Upgrade ($${cost})`;
+            btn.style.marginTop = 'auto';
+            btn.style.color = saveState.money >= cost ? '#44ff44' : '#ff4444';
+            btn.onclick = () => buyClickPowerUpgrade(cost);
+            pDiv.appendChild(btn);
+        } else {
+            const lbl = document.createElement('div');
+            lbl.innerText = "MAXED";
+            lbl.style.color = '#ffff00';
+            lbl.style.marginTop = 'auto';
+            pDiv.appendChild(lbl);
+        }
+        container.appendChild(pDiv);
+
+        // --- 2. RENDER BAITS ---
+        const uniqueCount = Object.keys(saveState.journal).length;
+
+        BAIT_TYPES.forEach(bait => {
+            if (bait.id === 'none') return;
+
+            const entry = document.createElement('div');
+            entry.className = 'grid-entry';
+
+            // Name
+            const name = document.createElement('div');
+            name.style.fontWeight = 'bold';
+            name.innerText = bait.name;
+            entry.appendChild(name);
+
+            // Stats
+            const info = document.createElement('div');
+            info.style.fontSize = '12px';
+            info.style.color = '#aaa';
+            info.innerText = `Pwr: ${bait.power} | Luck: ${bait.rarityMult}x`;
+            entry.appendChild(info);
+
+            // Lock Logic
+            const locked = uniqueCount < bait.unlockFish;
+
+            if (locked) {
+                // Locked UI
+                const overlay = document.createElement('div');
+                overlay.style.color = '#ff4444';
+                overlay.style.fontWeight = 'bold';
+                overlay.style.marginTop = '10px';
+                overlay.style.fontSize = '13px';
+                overlay.innerText = `🔒 Need ${bait.unlockFish} Fish`;
+                entry.appendChild(overlay);
+
+                // Add progress text
+                const progress = document.createElement('div');
+                progress.style.fontSize = '10px';
+                progress.style.color = '#666';
+                progress.innerText = `(${uniqueCount} / ${bait.unlockFish})`;
+                entry.appendChild(progress);
+            } else {
+                // Unlocked UI
+                const btn = document.createElement('button');
+                const cost = bait.price;
+                btn.innerText = `Buy 10 ($${cost})`;
+                btn.style.marginTop = '8px';
+                btn.style.color = saveState.money >= cost ? '#44ff44' : '#ff4444';
+                btn.onclick = () => buyBait(bait);
+                entry.appendChild(btn);
+            }
+
+            // Owned Count
+            const owned = document.createElement('div');
+            owned.style.fontSize = '11px';
+            owned.style.marginTop = '5px';
+            owned.style.color = '#fff';
+            owned.innerText = `Owned: ${saveState.baitInventory[bait.id] || 0}`;
+            entry.appendChild(owned);
+
+            container.appendChild(entry);
+        });
+    }
+
+    // --- HUD VISIBILITY TOGGLE ---
+    let isHudHidden = false;
+
+    function toggleHud() {
+        isHudHidden = !isHudHidden;
+        const uiLayer = document.getElementById('ui-layer');
+        if (uiLayer) {
+            uiLayer.style.display = isHudHidden ? 'none' : 'block';
+        }
+        if (!isHudHidden) showToast("HUD Visible");
+    }
+
+    window.toggleEmptyHands = function () {
+        // 1. Reset all other modes
+        if (isGuitarActive) toggleGuitar();
+        if (isGloveActive) toggleGlove();
+
+        // 2. Clear held fish
+        if (localHeldFish) {
+            localHeldFish = null;
+            if (fishHoldTimer) clearTimeout(fishHoldTimer);
+            fishHoldTimer = null;
+        }
+
+        // 3. Toggle the "Hidden" state
+        isHandsHidden = !isHandsHidden;
+
+        // 4. Update Visuals
+        updateLocalVisuals();
+
+        // 5. Notify
+        if (isHandsHidden) showToast("Hands Empty (Screenshot Mode)");
+        else showToast("Rod Equipped");
+    }
+
+    window.toggleGuitar = function () {
+        if (!saveState.hasGuitar) {
+            showToast("You don't own a guitar! Check the Stylist.");
+            return;
+        }
+
+        if (isGloveActive) {
+            isGloveActive = false;
+            const g = player.getObjectByName('gloveMesh');
+            if (g) g.visible = false;
+        }
+
+        if (localHeldFish) {
+            localHeldFish = null;
+            if (fishHoldTimer) clearTimeout(fishHoldTimer);
+            fishHoldTimer = null;
+            updateLocalVisuals();
+        }
+
+        if (!isGuitarActive && fishingState !== 'idle') {
+            stopFishing(false);
+        }
+
+        isGuitarActive = !isGuitarActive;
+
+        const ui = document.getElementById('guitar-ui');
+        if (ui) ui.style.display = isGuitarActive ? 'block' : 'none';
+        if (!isGuitarActive) stopMidi();
+
+        const rod = player.getObjectByName('rod');
+        if (rod) rod.visible = !isGuitarActive && !isGloveActive;
+
+        let guitarMesh = player.getObjectByName('guitarMesh');
+        if (isGuitarActive) {
+            if (!guitarMesh) {
+                const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = '#8B4513'; ctx.beginPath(); ctx.arc(32, 45, 12, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(32, 35, 10, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#222'; ctx.fillRect(30, 10, 4, 30);
+                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(32, 40, 4, 0, Math.PI * 2); ctx.fill();
+
+                const tex = new THREE.CanvasTexture(c);
+                tex.magFilter = THREE.NearestFilter;
+                tex.minFilter = THREE.NearestFilter;
+
+                // --- FIX: AlphaTest added ---
+                const mat = new THREE.SpriteMaterial({
+                    map: tex,
+                    transparent: true,
+                    depthWrite: false,
+                    depthTest: true,
+                    alphaTest: 0.5
+                });
+
+                guitarMesh = new THREE.Sprite(mat);
+                guitarMesh.name = 'guitarMesh';
+                guitarMesh.renderOrder = 10;
+                guitarMesh.position.set(0.3, 1.25, 0.2);
+                guitarMesh.scale.set(1.5, 1.5, 1);
+                player.add(guitarMesh);
+            }
+            guitarMesh.visible = true;
+        } else {
+            if (guitarMesh) guitarMesh.visible = false;
+        }
+
+        showToast(isGuitarActive ? "Guitar Equipped!" : "Guitar Unequipped");
+    }
+
+    window.toggleGlove = function () {
+        if (!saveState.hasGlove) {
+            showToast("You don't own the Glove! Check the Stylist.");
+            return;
+        }
+
+        // Unequip other items
+        if (isGuitarActive) {
+            isGuitarActive = false;
+            stopMidi();
+            const g = player.getObjectByName('guitarMesh');
+            if (g) g.visible = false;
+            const ui = document.getElementById('guitar-ui');
+            if (ui) ui.style.display = 'none';
+        }
+
+        if (localHeldFish) {
+            localHeldFish = null;
+            if (fishHoldTimer) clearTimeout(fishHoldTimer);
+            fishHoldTimer = null;
+            updateLocalVisuals();
+        }
+
+        if (!isGloveActive && fishingState !== 'idle') {
+            stopFishing(false);
+        }
+
+        isGloveActive = !isGloveActive;
+
+        const rod = player.getObjectByName('rod');
+        if (rod) rod.visible = !isGuitarActive && !isGloveActive;
+
+        let gloveMesh = player.getObjectByName('gloveMesh');
+        if (isGloveActive) {
+            if (!gloveMesh) {
+                const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = '#cc0000'; ctx.beginPath(); ctx.arc(32, 32, 20, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#990000'; ctx.beginPath(); ctx.arc(20, 40, 10, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.fillRect(35, 20, 10, 2); ctx.fillRect(35, 25, 10, 2); ctx.fillRect(35, 30, 10, 2);
+
+                const tex = new THREE.CanvasTexture(c);
+                tex.magFilter = THREE.NearestFilter;
+                tex.minFilter = THREE.NearestFilter;
+
+                // --- FIX: AlphaTest added ---
+                const mat = new THREE.SpriteMaterial({
+                    map: tex,
+                    transparent: true,
+                    alphaTest: 0.5
+                });
+
+                gloveMesh = new THREE.Sprite(mat);
+                gloveMesh.name = 'gloveMesh';
+                gloveMesh.position.set(0.6, 1.25, 0.5);
+                gloveMesh.scale.set(1.2, 1.2, 1);
+                player.add(gloveMesh);
+            }
+            gloveMesh.visible = true;
+        } else {
+            if (gloveMesh) gloveMesh.visible = false;
+        }
+
+        showToast(isGloveActive ? "Glove Equipped!" : "Glove Unequipped");
+    }
+
+
+
+
+    // --- MIDI PLAYBACK SYSTEM ---
+    const MAX_MIDI_NOTES = 200000;
+    const MAX_NOTES_PER_SEC = 15;
+
+    window.handleMidiUpload = function handleMidiUpload(files) {
+        if (files.length === 0) return;
+        const file = files[0];
+
+        // 1. SECURITY: File Size Check (Max 512KB)
+        // Prevents "Zip Bombs" or massive files crashing the browser memory
+        if (file.size > 512 * 1024) {
+            showToast("File too large! Max 512KB.");
+            return;
+        }
+
+        // 2. SECURITY: Basic Extension Check
+        const fileName = file.name.toLowerCase();
+        if (!fileName.endsWith('.mid') && !fileName.endsWith('.midi')) {
+            showToast("Invalid file type. Only .mid allowed.");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            try {
+                const arrayBuffer = e.target.result;
+
+                // 3. SECURITY: Magic Number Validation (Deep Check)
+                // A real MIDI file MUST start with the hex bytes: 4D 54 68 64 ("MThd")
+                // If someone renames 'virus.exe' to 'song.mid', this check will catch it.
+                if (arrayBuffer.byteLength < 4) {
+                    throw new Error("File too small.");
+                }
+
+                const view = new DataView(arrayBuffer);
+                if (view.getUint8(0) !== 0x4D ||
+                    view.getUint8(1) !== 0x54 ||
+                    view.getUint8(2) !== 0x68 ||
+                    view.getUint8(3) !== 0x64) {
+
+                    showToast("Security Block: Not a valid MIDI file.");
+                    console.warn("Security Alert: User attempted to upload a non-MIDI file.");
+                    return;
+                }
+
+                // 4. Safe Parsing
+                // If the structure is corrupted, Tone.js will throw an error, which we catch.
+                const midi = new Midi(arrayBuffer);
+
+                let totalNotes = 0;
+                midi.tracks.forEach(t => totalNotes += t.notes.length);
+
+                // 5. SECURITY: Complexity Limit
+                // Prevents files with millions of notes from freezing the game loop
+                if (totalNotes > MAX_MIDI_NOTES) {
+                    showToast(`Too many notes! (${totalNotes}/${MAX_MIDI_NOTES})`);
+                    return;
+                }
+
+                playMidi(midi);
+                document.getElementById('midi-status').innerText = "Playing: " + file.name.substring(0, 20);
+
+            } catch (err) {
+                console.error("MIDI Parse Error:", err);
+                showToast("Invalid or Corrupted MIDI file.");
+            }
+        };
+
+        // Read as ArrayBuffer allows us to check the raw bytes securely
+        reader.readAsArrayBuffer(file);
+    }
+
+    function playMidi(midi) {
+        stopMidi();
+
+
+        let notes = [];
+        midi.tracks.forEach(track => {
+            track.notes.forEach(note => {
+                notes.push({
+                    time: note.time,
+                    freq: Math.pow(2, (note.midi - 69) / 12) * 440
+                });
+            });
+        });
+
+
+        notes.sort((a, b) => a.time - b.time);
+
+        activeMidiNotes = notes;
+        midiStartTime = audioCtx.currentTime;
+
+
+        midiInterval = setInterval(updateMidiLoop, 20);
+    }
+
+    function updateMidiLoop() {
+        if (!isGuitarActive || activeMidiNotes.length === 0) return;
+        const now = audioCtx.currentTime;
+        const elapsedTime = now - midiStartTime;
+        let sentCount = 0;
+
+        for (let i = activeMidiNotes.length - 1; i >= 0; i--) {
+            const note = activeMidiNotes[i];
+            if (note.time <= elapsedTime) {
+                // Always play locally immediately
+                Sound.playSpatial('guitar', player.position, note.freq);
+
+                const msg = {
+                    type: 'sound',
+                    name: 'guitar',
+                    pos: { x: player.position.x, y: player.position.y, z: player.position.z },
+                    var: note.freq
+                };
+
+                if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+                    // MIDI EXEMPTION: forward ALL guitar notes to the dedicated server
+                    // without applying local per-tick throttling.
+                    dedicatedSocket.send(JSON.stringify(msg));
+                } else {
+                    // P2P path keeps the original flood protection so we don't
+                    // spam other peers with too many packets per tick.
+                    if (sentCount < 2) {
+                        if (isHost) {
+                            broadcastToClients(msg);
+                        } else if (hostConn && hostConn.open) {
+                            hostConn.send(msg);
+                        }
+                        sentCount++;
+                    }
+                }
+
+                // This note has been handled, remove from queue
+                activeMidiNotes.splice(i, 1);
+            }
+        }
+
+        if (activeMidiNotes.length === 0) {
+            stopMidi();
+            document.getElementById('midi-status').innerText = "Finished.";
+        }
+    }
+
+    window.stopMidi = function stopMidi() {
+        if (midiInterval) clearInterval(midiInterval);
+        activeMidiNotes = [];
+        document.getElementById('midi-status').innerText = "Stopped.";
+    }
+
+    function buyAutoReelUpgrade(price) {
+        if (saveState.money >= price) {
+            saveState.money -= price;
+            saveState.autoReelLevel++;
+            saveGame();
+            Sound.sell();
+            renderBaitShop();
+            showToast(`Upgraded Stabilizer to Level ${saveState.autoReelLevel}!`);
+        } else {
+            showToast("Not enough money!");
+        }
+    }
+
+    function buyClickPowerUpgrade(cost) {
+        if (saveState.money >= cost) {
+            saveState.money -= cost;
+            saveState.clickPowerLevel++;
+            saveGame();
+            Sound.sell();
+            renderBaitShop();
+            showToast(`Bar Size Upgraded to Level ${saveState.clickPowerLevel}!`);
+        } else {
+            showToast("Not enough money!");
+        }
+    }
+
+    function buyHat(hat) {
+        if (saveState.money >= hat.price) {
+            saveState.money -= hat.price;
+            saveState.unlockedHats.push(hat.id);
+            Sound.sell();
+            saveGame();
+            renderShop();
+        } else { showToast("Not enough money!"); }
+    }
+
+    function buyBait(bait) {
+        if (saveState.money >= bait.price) {
+            saveState.money -= bait.price;
+            if (!saveState.baitInventory[bait.id]) saveState.baitInventory[bait.id] = 0;
+            saveState.baitInventory[bait.id] += 10;
+            Sound.sell();
+            saveGame();
+            renderBaitShop();
+            updateBaitSelector();
+        } else { showToast("Not enough money!"); }
+    }
+
+    function equipHat(hatId) {
+        saveState.currentHat = hatId;
+        saveGame();
+        renderShop();
+        updateLocalVisuals();
+    }
+
+    // Handles input from the mobile zoom slider.
+    window.handleMobileZoom = function (value) {
+        // The slider value is 0 to 1. We need to map it to MAX_ZOOM to MIN_ZOOM.
+        // Since a lower slider value should mean more zoomed in (smaller cameraDistance), we reverse the mapping.
+        const newDist = MAX_ZOOM - (value * (MAX_ZOOM - MIN_ZOOM));
+        cameraDistance = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newDist));
+    }
+}
+
+function updateBaitSelector() {
+    const sel = document.getElementById('bait-select');
+    sel.innerHTML = '';
+
+    let opt = document.createElement('option');
+    opt.value = 'none'; opt.text = "None (Inf)";
+    sel.appendChild(opt);
+
+    Object.keys(saveState.baitInventory).forEach(bid => {
+        const count = saveState.baitInventory[bid];
+        // Keep option if count > 0 OR if it is the currently active bait.
+        // This prevents the "mid-air switch" when using the last bait.
+        if (count > 0 || bid === activeBaitId) {
+            const bType = BAIT_TYPES.find(b => b.id === bid);
+            if (bType) {
+                let o = document.createElement('option');
+                o.value = bid;
+                o.text = `${bType.name} (${count})`;
+                sel.appendChild(o);
+            }
+        }
+    });
+    sel.value = activeBaitId;
+
+    // Fallback: Only reset if the bait is truly invalid/missing.
+    if (sel.value === "" && activeBaitId !== 'none') {
+        activeBaitId = 'none';
+        sel.value = 'none';
+    }
+}
+
+function createPortalTexture() {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+    const ctx = c.getContext('2d');
+
+    const grd = ctx.createRadialGradient(64, 64, 5, 64, 64, 60);
+    grd.addColorStop(0, 'black');
+    grd.addColorStop(0.5, '#4b0082');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, 128, 128);
+
+    ctx.strokeStyle = '#9400D3';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 6; i++) {
+        ctx.beginPath();
+        ctx.arc(64, 64, 10 + i * 8, i, i + Math.PI);
+        ctx.stroke();
+    }
+
+    const tex = new THREE.CanvasTexture(c);
+    // --- FILTER FIX ---
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    // ------------------
+
+    return tex;
+}
+
+function spawnPortal(x, z, fromNetwork = false) {
+    if (voidPortalMesh) scene.remove(voidPortalMesh);
+
+    const tex = createPortalTexture();
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
+    voidPortalMesh = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), mat);
+    voidPortalMesh.rotation.x = -Math.PI / 2;
+    // Get terrain height for proper Y positioning
+    const terrainY = (typeof getTerrainHeight === 'function') ? getTerrainHeight(x, z) : 0;
+    voidPortalMesh.position.set(x, terrainY + 0.2, z);
+    scene.add(voidPortalMesh);
+
+    portalDespawnTime = Date.now() + 120000;
+
+    showToast("🌌 A Void Portal has opened!");
+    broadcastSound('magic', { x: x, y: 0, z: z });
+
+    // FIX: Send to Dedicated Server if connected
+    if (!fromNetwork) {
+        const msg = { type: 'spawnPortal', x: x, z: z };
+
+        // PRIORITIZE DEDICATED
+        if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+            dedicatedSocket.send(JSON.stringify(msg));
+        }
+        else if (isHost) {
+            broadcastToClients(msg);
+        }
+    }
+}
+
+function enterLavaWorld() {
+    isInLavaWorld = true;
+    isInVoid = false;
+
+    // Teleport Player
+    player.position.set(-20000 + 40, 2, 0); // Edge of lava island
+    player.lookAt(-20000, 2, 0); // Look at lava lake
+    playerVelocity.set(0, 0, 0);
+
+    // Visuals
+    scene.background = new THREE.Color(0x220000); // Dark Red Sky
+    scene.fog = new THREE.Fog(0x220000, 10, 80);
+
+    showToast("🔥 Welcome to the Lava World!");
+    updateWeatherVisuals();
+}
+
+function exitLavaWorld() {
+    isInLavaWorld = false;
+    respawnPlayer(); // Returns to main island
+}
+
+function enterVoid() {
+    if (isInVoid) return;
+    isInVoid = true;
+
+    // Save last position just in case, though Respawn will reset to default
+    lastIslandPos.copy(player.position);
+
+    // Teleport to Void
+    player.position.set(10000, 2002, 10000);
+    playerVelocity.y = 0;
+
+    // Visuals
+    scene.background = new THREE.Color(0x000000);
+    scene.fog = new THREE.Fog(0x000000, 10, 50);
+
+    if (!voidFloorMesh) {
+        voidFloorMesh = new THREE.Mesh(
+            new THREE.CircleGeometry(40, 32),
+            new THREE.MeshBasicMaterial({ color: 0x111111 })
+        );
+        voidFloorMesh.rotation.x = -Math.PI / 2;
+        voidFloorMesh.position.set(10000, 2000, 10000);
+        scene.add(voidFloorMesh);
+    }
+
+    showToast("Entered the Void.");
+    updateWeatherVisuals();
+}
+
+window.respawnPlayer = function () {
+    // Reset Void State
+    isInVoid = false;
+    isInLavaWorld = false;
+
+    // Reset Visuals to Island
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+
+    // Reset Player Physics & Position
+    if (player) {
+        player.position.set(25, 2, 0); // Default spawn point
+        playerVelocity.set(0, 0, 0);
+        knockbackVelocity.set(0, 0, 0);
+    }
+
+    // Set cooldown so we don't instantly teleport back if a portal is nearby
+    portalCooldown = Date.now() + 5000;
+
+    // Close Options Menu
+    toggleOptions();
+    showToast("Respawned!");
+    updateWeatherVisuals();
+}
+
+window.exitVoid = function () {
+    if (!isInVoid) return;
+    isInVoid = false;
+
+    player.position.copy(lastIslandPos);
+    player.position.y = 0.5;
+    playerVelocity.y = 0;
+
+    portalCooldown = Date.now() + 3000;
+
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+
+    document.getElementById('btn-void-respawn').style.display = 'none';
+}
+
+async function promptAdminLogin() {
+    const pw = prompt("Enter admin password (obfuscated login).");
+    if (!pw) return;
+
+    const ok = await dedicatedAdminLogin(pw);
+
+    if (ok) {
+        alert("Admin login successful.");
+
+        // Show the Host Panel Shield
+        document.getElementById('btn-host-panel').style.display = 'block';
+
+        // HIDE the Admin Login Button
+        document.getElementById('btn-admin-login').style.display = 'none';
+
+        updateHostPanel();
+    }
+    else {
+        alert("Admin login failed.");
+    }
+}
+
+
+// New function to handle unbanning
+function promptUnbanIP() {
+    if (!isConnectedToDedicated || !isAdminOnDedicated) return;
+    const ip = prompt("Enter IP address to unban:");
+    if (ip) {
+        dedicatedSocket.send(JSON.stringify({
+            type: 'admin_cmd',
+            cmd: 'unban',
+            ip: ip.trim()
+        }));
+    }
+}
+
+function togglePlayerList() {
+    const ui = document.getElementById('player-list-overlay');
+    ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
+    if (ui.style.display === 'flex') renderPlayerList();
+}
+
+function renderPlayerList() {
+    const container = document.getElementById('public-player-list');
+    container.innerHTML = '';
+
+    // 1. Add Self (Information only)
+    const myRow = document.createElement('div');
+    myRow.style.background = 'rgba(255, 255, 255, 0.1)';
+    myRow.style.padding = '10px'; myRow.style.borderRadius = '8px';
+    myRow.style.color = '#44ff44'; myRow.style.fontWeight = 'bold';
+    myRow.innerText = `${saveState.displayName} (You)`;
+    container.appendChild(myRow);
+
+    // 2. Add Other Players
+    Object.keys(otherPlayers).forEach(pid => {
+        const p = otherPlayers[pid];
+        const row = document.createElement('div');
+        row.style.background = 'rgba(255, 255, 255, 0.05)';
+        row.style.padding = '10px';
+        row.style.borderRadius = '8px';
+        row.style.display = 'flex';
+        row.style.justifyContent = 'space-between';
+        row.style.alignItems = 'center';
+
+        // Name
+        const name = document.createElement('div');
+        name.innerText = p.lastData.name || "Unknown";
+        name.style.fontWeight = 'bold';
+
+        // Buttons Container
+        const actions = document.createElement('div');
+        actions.style.display = 'flex'; actions.style.gap = '5px';
+
+        // Voice Mute Button
+        const isVoiceMuted = localMutedVoice.includes(pid);
+        const btnVoice = document.createElement('button');
+        btnVoice.className = 'btn-sm';
+        btnVoice.style.backgroundColor = isVoiceMuted ? '#cc0000' : '#444';
+        btnVoice.innerText = isVoiceMuted ? "🔇 Voice" : "🎙️ Voice";
+        btnVoice.onclick = () => toggleLocalMute(pid, 'voice');
+
+        // Chat Mute Button
+        const isChatMuted = localMutedChat.includes(pid);
+        const btnChat = document.createElement('button');
+        btnChat.className = 'btn-sm';
+        btnChat.style.backgroundColor = isChatMuted ? '#cc0000' : '#444';
+        btnChat.innerText = isChatMuted ? "🚫 Chat" : "💬 Chat";
+        btnChat.onclick = () => toggleLocalMute(pid, 'chat');
+
+        const isMidiMuted = localMutedMidi.includes(pid);
+        const btnMidi = document.createElement('button');
+        btnMidi.className = 'btn-sm';
+        btnMidi.style.backgroundColor = isMidiMuted ? '#cc0000' : '#444';
+        btnMidi.innerText = isMidiMuted ? "🔇 MIDI" : "🎸 MIDI";
+        btnMidi.onclick = () => toggleLocalMute(pid, 'midi');
+        // ----------------------------------
+
+        actions.appendChild(btnVoice);
+        actions.appendChild(btnChat);
+        actions.appendChild(btnMidi);
+
+        row.appendChild(name);
+        row.appendChild(actions);
+        container.appendChild(row);
+    });
+
+    if (Object.keys(otherPlayers).length === 0) {
+        const empty = document.createElement('div');
+        empty.innerText = "No other fishers here.";
+        empty.style.color = '#888'; empty.style.fontStyle = 'italic';
+        container.appendChild(empty);
+    }
+}
+
+function toggleLocalMute(pid, type) {
+    if (type === 'voice') {
+        if (localMutedVoice.includes(pid)) localMutedVoice = localMutedVoice.filter(id => id !== pid);
+        else localMutedVoice.push(pid);
+    } else if (type === 'chat') {
+        if (localMutedChat.includes(pid)) localMutedChat = localMutedChat.filter(id => id !== pid);
+        else localMutedChat.push(pid);
+    }
+    // --- ADD THIS ---
+    else if (type === 'midi') {
+        if (localMutedMidi.includes(pid)) localMutedMidi = localMutedMidi.filter(id => id !== pid);
+        else localMutedMidi.push(pid);
+    }
+    // ----------------
+    renderPlayerList();
+}
+
+// Updated Host Panel
+function updateHostPanel() {
+    const container = document.getElementById('host-player-list');
+    container.innerHTML = '';
+
+    if (isHost || isAdminOnDedicated) {
+        const adminDiv = document.createElement('div');
+        adminDiv.style.marginBottom = '15px';
+        adminDiv.style.paddingBottom = '10px';
+        adminDiv.style.borderBottom = '1px solid #444';
+        adminDiv.style.textAlign = 'center';
+
+        const btnMoney = document.createElement('button');
+        btnMoney.className = 'btn-lg btn-green';
+        btnMoney.innerText = "💰 Give Self $1000";
+        btnMoney.style.fontSize = "14px";
+        btnMoney.style.width = "100%";
+        btnMoney.onclick = () => {
+            saveState.money += 1000;
+            saveGame();
+            Sound.sell();
+            updateUI();
+            showToast("Admin Abuse: +$1000");
+        };
+        adminDiv.appendChild(btnMoney);
+
+        const btnPortal = document.createElement('button');
+        btnPortal.className = 'btn-lg';
+        btnPortal.style.background = '#4b0082';
+        btnPortal.style.marginTop = '5px';
+        btnPortal.innerText = "🌀 Spawn Portal";
+        btnPortal.onclick = () => {
+            // Check network mode
+            if (isConnectedToDedicated && isAdminOnDedicated) {
+                dedicatedSocket.send(JSON.stringify({ type: 'admin_cmd', cmd: 'spawnPortal' }));
+            } else {
+                const x = player.position.x + 5;
+                const z = player.position.z;
+                spawnPortal(x, z);
+            }
+        };
+        adminDiv.appendChild(btnPortal);
+
+        // --- NEW UNBAN BUTTON ---
+        if (isConnectedToDedicated && isAdminOnDedicated) {
+            const btnUnban = document.createElement('button');
+            btnUnban.className = 'btn-lg';
+            btnUnban.style.background = '#006400';
+            btnUnban.style.marginTop = '5px';
+            btnUnban.innerText = "🔓 Unban IP";
+            btnUnban.onclick = promptUnbanIP;
+            adminDiv.appendChild(btnUnban);
+        }
+        // ------------------------
+
+        container.appendChild(adminDiv);
+    }
+
+    // ... (rest of the player list loop remains the same) ...
+    Object.keys(otherPlayers).forEach(pid => {
+        // ... existing row creation code ...
+        const p = otherPlayers[pid];
+        const row = document.createElement('div');
+        row.className = 'host-player-row';
+        const name = document.createElement('div');
+        name.className = 'host-player-name';
+        name.innerText = p.lastData.name || "Unknown";
+
+        const actions = document.createElement('div');
+        actions.className = 'host-actions';
+
+        const btnGhost = document.createElement('button');
+        btnGhost.className = 'btn-sm';
+        btnGhost.style.background = '#4b0082';
+        btnGhost.innerText = "👻 Haunt";
+        btnGhost.onclick = () => triggerHaunt(pid);
+
+        const isVM = mutedVoicePeers.includes(pid);
+        const btnVoice = document.createElement('button');
+        btnVoice.className = isVM ? 'btn-sm btn-danger' : 'btn-sm';
+        btnVoice.innerText = isVM ? "🔇 No Voice" : "🎙️ Mute Voice";
+        btnVoice.onclick = () => toggleGlobalMute(pid, 'voice');
+
+        const isCM = mutedChatPeers.includes(pid);
+        const btnChat = document.createElement('button');
+        btnChat.className = isCM ? 'btn-sm btn-danger' : 'btn-sm';
+        btnChat.innerText = isCM ? "🚫 No Chat" : "💬 Mute Chat";
+        btnChat.onclick = () => toggleGlobalMute(pid, 'chat');
+
+        const isGlobalMidiMuted = p.lastData && p.lastData.isMidiMuted;
+
+        const btnMidi = document.createElement('button');
+        btnMidi.className = isGlobalMidiMuted ? 'btn-sm btn-danger' : 'btn-sm';
+        btnMidi.innerText = isGlobalMidiMuted ? "🔇 No MIDI" : "🎸 Mute MIDI";
+        btnMidi.onclick = () => toggleGlobalMute(pid, 'midi');
+
+        const btnKick = document.createElement('button');
+        btnKick.className = 'btn-sm btn-warn';
+        btnKick.innerText = "👢 Kick";
+        btnKick.onclick = () => kickPeer(pid);
+
+        const btnBan = document.createElement('button');
+        btnBan.className = 'btn-sm btn-danger';
+        btnBan.innerText = "🔨 Ban";
+        btnBan.onclick = () => banPeer(pid);
+
+        actions.appendChild(btnGhost);
+        actions.appendChild(btnVoice);
+        actions.appendChild(btnChat);
+        actions.appendChild(btnMidi);
+        actions.appendChild(btnKick);
+        actions.appendChild(btnBan);
+
+
+        row.appendChild(name);
+        row.appendChild(actions);
+        container.appendChild(row);
+    });
+}
+
+function kickPeer(pid) {
+    // 1. Dedicated Server Logic (PRIORITY)
+    // If we are connected to the official server, we MUST send the command there.
+    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+        dedicatedSocket.send(JSON.stringify({
+            type: 'admin_cmd',
+            cmd: 'kick',
+            targetId: pid
+        }));
+        showToast(`Kicking ${pid}...`);
+        return;
+    }
+
+    // 2. PeerJS (P2P) Host Logic (For private rooms)
+    const conn = clientConns[pid];
+    if (conn) {
+        conn.send({ type: 'error', message: "You have been kicked by the host." });
+        setTimeout(() => {
+            conn.close();
+            removePlayer(pid);
+            broadcastPlayerList();
+            updateHostPanel();
+        }, 500);
+    }
+}
+
+function banPeer(pid) {
+    // 1. Dedicated Server Logic (PRIORITY)
+    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+        dedicatedSocket.send(JSON.stringify({
+            type: 'admin_cmd',
+            cmd: 'ban',
+            targetId: pid
+        }));
+        showToast(`Banning ${pid}...`);
+        return;
+    }
+
+    // 2. PeerJS (P2P) Host Logic (For private rooms)
+    if (!bannedPeers.includes(pid)) bannedPeers.push(pid);
+
+    broadcastToClients({ type: 'purge_chat', targetId: pid });
+
+    const conn = clientConns[pid];
+    if (conn) {
+        if (conn.deviceID) {
+            const list = JSON.parse(sessionStorage.getItem('banned_ids') || '[]');
+            if (!list.includes(conn.deviceID)) {
+                list.push(conn.deviceID);
+                sessionStorage.setItem('banned_ids', JSON.stringify(list));
+            }
+        }
+
+        conn.send({ type: 'error', message: "You have been banned from this room." });
+        setTimeout(() => {
+            conn.close();
+            removePlayer(pid);
+            broadcastPlayerList();
+            updateHostPanel();
+        }, 500);
+    }
+}
+
+function toggleGlobalMute(pid, type) {
+    // 1. DEDICATED SERVER ADMIN LOGIC
+    if (isConnectedToDedicated && isAdminOnDedicated) {
+        if (dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+
+            // Map 'midi' type to 'mute_midi' command
+            let cmd = 'mute_chat';
+            if (type === 'voice') cmd = 'mute_voice';
+            if (type === 'midi') cmd = 'mute_midi'; // <--- ADD THIS
+
+            dedicatedSocket.send(JSON.stringify({
+                type: 'admin_cmd',
+                cmd: cmd,
+                targetId: pid
+            }));
+            showToast(`Sent ${type} mute command for ${pid}`);
+        }
+        return;
+    }
+
+    // 2. P2P HOST LOGIC
+    if (!isHost) return;
+
+    if (type === 'voice') {
+        if (mutedVoicePeers.includes(pid)) mutedVoicePeers = mutedVoicePeers.filter(id => id !== pid);
+        else mutedVoicePeers.push(pid);
+    } else {
+        if (mutedChatPeers.includes(pid)) mutedChatPeers = mutedChatPeers.filter(id => id !== pid);
+        else mutedChatPeers.push(pid);
+    }
+
+    // Refresh UI and Notify Players
+    updateHostPanel();
+    broadcastPlayerList(); // Critical: Tells everyone else this person is muted
+    showToast(`${type.toUpperCase()} Mute toggled.`);
+}
+
+function sellFish() {
+    // This is the "quick sell" action when pressing Interact near the merchant.
+    // It should sell: fish + all wood types + all ore/rock types.
+
+    // Dedicated Server Authority (no local mutation; server sends stateUpdate)
+    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+        const fishCount = (saveState.inventory || []).length;
+
+        const woodCountTyped = Object.values(saveState.woodInventory || {}).reduce((sum, v) => sum + (v || 0), 0);
+        const woodCountLegacy = (saveState.wood || 0);
+        const woodCount = woodCountTyped + woodCountLegacy;
+
+        const oreCountTyped = Object.values(saveState.oreInventory || {}).reduce((sum, v) => sum + (v || 0), 0);
+        const oreCountLegacy = (saveState.stone || 0);
+        const oreCount = oreCountTyped + oreCountLegacy;
+
+        if (fishCount <= 0 && woodCount <= 0 && oreCount <= 0) {
+            showToast("Nothing to sell!");
+            return;
+        }
+
+        if (fishCount > 0) dedicatedSocket.send(JSON.stringify({ type: 'sellFish' }));
+        if (woodCount > 0) dedicatedSocket.send(JSON.stringify({ type: 'sellWood' }));
+        if (oreCount > 0) dedicatedSocket.send(JSON.stringify({ type: 'sellOre' }));
+
+        const merchantUI = document.getElementById('merchant-ui');
+        if (merchantUI) merchantUI.style.display = 'none';
+        return;
+    }
+
+    let totalValue = 0;
+    let totalCount = 0;
+
+    // --- Fish ---
+    if (Array.isArray(saveState.inventory) && saveState.inventory.length > 0) {
+        for (const f of saveState.inventory) {
+            totalValue += (f.price || f.value || 10);
+        }
+        totalCount += saveState.inventory.length;
+    }
+
+    // --- Wood (Typed) ---
+    if (!saveState.woodInventory) saveState.woodInventory = {};
+    Object.keys(saveState.woodInventory).forEach(woodId => {
+        const amt = saveState.woodInventory[woodId] || 0;
+        if (amt <= 0) return;
+        const woodType = WOOD_TYPES.find(w => w.id === woodId);
+        const price = woodType ? woodType.price : 20;
+        totalValue += amt * price;
+        totalCount += amt;
+    });
+
+    // --- Wood (Legacy) ---
+    if (saveState.wood && saveState.wood > 0) {
+        totalValue += saveState.wood * 20;
+        totalCount += saveState.wood;
+    }
+
+    // --- Ore/Rock (Typed) ---
+    if (!saveState.oreInventory) saveState.oreInventory = {};
+    Object.keys(saveState.oreInventory).forEach(oreId => {
+        const amt = saveState.oreInventory[oreId] || 0;
+        if (amt <= 0) return;
+        const oreType = ORE_TYPES.find(o => o.id === oreId);
+        const price = oreType ? oreType.price : 30;
+        totalValue += amt * price;
+        totalCount += amt;
+    });
+
+    // --- Stone (Legacy) ---
+    if (saveState.stone && saveState.stone > 0) {
+        totalValue += saveState.stone * 30;
+        totalCount += saveState.stone;
+    }
+
+    if (totalValue <= 0 || totalCount <= 0) {
+        showToast("Nothing to sell!");
+        return;
+    }
+
+    // Clear inventories now that we've computed totals
+    saveState.inventory = [];
+    saveState.woodInventory = {};
+    saveState.wood = 0;
+    saveState.oreInventory = {};
+    saveState.stone = 0;
+
+    saveState.money += totalValue;
+    Sound.sell();
+    saveGame();
+    updateUI();
+
+    // If merchant UI is open, refresh it
+    const merchantUI = document.getElementById('merchant-ui');
+    if (merchantUI && merchantUI.style.display === 'flex') {
+        updateMerchantUI(merchantUI);
+    }
+
+    showToast(`Sold ${totalCount} items for $${totalValue}!`);
+}
+
+
+function respawnTree(index) {
+    if (index < 0 || index >= treeMeshes.length) return;
+    const mesh = treeMeshes[index];
+    if (!mesh || !mesh.userData.isStump) return;
+
+    // Restore Visuals
+    // Restore scale (y = x)
+    mesh.scale.set(mesh.scale.x, mesh.scale.x, mesh.scale.z);
+
+    // Restore leaves
+    if (mesh.children && mesh.children.length > 1) {
+        for (let i = 1; i < mesh.children.length; i++) {
+            if (mesh.children[i]) mesh.children[i].visible = true;
+        }
+    }
+
+    mesh.userData.isStump = false;
+}
+
+// --- FLOWER PICKING ---
+function pickFlower(index, fromNetwork = false) {
+    if (index < 0 || index >= pickableFlowers.length) return;
+    const flower = pickableFlowers[index];
+    if (!flower || flower.userData.isPicked) return;
+
+    // Hide the flower
+    flower.visible = false;
+    flower.userData.isPicked = true;
+
+    // Respawn after 3 minutes
+    setTimeout(() => {
+        respawnFlower(index);
+    }, 180000);
+
+    // Grant flower (Only if local action)
+    if (!fromNetwork) {
+        // Get floristry level and determine flower type
+        if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 }, floristry: { xp: 0 } };
+        if (!saveState.skills.floristry) saveState.skills.floristry = { xp: 0 };
+        const floristryXP = saveState.skills.floristry?.xp || 0;
+        const floristryLevel = getLevelFromXP(floristryXP);
+
+        const flowerType = getResourceForLevel(floristryLevel, FLOWER_TYPES);
+
+        // Add to inventory
+        if (!saveState.flowerInventory) saveState.flowerInventory = {};
+        saveState.flowerInventory[flowerType.id] = (saveState.flowerInventory[flowerType.id] || 0) + 1;
+
+        // Award XP
+        addSkillXP('floristry', flowerType.xp);
+
+        saveGame();
+        showToast(`🌸 +1 ${flowerType.name} (+${flowerType.xp} XP)`);
+
+        // Broadcast to others
+        const msg = { type: 'pick_flower', index: index };
+
+        // Send to Dedicated Server if connected
+        if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
+            dedicatedSocket.send(JSON.stringify(msg));
+            dedicatedSocket.send(JSON.stringify({
+                type: 'syncResources',
+                woodInventory: saveState.woodInventory || {},
+                oreInventory: saveState.oreInventory || {},
+                flowerInventory: saveState.flowerInventory || {},
+                skills: saveState.skills
+            }));
+        }
+        // Host Broadcast
+        else if (isHost) {
+            broadcastToClients(msg);
+        }
+        // Client Send to Host
+        else if (hostConn && hostConn.open) {
+            hostConn.send(msg);
+        }
+    }
+}
+
+function respawnFlower(index) {
+    if (index < 0 || index >= pickableFlowers.length) return;
+    const flower = pickableFlowers[index];
+    if (!flower || !flower.userData.isPicked) return;
+
+    flower.visible = true;
+    flower.userData.isPicked = false;
+}
+
+// --- HUD TOGGLE ---
+let hudVisible = true;
+function toggleHud() {
+    hudVisible = !hudVisible;
+    const disp = hudVisible ? '' : 'none';
+
+    // 1. Hotbar
+    const hotbar = document.getElementById('hotbar-container');
+    if (hotbar) hotbar.style.display = hudVisible ? 'flex' : 'none';
+
+    // 2. Chat
+    const chat = document.getElementById('chat-ui');
+    if (chat) {
+        if (!hudVisible) chat.style.display = 'none';
+        else chat.style.display = ''; // Let CSS or JS logic handle it
+    }
+
+    // 3. Instructions
+    const instr = document.getElementById('instructions');
+    if (instr) instr.style.display = disp;
+
+    // 4. Logs
+    const log = document.getElementById('fish-log');
+    if (log) log.style.display = disp;
+
+    // 5. Notifications
+    const notif = document.getElementById('notification-area');
+    if (notif) notif.style.display = disp;
+
+    // 6. Version
+    const ver = document.getElementById('lobby-version');
+    if (ver) ver.style.display = disp;
+
+    // 7. Version (Loading)
+    const verLoad = document.getElementById('version');
+    if (verLoad) verLoad.style.display = disp;
+
+    // 8. Mobile Controls
+    const mob = document.getElementById('mobile-controls');
+    if (mob && isMobile) mob.style.display = hudVisible ? 'block' : 'none';
+
+    // 9. Stats UI (top bar)
+    const stats = document.getElementById('stats-ui');
+    if (stats) stats.style.display = disp;
+
+    // 10. Bait UI
+    const bait = document.getElementById('bait-ui');
+    if (bait) bait.style.display = disp;
+
+    // 11. Room Info
+    const room = document.getElementById('room-info-ui');
+    if (room) room.style.display = disp;
+
+    // --- HIDE 3D PLAYER LABELS ---
+    // Toggle name tags, titles, and chat bubbles on all players
+    const togglePlayerLabels = (mesh) => {
+        if (!mesh) return;
+        const nameTag = mesh.getObjectByName('nameTag');
+        const titleSprite = mesh.getObjectByName('titleSprite');
+        const chatBubble = mesh.getObjectByName('chatBubble');
+        const talkingIcon = mesh.getObjectByName('talkingIcon');
+        if (nameTag) nameTag.visible = hudVisible;
+        if (titleSprite) titleSprite.visible = hudVisible && saveState.showTitles;
+        if (chatBubble) chatBubble.visible = hudVisible;
+        if (talkingIcon) talkingIcon.visible = hudVisible;
+    };
+
+    // Local player
+    if (player) togglePlayerLabels(player);
+
+    // Remote players
+    Object.values(otherPlayers).forEach(p => togglePlayerLabels(p.mesh));
+
+    // NPCs
+    togglePlayerLabels(npcMerchant);
+    togglePlayerLabels(npcStylist);
+    togglePlayerLabels(npcBait);
+    togglePlayerLabels(npcTutorial);
+    togglePlayerLabels(npcLavaMerchant);
+    togglePlayerLabels(npcLavaStylist);
+    togglePlayerLabels(npcLavaBait);
+
+    // Ghost
+    if (ghostMesh) togglePlayerLabels(ghostMesh);
+
+    if (hudVisible) showToast("HUD Visible");
+}
