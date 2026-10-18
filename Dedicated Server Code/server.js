@@ -4,6 +4,16 @@ const crypto = require('crypto');
 const fs = require('fs');
 const https = require('https');
 
+// A single malformed message must never take the whole server down: log the
+// error and keep serving. Individual handlers validate their own inputs; this
+// is the safety net for anything missed.
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL] Uncaught exception (server kept alive):', err);
+});
+process.on('unhandledRejection', (err) => {
+    console.error('[ERROR] Unhandled rejection:', err);
+});
+
 const SERVER_NAME = process.env.SERVER_NAME || "Official Server";
 const PORT = process.env.PORT || 8080;
 const MASTER_URL = "https://html-fishing-master-server.onrender.com";
@@ -300,7 +310,10 @@ function selectFish(activeBaitId, fishingZone, isRaining) {
 
 function logToFile(text) {
     const timestamp = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
-    const logLine = `[${timestamp}] ${text}\n`;
+    // One line per entry: strips control characters (no forged multi-line log
+    // records) and caps length so one huge field can't fill the disk.
+    const safe = String(text).replace(/[\r\n\u0000-\u001f\u007f]+/g, ' ').slice(0, 500);
+    const logLine = `[${timestamp}] ${safe}\n`;
     fs.appendFile('server_logs.txt', logLine, (err) => {
         if (err) console.error("Error writing to log file:", err);
     });
@@ -426,8 +439,10 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server });
 
-let clients = {};
-let playerData = {};
+// Null-prototype maps: a peer id or targetId of "__proto__" / "constructor"
+// must not resolve to an inherited object (that turned a lookup into a crash).
+let clients = Object.create(null);
+let playerData = Object.create(null);
 let bannedIPs = new Set();
 let activeProps = []; // { id, type, x, z, owner, timestamp }
 
@@ -498,20 +513,43 @@ function broadcast(obj, exceptId = null) {
     });
 }
 
+// Player metas are broadcast to every client, so the connection IP is
+// stripped first — it stays server-side for bans and admin tools only.
+function publicMeta(meta) {
+    const out = {};
+    Object.keys(meta).forEach(k => { if (k !== 'ip') out[k] = meta[k]; });
+    return out;
+}
+
 function broadcastPlayerList() {
     const list = {};
     Object.keys(clients).forEach(id => {
-        list[id] = clients[id].meta;
+        list[id] = publicMeta(clients[id].meta);
     });
     broadcast({ type: 'playerList', list: list });
+}
+
+// The socket address is the only value the server controls. Proxy headers
+// (cf-connecting-ip / x-forwarded-for) are attacker-supplied on a directly
+// exposed server, so they are only honoured when the operator opts in with
+// TRUST_PROXY=1 behind a trusted reverse proxy. Without this, anyone could
+// send "X-Forwarded-For: 127.0.0.1" and become an admin (admins.json lists
+// the loopback address) or dodge a ban.
+function resolveClientIp(req) {
+    if (process.env.TRUST_PROXY === '1') {
+        const raw = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'];
+        if (raw) {
+            const first = String(Array.isArray(raw) ? raw[0] : raw).split(',')[0].trim();
+            if (first) return first;
+        }
+    }
+    return req.socket.remoteAddress;
 }
 
 wss.on('connection', (ws, req) => {
     const id = crypto.randomUUID();
 
-    const ip = req.headers['cf-connecting-ip'] ||
-        req.headers['x-forwarded-for'] ||
-        req.socket.remoteAddress;
+    const ip = resolveClientIp(req);
 
     if (bannedIPs.has(ip)) {
         ws.send(JSON.stringify({ type: 'error', message: "You are BANNED from this server." }));
@@ -592,7 +630,7 @@ wss.on('connection', (ws, req) => {
         // -------------------
 
         playerList: Object.fromEntries(
-            Object.entries(clients).map(([cid, c]) => [cid, c.meta])
+            Object.entries(clients).map(([cid, c]) => [cid, publicMeta(c.meta)])
         )
     }));
 
@@ -608,10 +646,14 @@ wss.on('connection', (ws, req) => {
     // broadcastPlayerList();
 
     ws.on('message', (raw) => {
-        clients[id].meta.lastSeen = Date.now();
+        const info = clients[id];
+        if (!info) return; // frame delivered after the socket closed
+        info.meta.lastSeen = Date.now();
         let msg;
         try { msg = JSON.parse(raw); } catch (e) { return; }
-        const info = clients[id];
+        // JSON.parse("null") returns null without throwing, and reading
+        // msg.type on null would take the whole process down.
+        if (!msg || typeof msg !== 'object') return;
 
         if (msg.type === 'update') {
             const p = msg.payload;
@@ -681,7 +723,9 @@ wss.on('connection', (ws, req) => {
                 playerData[id] = {
                     ...getNewPlayerData(),
                     money: typeof msg.saveState.money === 'number' ? msg.saveState.money : 0,
-                    inventory: Array.isArray(msg.saveState.inventory) ? msg.saveState.inventory : [],
+                    inventory: Array.isArray(msg.saveState.inventory)
+                        ? msg.saveState.inventory.filter(f => f && typeof f === 'object').slice(0, 5000)
+                        : [],
                     currentHat: msg.saveState.currentHat || 'none',
                     currentShirt: msg.saveState.currentShirt || 'none',
                     currentRod: msg.saveState.currentRod || 'bamboo',
@@ -743,7 +787,7 @@ wss.on('connection', (ws, req) => {
             // Only announce the player once they have set their name.
             if (!info.isJoined) {
                 info.isJoined = true;
-                broadcast({ type: 'playerJoined', id: id, meta: info.meta }, id);
+                broadcast({ type: 'playerJoined', id: id, meta: publicMeta(info.meta) }, id);
             }
 
             broadcastPlayerList();
@@ -903,7 +947,10 @@ wss.on('connection', (ws, req) => {
 
             let totalValue = 0;
             player.inventory.forEach(fishInInventory => {
-                totalValue += fishInInventory.price;
+                // Items come from the client's own save, so coerce: a null
+                // element would crash the process and a string price would
+                // poison the server-side money total.
+                totalValue += Math.max(0, Number(fishInInventory && fishInInventory.price) || 0);
             });
 
             player.money += totalValue;

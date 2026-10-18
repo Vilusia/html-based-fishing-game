@@ -129,6 +129,7 @@ function updateUI() {
 
             for (let i = totalFish - 1; i >= 0; i--) {
                 const f = saveState.inventory[i];
+                if (!f || typeof f !== 'object') continue;
                 const div = document.createElement('div');
 
                 let label = f.name;
@@ -170,7 +171,7 @@ function toggleMerchant() {
 
 function updateMerchantUI(container) {
     let totalFishValue = 0;
-    saveState.inventory.forEach(f => totalFishValue += (f.price || f.value || 10)); // Handle legacy save formats
+    saveState.inventory.forEach(f => totalFishValue += Math.max(0, Number(f && f.price) || Number(f && f.value) || 10)); // Handle legacy save formats
 
     // Calculate Wood Value from typed inventory
     if (!saveState.woodInventory) saveState.woodInventory = {};
@@ -259,7 +260,7 @@ function updateMerchantUI(container) {
                     max-height: 90vh; overflow-y: auto;">
 
             <h2 style="margin-top:0; font-size: 16px;">Merchant</h2>
-            <div style="font-family:var(--font-display); font-size:16px; color:var(--p-gold); margin-bottom:20px;">$${saveState.money}</div>
+            <div style="font-family:var(--font-display); font-size:16px; color:var(--p-gold); margin-bottom:20px;">$${Number(saveState.money) || 0}</div>
 
             <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell</h3>
 
@@ -317,7 +318,7 @@ window.actionSellFish = function () {
     }
 
     let totalVal = 0;
-    saveState.inventory.forEach(f => totalVal += (f.price || f.value || 10));
+    saveState.inventory.forEach(f => totalVal += Math.max(0, Number(f && f.price) || Number(f && f.value) || 10));
     const count = saveState.inventory.length;
     saveState.money += totalVal;
     saveState.inventory = [];
@@ -1409,6 +1410,10 @@ function connectToDedicatedServer(customUrl = null) {
 
     // --- MESSAGE HANDLER ---
     dedicatedSocket.addEventListener('message', (ev) => {
+        // Drop absurd frames before parsing: a hostile server could otherwise
+        // push hundreds of MB through the parser. The largest legitimate
+        // message is a welcome carrying a 3MB custom level.
+        if (typeof ev.data === 'string' && ev.data.length > 8 * 1024 * 1024) return;
         let msg;
         try { msg = JSON.parse(ev.data); } catch (e) { return; }
 
@@ -1427,7 +1432,7 @@ function connectToDedicatedServer(customUrl = null) {
                     removePropFromWorld(pid);
                 });
 
-                msg.activeProps.forEach(p => spawnPropMesh(p));
+                msg.activeProps.slice(0, 1000).forEach(p => spawnPropMesh(p));
             }
 
             // --- FIX: SYNC RAIN IMMEDIATELY ---
@@ -1642,7 +1647,8 @@ function connectToDedicatedServer(customUrl = null) {
 
         // --- NEW: Fish Caught Confirmation ---
         else if (msg.type === 'fishCaughtConfirmed') {
-            const fish = msg.fish;
+            const fish = sanitizeFish(msg.fish);
+            if (!fish) return;
 
             // Update Local State (Visuals Only)
             saveState.inventory.push(fish);
@@ -1688,12 +1694,31 @@ function connectToDedicatedServer(customUrl = null) {
 
         // --- NEW: State Update (Money/Inventory) ---
         else if (msg.type === 'stateUpdate') {
-            if (msg.money !== undefined) saveState.money = msg.money;
-            if (msg.inventory !== undefined) saveState.inventory = msg.inventory;
-            if (msg.woodInventory !== undefined) saveState.woodInventory = msg.woodInventory;
-            if (msg.wood !== undefined) saveState.wood = msg.wood;
-            if (msg.oreInventory !== undefined) saveState.oreInventory = msg.oreInventory;
-            if (msg.stone !== undefined) saveState.stone = msg.stone;
+            // The server is trusted for values but not for types: coerce
+            // everything before it reaches the save, otherwise a hostile
+            // server can persist strings that later render as HTML (XSS via
+            // the Merchant panel) or break the inventory code.
+            const finNum = (v, lo, hi) => {
+                const n = Number(v);
+                return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null;
+            };
+            const countMap = (v) => {
+                if (!v || typeof v !== 'object') return null;
+                const out = {};
+                Object.keys(v).slice(0, 64).forEach(k => {
+                    const n = Number(v[k]);
+                    if (Number.isFinite(n)) out[k] = Math.min(1e9, Math.max(0, n));
+                });
+                return out;
+            };
+            if (msg.money !== undefined) { const n = finNum(msg.money, 0, 1e12); if (n !== null) saveState.money = n; }
+            if (Array.isArray(msg.inventory)) {
+                saveState.inventory = msg.inventory.map(sanitizeFish).filter(Boolean).slice(0, 2000);
+            }
+            if (msg.woodInventory !== undefined) { const m = countMap(msg.woodInventory); if (m) saveState.woodInventory = m; }
+            if (msg.oreInventory !== undefined) { const m = countMap(msg.oreInventory); if (m) saveState.oreInventory = m; }
+            if (msg.wood !== undefined) { const n = finNum(msg.wood, 0, 1e9); if (n !== null) saveState.wood = n; }
+            if (msg.stone !== undefined) { const n = finNum(msg.stone, 0, 1e9); if (n !== null) saveState.stone = n; }
 
             saveGame();
             updateUI(); // Refresh inventory display
@@ -1745,7 +1770,9 @@ async function openServerBrowser() {
             row.style.alignItems = 'center';
 
             const info = document.createElement('div');
-            info.innerHTML = `<b>${s.name}</b><br><span style="font-size:15px;color:var(--p-text-dim);">${s.players} Players</span>`;
+            // Escape everything from the master list: a hostile server entry
+            // would otherwise run JS on the game origin.
+            info.innerHTML = `<b>${escapeHTML(String(s.name || 'Server').slice(0, 40))}</b><br><span style="font-size:15px;color:var(--p-text-dim);">${escapeHTML(String(s.players == null ? '?' : s.players).slice(0, 10))} Players</span>`;
 
             const btn = document.createElement('button');
             btn.className = 'btn-sm btn-green';
@@ -2525,14 +2552,20 @@ function handleDataFromHost(data) {
     // The host's level arrives with the room handshake (null = stock island).
     // Big maps come as a run of chunks that are glued back together first.
     if (data.type === 'worldLevelStart') {
-        levelParts = { total: Math.max(1, data.total | 0), count: 0, parts: [] };
+        // A hostile host could otherwise declare billions of chunks and
+        // stream the tab into OOM; honest levels need well under 100.
+        const total = Math.max(1, Math.min(1000, data.total | 0));
+        levelParts = { total: total, count: 0, parts: [], bytes: 0 };
         return;
     }
     if (data.type === 'worldLevelChunk') {
         if (!levelParts) return;
         const i = data.i | 0;
         if (i < 0 || i >= levelParts.total || typeof levelParts.parts[i] === 'string') return;
-        levelParts.parts[i] = String(data.part);
+        const part = String(data.part);
+        levelParts.bytes += part.length;
+        if (levelParts.bytes > 8 * 1024 * 1024) { levelParts = null; return; } // oversized: drop
+        levelParts.parts[i] = part;
         levelParts.count++;
         if (levelParts.count !== levelParts.total) return;
         const json = levelParts.parts.join('');
@@ -2642,7 +2675,7 @@ function handleDataFromHost(data) {
     // P2P Prop Sync
     else if (data.type === 'propPlaced') spawnPropMesh(data.prop);
     else if (data.type === 'propRemoved') removePropFromWorld(data.id);
-    else if (data.type === 'allProps') data.props.forEach(p => spawnPropMesh(p));
+    else if (data.type === 'allProps') { if (Array.isArray(data.props)) data.props.slice(0, 1000).forEach(p => spawnPropMesh(p)); }
 }
 
 function broadcastPlayerList() {
@@ -10094,6 +10127,31 @@ function escapeHTML(str) {
         .replace(/'/g, "&#039;");
 }
 
+// --- SECURITY: coerce fish objects that arrived from the network ---
+// A hostile dedicated server controls fish fields; keep only primitives with
+// sane lengths so poisoned values can't render as HTML or break inventory
+// code (the Merchant panel interpolates price into innerHTML).
+function sanitizeFish(f) {
+    if (!f || typeof f !== "object") return null;
+    const out = {};
+    Object.keys(f).forEach(k => {
+        const v = f[k];
+        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") out[k] = v;
+    });
+    Object.keys(out).forEach(k => { if (typeof out[k] === "string") out[k] = out[k].slice(0, 120); });
+    out.name = String(f.name || "???").slice(0, 60);
+    const num = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) && n >= 0 && n <= 1e12 ? n : undefined;
+    };
+    const price = num(f.price); if (price !== undefined) out.price = price; else delete out.price;
+    const value = num(f.value); if (value !== undefined) out.value = value; else delete out.value;
+    out.tierId = String(f.tierId || "normal").slice(0, 24);
+    if (out.tierName !== undefined) out.tierName = String(out.tierName).slice(0, 32);
+    if (out.sizeLabel !== undefined) out.sizeLabel = String(out.sizeLabel).slice(0, 32);
+    return out;
+}
+
 // --- LINE OF SIGHT MATH HELPERS ---
 
 // 1. Check if a line segment (p1 to p2) intersects a Circle (x, z, radius)
@@ -10790,8 +10848,15 @@ function loadSave() {
             if (d.hasGlove) { saveState.hasGlove = true; if (!saveState.unlockedTools.includes('glove')) saveState.unlockedTools.push('glove'); }
 
             // Basic stats
-            if (d.money !== undefined) saveState.money = d.money;
-            if (d.inventory) saveState.inventory = d.inventory;
+            if (d.money !== undefined) { const n = Number(d.money); saveState.money = Number.isFinite(n) ? n : 0; }
+            if (d.inventory) {
+                // Repair on load: entries must be objects with primitive fields.
+                // A hostile or hand-edited save must not be able to carry nulls
+                // or HTML strings into the UI (the Merchant renders via innerHTML).
+                saveState.inventory = Array.isArray(d.inventory)
+                    ? d.inventory.map(sanitizeFish).filter(Boolean).slice(0, 2000)
+                    : [];
+            }
             if (d.displayName) saveState.displayName = d.displayName;
             if (d.journal) saveState.journal = d.journal;
 

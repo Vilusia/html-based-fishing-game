@@ -750,10 +750,11 @@ const _propHookInterval = setInterval(() => {
                 } else if (msg.type === 'propRemoved') {
                     removePropFromWorld(msg.id);
                 } else if (msg.type === 'allProps') {
-                    // Initial sync
-                    msg.props.forEach(p => spawnPropMesh(p));
+                    // Initial sync (capped: a hostile server must not be able
+                    // to spawn an unbounded number of meshes and kill the tab)
+                    if (Array.isArray(msg.props)) msg.props.slice(0, 1000).forEach(p => spawnPropMesh(p));
                 } else if (msg.type === 'welcome' && msg.activeProps) {
-                    msg.activeProps.forEach(p => spawnPropMesh(p));
+                    if (Array.isArray(msg.activeProps)) msg.activeProps.slice(0, 1000).forEach(p => spawnPropMesh(p));
                 }
             } catch (e) { }
         };

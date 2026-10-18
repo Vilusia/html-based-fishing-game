@@ -169,9 +169,12 @@
         out.zones = zones;
         delete out.zoneMap;
 
-        out.trees = Array.isArray(out.trees) ? out.trees.filter(validObj).map(normTree) : [];
-        out.rocks = Array.isArray(out.rocks) ? out.rocks.filter(validObj).map(normRock) : [];
-        out.npcs = Array.isArray(out.npcs) ? out.npcs.filter(validObj).map(normNpc) : [];
+        // Cap prop counts: a crafted level could otherwise demand tens of
+        // thousands of meshes and kill the tab when the world builds. Very
+        // generous compared with the stock island (120 trees, 60 rocks).
+        out.trees = Array.isArray(out.trees) ? out.trees.filter(validObj).map(normTree).slice(0, 3000) : [];
+        out.rocks = Array.isArray(out.rocks) ? out.rocks.filter(validObj).map(normRock).slice(0, 2000) : [];
+        out.npcs = Array.isArray(out.npcs) ? out.npcs.filter(validObj).map(normNpc).slice(0, 100) : [];
         // Optional hand-placed player spawn: a single {x, z} or nothing.
         out.spawn = validObj(out.spawn) ? { x: +out.spawn.x, z: +out.spawn.z } : null;
         return out;
