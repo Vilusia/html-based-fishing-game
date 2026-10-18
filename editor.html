@@ -214,6 +214,7 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
     <div class="stat"><span>Trees</span><b id="st-trees">0</b></div>
     <div class="stat"><span>Rocks</span><b id="st-rocks">0</b></div>
     <div class="stat"><span>NPCs</span><b id="st-npcs">0</b></div>
+    <div class="stat"><span>Spawn</span><b id="st-spawn">centre</b></div>
     <div class="grid2">
       <button class="px-btn danger" id="btn-clear-props">CLEAR PROPS</button>
       <button class="px-btn danger" id="btn-clear-npcs">CLEAR NPCs</button>
@@ -248,11 +249,13 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
       <kbd>SHIFT+WHEEL</kbd><span>Dolly the camera forward / back</span>
       <kbd>MIDDLE DRAG</kbd><span>Pan the camera</span>
       <kbd>1 – 9 / 0</kbd><span>Quick-select a tool (0 = Fishing Zones)</span>
+      <kbd>P</kbd><span>Spawn tool — click on land to set where players start</span>
       <kbd>G</kbd><span>Toggle the grid</span>
       <kbd>CTRL+Z / CTRL+Y</kbd><span>Undo / redo</span>
       <kbd>F</kbd><span>Frame the whole level</span>
     </div>
     <div class="hint">Fishing zones: carve water with the Water / Lower tools, then paint Lake, River, Light Pond, Dark Pond or Cave over it. AUTO ZONES tags every enclosed pond as Lake and leaves the open sea as ocean.</div>
+    <div class="hint">Spawn: one per level. Left-click moves it, right-click clears it (the game then picks a land tile near the middle of the map).</div>
     <div class="actions"><button class="px-btn gold" id="help-close">GOT IT</button></div>
   </div>
 </div>
@@ -262,7 +265,7 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="icons.js?v=4"></script>
-<script src="worldgen.js?v=3"></script>
-<script src="editor.js?v=4"></script>
+<script src="worldgen.js?v=4"></script>
+<script src="editor.js?v=5"></script>
 </body>
 </html>

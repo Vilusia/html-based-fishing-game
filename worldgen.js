@@ -128,7 +128,8 @@
             zones: new Array(grid * grid).fill(0),
             trees: [],
             rocks: [],
-            npcs: []
+            npcs: [],
+            spawn: null
         };
     }
 
@@ -171,6 +172,8 @@
         out.trees = Array.isArray(out.trees) ? out.trees.filter(validObj).map(normTree) : [];
         out.rocks = Array.isArray(out.rocks) ? out.rocks.filter(validObj).map(normRock) : [];
         out.npcs = Array.isArray(out.npcs) ? out.npcs.filter(validObj).map(normNpc) : [];
+        // Optional hand-placed player spawn: a single {x, z} or nothing.
+        out.spawn = validObj(out.spawn) ? { x: +out.spawn.x, z: +out.spawn.z } : null;
         return out;
     }
     const validObj = (o) => o && typeof o === "object" && Number.isFinite(Number(o.x)) && Number.isFinite(Number(o.z));
@@ -200,7 +203,8 @@
             zoneMap: Array.prototype.join.call(lv.zones, ""),
             trees: lv.trees,
             rocks: lv.rocks,
-            npcs: lv.npcs
+            npcs: lv.npcs,
+            spawn: lv.spawn || null
         };
     }
 
@@ -241,6 +245,17 @@
     }
 
     function isWater(level, x, z) { return sampleHeight(level, x, z) < level.seaLevel - 0.001; }
+
+    // The level's hand-placed spawn when it is still usable — inside the map
+    // and standing on dry land. Returns null when unset or invalid so callers
+    // can fall back to an automatic spawn search.
+    function spawnPoint(level) {
+        const s = level && level.spawn;
+        if (!s || !Number.isFinite(s.x) || !Number.isFinite(s.z)) return null;
+        if (!inBounds(level, s.x, s.z)) return null;
+        if (sampleHeight(level, s.x, s.z) <= level.seaLevel + 0.15) return null;
+        return { x: s.x, z: s.z };
+    }
 
     function countLand(level) {
         let n = 0;
@@ -652,7 +667,7 @@
         LEVEL_VERSION,
         createDefault, normalize, serialize,
         cellSize, cellCenter, worldToCell, inBounds,
-        sampleHeight, isWater, countLand,
+        sampleHeight, isWater, countLand, spawnPoint,
         ZONES, zoneInfo, zoneIdByKey, zoneAt, countZoneWater, autoZones
     };
 })();

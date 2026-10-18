@@ -52,7 +52,8 @@
         { id: "tree", name: "Trees", icon: "tree", key: "6", tip: "Place trees on land. Right-click removes the nearest." },
         { id: "rock", name: "Rocks", icon: "rock", key: "7", tip: "Place rocks on land. Right-click removes the nearest." },
         { id: "npc", name: "NPCs", icon: "users", key: "8", tip: "Place the selected NPC on land. Right-click removes it." },
-        { id: "erase", name: "Erase", icon: "trash", key: "9", tip: "Remove the prop or NPC under the cursor." }
+        { id: "erase", name: "Erase", icon: "trash", key: "9", tip: "Remove the prop or NPC under the cursor." },
+        { id: "spawn", name: "Spawn", icon: "tent", key: "P", tip: "Set where players start (one per level). Click on land to move it; right-click clears it so the game picks the middle of the map." }
     ];
 
     const TERRAIN_TOOLS = { land: 1, water: 1, raise: 1, lower: 1, level: 1 };
@@ -164,6 +165,30 @@
         buildAllProps();
     }
 
+    // Flag marker showing where players will spawn in the game.
+    function makeSpawnMarker() {
+        const g = new THREE.Group();
+        const pole = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.07, 0.07, 2.6, 6),
+            new THREE.MeshLambertMaterial({ color: 0xe8ecf7 })
+        );
+        pole.position.y = 1.3;
+        g.add(pole);
+        const flag = new THREE.Mesh(
+            new THREE.BoxGeometry(1.2, 0.7, 0.06),
+            new THREE.MeshLambertMaterial({ color: 0xf2c14e })
+        );
+        flag.position.set(0.62, 2.2, 0);
+        g.add(flag);
+        const base = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.45, 0.5, 0.12, 12),
+            new THREE.MeshLambertMaterial({ color: 0x6fb54a })
+        );
+        base.position.y = 0.06;
+        g.add(base);
+        return g;
+    }
+
     function buildAllProps() {
         const lv = state.level;
         lv.trees.forEach((data) => {
@@ -189,6 +214,13 @@
             n.userData.propKind = "npc";
             world.npcGroup.add(n);
         });
+        if (lv.spawn) {
+            const m = makeSpawnMarker();
+            m.position.set(lv.spawn.x, Level.sampleHeight(lv, lv.spawn.x, lv.spawn.z), lv.spawn.z);
+            m.userData.ref = lv.spawn;
+            m.userData.propKind = "spawn";
+            world.propGroup.add(m);
+        }
     }
 
     // Fast path: only the terrain surface changed.
@@ -336,6 +368,7 @@
         if (state.tool === "tree") return removeNearest(point, "tree");
         if (state.tool === "rock") return removeNearest(point, "rock");
         if (state.tool === "npc") return removeNearest(point, "npc");
+        if (state.tool === "spawn") return clearSpawn();
         if (TERRAIN_TOOLS[state.tool]) return; // handled by the brush itself
         removeNearest(point, "any");
     }
@@ -390,6 +423,35 @@
         return true;
     }
 
+    // One spawn per level: click to set / move it, right-click to clear.
+    function placeSpawn(point) {
+        const lv = state.level;
+        const inB = Math.abs(point.x) <= lv.size / 2 && Math.abs(point.z) <= lv.size / 2;
+        if (!inB) { toast("Outside the level bounds"); return false; }
+        if (Level.sampleHeight(lv, point.x, point.z) <= lv.seaLevel + 0.15) {
+            toast("Spawn must be on land — paint terrain first");
+            return false;
+        }
+        const prev = lv.spawn;
+        if (prev && Math.abs(prev.x - point.x) < 0.01 && Math.abs(prev.z - point.z) < 0.01) return false;
+        lv.spawn = { x: +point.x.toFixed(2), z: +point.z.toFixed(2) };
+        rebuildProps();
+        markDirty();
+        refreshStats();
+        toast("Spawn set");
+        return true;
+    }
+
+    function clearSpawn() {
+        if (!state.level.spawn) { toast("No custom spawn set"); return false; }
+        state.level.spawn = null;
+        rebuildProps();
+        markDirty();
+        refreshStats();
+        toast("Spawn cleared — the game will pick the middle of the map");
+        return true;
+    }
+
     // Mouse interactions -------------------------------------------------------
 
     function beginStroke(point, secondary) {
@@ -401,6 +463,9 @@
             else applyBrush(point, secondary);
         } else if (state.tool === "erase") {
             onSecondary(point);
+        } else if (state.tool === "spawn") {
+            state.lastPropPos = null;
+            placeSpawn(point);
         } else {
             state.lastPropPos = null;
             placeProp(point);
@@ -525,7 +590,8 @@
             zones: state.level.zones,
             trees: state.level.trees,
             rocks: state.level.rocks,
-            npcs: state.level.npcs
+            npcs: state.level.npcs,
+            spawn: state.level.spawn || null
         });
     }
 
@@ -543,6 +609,7 @@
         state.level.trees = data.trees;
         state.level.rocks = data.rocks;
         state.level.npcs = data.npcs;
+        state.level.spawn = data.spawn || null;
         refreshTerrain();
         rebuildProps();
         refreshZoneOverlay();
@@ -581,6 +648,20 @@
         $("st-trees").textContent = lv.trees.length;
         $("st-rocks").textContent = lv.rocks.length;
         $("st-npcs").textContent = lv.npcs.length;
+
+        const sp = $("st-spawn");
+        if (sp) {
+            if (lv.spawn) {
+                const ok = !Level.spawnPoint || Level.spawnPoint(lv);
+                sp.textContent = lv.spawn.x.toFixed(1) + ", " + lv.spawn.z.toFixed(1);
+                sp.style.color = ok ? "" : "var(--p-bad)";
+                sp.title = ok ? "Players start here" : "In water or out of bounds — the game will fall back to the middle of the map";
+            } else {
+                sp.textContent = "centre";
+                sp.style.color = "";
+                sp.title = "No custom spawn — the game picks a land tile near the middle of the map";
+            }
+        }
 
         const counts = Level.countZoneWater(lv);
         const el = $("st-zones");
@@ -694,6 +775,7 @@
         next.trees = old.trees.filter(inB);
         next.rocks = old.rocks.filter(inB);
         next.npcs = old.npcs.filter(inB);
+        next.spawn = old.spawn && inB(old.spawn) ? old.spawn : null;
         state.level = Level.normalize(next);
         buildWorld();
         refreshStats();
@@ -855,7 +937,7 @@
             if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
             if ((e.ctrlKey || e.metaKey) && e.code === "KeyY") { e.preventDefault(); redo(); return; }
             if ((e.ctrlKey || e.metaKey) && e.code === "KeyS") { e.preventDefault(); saveLocal(); return; }
-            const t = TOOLS.find((x) => x.key === e.code.replace("Digit", ""));
+            const t = TOOLS.find((x) => x.key === e.code.replace("Digit", "").replace(/^Key/, ""));
             if (t) selectTool(t.id);
             if (e.code === "KeyG") { $("chk-grid").checked = !$("chk-grid").checked; $("chk-grid").onchange({ target: $("chk-grid") }); }
             if (e.code === "KeyF") frameLevel();
@@ -1029,6 +1111,8 @@
         refreshZoneOverlay: refreshZoneOverlay,
         placeProp: placeProp,
         removeNearest: removeNearest,
+        placeSpawn: placeSpawn,
+        clearSpawn: clearSpawn,
         refreshTerrain: refreshTerrain,
         rebuildProps: rebuildProps,
         resample: resample,

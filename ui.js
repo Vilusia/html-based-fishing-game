@@ -8052,6 +8052,9 @@ function createLocalPlayer() {
 
 // Finds a walkable land cell close to the centre of a custom level.
 function findCustomSpawn(lv) {
+    // A spawn set in the level editor wins when it is still on dry land.
+    const placed = window.Level && Level.spawnPoint ? Level.spawnPoint(lv) : null;
+    if (placed) return placed;
     const g = lv.grid;
     const mid = Math.floor(g / 2);
     for (let ring = 0; ring < g; ring++) {
@@ -13549,7 +13552,13 @@ window.respawnPlayer = function () {
 
     // Reset Player Physics & Position
     if (player) {
-        player.position.set(25, 2, 0); // Default spawn point
+        if (window.CUSTOM_LEVEL && window.Level && Level.spawnPoint) {
+            // Custom levels respawn at their editor-placed spawn.
+            const spot = findCustomSpawn(window.CUSTOM_LEVEL);
+            player.position.set(spot.x, window.Level.sampleHeight(window.CUSTOM_LEVEL, spot.x, spot.z) + 0.5, spot.z);
+        } else {
+            player.position.set(25, 2, 0); // Default spawn point
+        }
         playerVelocity.set(0, 0, 0);
         knockbackVelocity.set(0, 0, 0);
     }
