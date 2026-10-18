@@ -977,6 +977,22 @@ window.onload = function () {
         btnAdmin.onclick = toggleHostPanel;
     }
 
+    // A multiplayer level hand-off reloads the page with ?custom=1, so rejoin
+    // the room/server automatically instead of parking the player in the lobby.
+    try {
+        const params = new URLSearchParams(location.search);
+        const autoRoom = params.get('room');
+        const autoServer = params.get('dedicated');
+        if (autoRoom) {
+            document.getElementById('room-id-input').value = autoRoom;
+            document.getElementById('lobby-status').innerText = "Rejoining room " + autoRoom + "...";
+            setTimeout(() => joinGame(), 400);
+        } else if (autoServer) {
+            document.getElementById('lobby-status').innerText = "Reconnecting to the server...";
+            setTimeout(() => connectToDedicatedServer(autoServer), 400);
+        }
+    } catch (err) { /* ignore */ }
+
     refreshServerCount();
     setInterval(refreshServerCount, 10000);
 
@@ -1064,6 +1080,34 @@ function hostGame() {
 
         conn.deviceID = incomingDeviceID;
         clientConns[conn.peer] = conn;
+
+        // Hand over the level for this room — including an explicit "none", so a
+        // player who arrives with their own level drops it and everybody sees
+        // the same world. The client reloads with ?custom=1 to build it.
+        const sendLevel = () => {
+            let serialized = null;
+            if (window.CUSTOM_LEVEL && window.Level) {
+                try { serialized = window.Level.serialize(window.CUSTOM_LEVEL); }
+                catch (err) { console.warn('Could not serialize level', err); }
+            }
+            const json = serialized ? JSON.stringify(serialized) : 'null';
+            try {
+                if (json.length <= LEVEL_CHUNK) {
+                    conn.send({ type: 'worldLevel', level: serialized });
+                    return;
+                }
+                const total = Math.ceil(json.length / LEVEL_CHUNK);
+                conn.send({ type: 'worldLevelStart', total: total });
+                for (let i = 0; i < total; i++) {
+                    conn.send({
+                        type: 'worldLevelChunk', i: i,
+                        part: json.slice(i * LEVEL_CHUNK, (i + 1) * LEVEL_CHUNK)
+                    });
+                }
+            }
+            catch (err) { console.warn('Could not send level to client', err); }
+        };
+        if (conn.open) sendLevel(); else conn.on('open', sendLevel);
 
         // Force an immediate update so they don't load into a void
         broadcastPlayerList();
@@ -1166,7 +1210,13 @@ function joinGame() {
             console.error("PeerJS Error:", err);
             // If fatal error, try to destroy and recreate after delay
             if (err.type === 'peer-unavailable' || err.type === 'network') {
-                setTimeout(() => peer.reconnect(), 5000);
+                // Only worth reconnecting when the signaling link is actually
+                // down — otherwise PeerJS throws out of this callback.
+                setTimeout(() => {
+                    try {
+                        if (peer && !peer.destroyed && peer.disconnected) peer.reconnect();
+                    } catch (e) { console.warn('Reconnect skipped:', e); }
+                }, 5000);
             }
         });
 
@@ -1180,12 +1230,78 @@ function joinGame() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// CUSTOM LEVEL SYNC (multiplayer)
+// A custom level only exists on the machine that edited it, so it has to be
+// handed to everyone who joins. The receiving player reloads the page with
+// ?custom=1 afterwards: the world is then built straight from the level on the
+// first frame, which is far safer than swapping terrain, props and colliders
+// out from under a running game. The level lives in sessionStorage so it
+// covers exactly this tab and expires with it.
+const LEVEL_SESSION_KEY = 'htmlfishing.level.session';
+const LEVEL_HASH_KEY = 'htmlfishing.level.hash';
+// WebRTC data channels refuse messages past a couple hundred KB, so a large
+// map is split into parts at the host and glued back together here.
+const LEVEL_CHUNK = 60000;
+let levelNavPending = false;
+let levelParts = null;
+
+function levelFingerprint(level) {
+    const json = JSON.stringify(window.Level.serialize(level));
+    let h = 2166136261;
+    for (let i = 0; i < json.length; i++) { h ^= json.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(16);
+}
+
+// Returns true when the page is about to navigate away to load the level.
+function acceptHostLevel(level, rejoinQuery) {
+    if (!level || !window.Level || levelNavPending) return false;
+    let lv;
+    try { lv = window.Level.normalize(level); } catch (err) { return false; }
+
+    const hash = levelFingerprint(lv);
+    // Already playing this exact level (e.g. rejoining the same room) -> stay.
+    if (window.CUSTOM_LEVEL && levelFingerprint(window.CUSTOM_LEVEL) === hash) {
+        try { sessionStorage.setItem(LEVEL_HASH_KEY, hash); } catch (err) { }
+        return false;
+    }
+
+    try {
+        sessionStorage.setItem(LEVEL_SESSION_KEY, JSON.stringify(window.Level.serialize(lv)));
+        sessionStorage.setItem(LEVEL_HASH_KEY, hash);
+    } catch (err) { return false; }
+
+    const status = document.getElementById('lobby-status');
+    if (status) status.innerText = "Loading the room's level...";
+    showToast("Downloading the room's level...");
+    levelNavPending = true;
+    setTimeout(() => { location.href = 'index.html?custom=1' + (rejoinQuery || ''); }, 250);
+    return true;
+}
+
+// The room/server plays the stock island, so drop whatever level we're on and
+// come back without ?custom=1. The player's own saved level is untouched.
+function dropActiveLevel(rejoinQuery) {
+    if (!window.CUSTOM_LEVEL || levelNavPending) return false;
+    try { sessionStorage.removeItem(LEVEL_SESSION_KEY); sessionStorage.removeItem(LEVEL_HASH_KEY); } catch (err) { }
+
+    const status = document.getElementById('lobby-status');
+    if (status) status.innerText = "Switching to the room's world...";
+    levelNavPending = true;
+    setTimeout(() => {
+        const extra = (rejoinQuery || '').replace(/^&/, '');
+        location.href = 'index.html' + (extra ? '?' + extra : '');
+    }, 250);
+    return true;
+}
+
 // --- Dedicated Server (WebSocket) client integration ---
 // Put this near other networking (after joinGame / hostGame functions)
 
 const DEDICATED_WS_URL = 'wss://invention-attachments-earl-matrix.trycloudflare.com';
 
 let dedicatedSocket = null;
+let dedicatedUrl = null;
 let dedicatedId = null;
 let isConnectedToDedicated = false;
 let isAdminOnDedicated = false;
@@ -1240,6 +1356,8 @@ function connectToDedicatedServer(customUrl = null) {
         url = (window.DEDICATED_SERVER_URL || DEDICATED_WS_URL);
     }
 
+    dedicatedUrl = url;
+
     document.getElementById('lobby-status').innerText = "Connecting...";
 
     // 4. Create the WebSocket connection
@@ -1258,6 +1376,21 @@ function connectToDedicatedServer(customUrl = null) {
             saveState: saveState
         };
         dedicatedSocket.send(JSON.stringify(payload));
+
+        // Publish our custom level so everyone on this server plays it. Skipped
+        // when we've already got this exact level (it came from the server).
+        if (window.CUSTOM_LEVEL && window.Level) {
+            const hash = levelFingerprint(window.CUSTOM_LEVEL);
+            if (sessionStorage.getItem(LEVEL_HASH_KEY) !== hash) {
+                try {
+                    dedicatedSocket.send(JSON.stringify({ type: 'setLevel', level: window.Level.serialize(window.CUSTOM_LEVEL) }));
+                } catch (err) { console.warn('Could not publish level', err); }
+                try { sessionStorage.setItem(LEVEL_HASH_KEY, hash); } catch (err) { }
+            }
+        }
+        // Then ask which level is in force. WebSocket messages keep their order,
+        // so the reply already accounts for the push above.
+        dedicatedSocket.send(JSON.stringify({ type: 'levelSync' }));
 
         // UI Setup
         currentRoomId = 'official-server';
@@ -1312,6 +1445,12 @@ function connectToDedicatedServer(customUrl = null) {
                         createRemotePlayer(pid, playerMeta);
                     }
                 });
+            }
+
+            // Custom level held by the server. acceptHostLevel() only navigates
+            // when it isn't already the level we're playing.
+            if (msg.level) {
+                acceptHostLevel(msg.level, '&dedicated=' + encodeURIComponent(dedicatedUrl || ''));
             }
 
             // Start game AFTER worldTime is set
@@ -1431,6 +1570,13 @@ function connectToDedicatedServer(customUrl = null) {
         // 8. World Events
         else if (msg.type === 'spawnPortal') spawnPortal(msg.x, msg.z, true);
         else if (msg.type === 'forceGhost') spawnGhostMesh(msg.x, msg.z);
+
+        // 9. Level currently in force on the server (answer to levelSync)
+        else if (msg.type === 'worldLevel') {
+            const query = '&dedicated=' + encodeURIComponent(dedicatedUrl || '');
+            if (msg.level) acceptHostLevel(msg.level, query);
+            else dropActiveLevel(query);
+        }
 
         // 10. Environment (Weather/Time)
         else if (msg.type === 'environment_sync') {
@@ -2373,6 +2519,35 @@ function handleDataFromHost(data) {
     if (data.type === 'error') {
         alert(data.message);
         location.reload();
+        return;
+    }
+
+    // The host's level arrives with the room handshake (null = stock island).
+    // Big maps come as a run of chunks that are glued back together first.
+    if (data.type === 'worldLevelStart') {
+        levelParts = { total: Math.max(1, data.total | 0), count: 0, parts: [] };
+        return;
+    }
+    if (data.type === 'worldLevelChunk') {
+        if (!levelParts) return;
+        const i = data.i | 0;
+        if (i < 0 || i >= levelParts.total || typeof levelParts.parts[i] === 'string') return;
+        levelParts.parts[i] = String(data.part);
+        levelParts.count++;
+        if (levelParts.count !== levelParts.total) return;
+        const json = levelParts.parts.join('');
+        levelParts = null;
+        let obj = null;
+        try { obj = JSON.parse(json); } catch (err) { return; }
+        const chunkQuery = '&room=' + encodeURIComponent(currentRoomId || '');
+        if (obj) acceptHostLevel(obj, chunkQuery); else dropActiveLevel(chunkQuery);
+        return;
+    }
+    if (data.type === 'worldLevel') {
+        levelParts = null;
+        const query = '&room=' + encodeURIComponent(currentRoomId || '');
+        if (data.level) acceptHostLevel(data.level, query);
+        else dropActiveLevel(query);
         return;
     }
 
@@ -8581,6 +8756,9 @@ function releaseCast() {
     const dist = Math.sqrt(targetPos.x * targetPos.x + targetPos.z * targetPos.z);
     const distToSecret = Math.sqrt(targetPos.x * targetPos.x + (targetPos.z - -95) * (targetPos.z - -95));
 
+    // Only a custom level sets this; it lets a level override the pond sub-type.
+    fishingZoneCategory = null;
+
     if (isInVoid) {
         fishingZone = 'void';
     }
@@ -8602,12 +8780,19 @@ function releaseCast() {
         }
     }
     else if (window.CUSTOM_LEVEL && window.Level) {
-        // Custom levels: any water in the level is fishable. Treated as ocean.
-        if (window.Level.isWater(window.CUSTOM_LEVEL, targetPos.x, targetPos.z)) {
-            fishingZone = 'ocean';
-        } else {
+        // Custom levels: the zone painted in the editor decides the fish pool.
+        if (!window.Level.isWater(window.CUSTOM_LEVEL, targetPos.x, targetPos.z)) {
             stopFishing(false, "Cast into the water!");
             return;
+        }
+        const zoneId = window.Level.zoneAt(window.CUSTOM_LEVEL, targetPos.x, targetPos.z);
+        const info = window.Level.zoneInfo(zoneId);
+        if (info.fish === 'lightpond' || info.fish === 'darkpond') {
+            fishingZone = 'pond';
+            fishingZoneCategory = info.fish;
+        } else {
+            fishingZone = info.fish;
+            fishingZoneCategory = null;
         }
     }
     else if (distToSecret < 12) {
@@ -11049,7 +11234,8 @@ function selectFish() {
         // --- ZONE-SPECIFIC FISH POOLS ---
         // Map fishing zones to fish zone categories
         let zoneCategory = 'lake'; // Default
-        if (fishingZone === 'ocean') zoneCategory = 'ocean';
+        if (fishingZoneCategory) zoneCategory = fishingZoneCategory;
+        else if (fishingZone === 'ocean') zoneCategory = 'ocean';
         else if (fishingZone === 'pond') {
             // Differentiate light pond vs dark pond by player position
             const distToDarkPond = Math.sqrt(Math.pow(player.position.x - 60, 2) + Math.pow(player.position.z - 50, 2));

@@ -1,2 +1,7 @@
 # Local music tracks — large binaries, ship/deploy separately
 Music/
+
+# Dedicated server: installed deps and runtime artifacts
+Dedicated Server Code/node_modules/
+Dedicated Server Code/server_logs.txt
+Dedicated Server Code/banned_ips.json

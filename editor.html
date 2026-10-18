@@ -104,6 +104,9 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
 .npc-pick.is-on{background:var(--p-face-3);box-shadow:inset 2px 2px 0 var(--p-good);}
 .npc-dot{width:14px;height:14px;border:2px solid var(--p-line);flex:0 0 auto;}
 .npc-pick span{font-size:16px;color:var(--p-text);}
+.zone-dot{width:14px;height:14px;border:2px solid var(--p-line);flex:0 0 auto;}
+#st-zones{display:flex;flex-direction:column;gap:4px;}
+#st-zones .zone-dot{width:12px;height:12px;border-width:1px;}
 
 /* --- bottom status --- */
 #ed-status{
@@ -172,6 +175,12 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
     <div id="npc-list" style="display:flex;flex-direction:column;gap:5px;"></div>
   </div>
 
+  <div class="sec" id="sec-zone">
+    <h3>FISHING ZONE</h3>
+    <div id="zone-list" style="display:flex;flex-direction:column;gap:5px;"></div>
+    <div class="hint">Paint zones over water. Untagged water fishes as ocean. Ponds and the cave use their own pools.</div>
+  </div>
+
   <div class="sec">
     <h3>LEVEL</h3>
     <div class="row"><label>Terrain grid</label><input type="number" id="set-grid" min="8" max="256" step="1" value="64"></div>
@@ -183,6 +192,8 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
       <button class="px-btn" id="btn-fill-land">FILL LAND</button>
       <button class="px-btn" id="btn-fill-water">FILL WATER</button>
       <button class="px-btn" id="btn-flat">FLATTEN ALL</button>
+      <button class="px-btn" id="btn-auto-zone">AUTO ZONES</button>
+      <button class="px-btn danger" id="btn-clear-zone">CLEAR ZONES</button>
     </div>
     <div class="hint" id="apply-tip">Grid changes resample the existing terrain.</div>
   </div>
@@ -191,6 +202,7 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
     <h3>VIEW</h3>
     <div class="row"><label>Show grid</label><input type="checkbox" id="chk-grid" checked></div>
     <div class="row"><label>Water</label><input type="checkbox" id="chk-water" checked></div>
+    <div class="row"><label>Fishing zones</label><input type="checkbox" id="chk-zones" checked></div>
     <div class="row"><label>Camera speed</label><input type="range" id="cam-speed" min="6" max="90" step="1" value="26"><span class="val" id="cam-speed-v">26</span></div>
     <div class="row"><label>Look sensitivity</label><input type="range" id="cam-sens" min="1" max="10" step="1" value="5"><span class="val" id="cam-sens-v">5</span></div>
   </div>
@@ -206,6 +218,11 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
       <button class="px-btn danger" id="btn-clear-props">CLEAR PROPS</button>
       <button class="px-btn danger" id="btn-clear-npcs">CLEAR NPCs</button>
     </div>
+  </div>
+
+  <div class="sec">
+    <h3>ZONES (WATER TILES)</h3>
+    <div id="st-zones"></div>
   </div>
 </aside>
 
@@ -230,11 +247,12 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
       <kbd>WHEEL</kbd><span>Change the brush size</span>
       <kbd>SHIFT+WHEEL</kbd><span>Dolly the camera forward / back</span>
       <kbd>MIDDLE DRAG</kbd><span>Pan the camera</span>
-      <kbd>1 – 9</kbd><span>Quick-select a tool</span>
+      <kbd>1 – 9 / 0</kbd><span>Quick-select a tool (0 = Fishing Zones)</span>
       <kbd>G</kbd><span>Toggle the grid</span>
       <kbd>CTRL+Z / CTRL+Y</kbd><span>Undo / redo</span>
       <kbd>F</kbd><span>Frame the whole level</span>
     </div>
+    <div class="hint">Fishing zones: carve water with the Water / Lower tools, then paint Lake, River, Light Pond, Dark Pond or Cave over it. AUTO ZONES tags every enclosed pond as Lake and leaves the open sea as ocean.</div>
     <div class="actions"><button class="px-btn gold" id="help-close">GOT IT</button></div>
   </div>
 </div>
@@ -244,7 +262,7 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="icons.js?v=4"></script>
-<script src="worldgen.js?v=1"></script>
-<script src="editor.js?v=1"></script>
+<script src="worldgen.js?v=3"></script>
+<script src="editor.js?v=4"></script>
 </body>
 </html>

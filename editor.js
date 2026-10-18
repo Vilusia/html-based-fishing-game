@@ -14,13 +14,14 @@
 
     const world = {
         group: null, terrain: null, water: null, floor: null,
-        grid: null, propGroup: null, npcGroup: null, ring: null
+        grid: null, propGroup: null, npcGroup: null, ring: null, zones: null
     };
 
     const state = {
         level: null,
         tool: "land",
         npcType: "merchant",
+        zoneId: 1,
         radius: 6,
         strength: 1,
         brushHeight: 2,
@@ -47,6 +48,7 @@
         { id: "raise", name: "Raise", icon: "chartUp", key: "3", tip: "Raise the terrain under the brush." },
         { id: "lower", name: "Lower", icon: "hammer", key: "4", tip: "Lower the terrain under the brush." },
         { id: "level", name: "Flatten", icon: "table", key: "5", tip: "Flatten terrain to the height where the stroke began." },
+        { id: "zone", name: "Fishing Zones", icon: "fish", key: "0", tip: "Tag water with a fishing zone (lake, river, ponds, cave) so the right fish show up. Right-click clears back to ocean." },
         { id: "tree", name: "Trees", icon: "tree", key: "6", tip: "Place trees on land. Right-click removes the nearest." },
         { id: "rock", name: "Rocks", icon: "rock", key: "7", tip: "Place rocks on land. Right-click removes the nearest." },
         { id: "npc", name: "NPCs", icon: "users", key: "8", tip: "Place the selected NPC on land. Right-click removes it." },
@@ -54,6 +56,7 @@
     ];
 
     const TERRAIN_TOOLS = { land: 1, water: 1, raise: 1, lower: 1, level: 1 };
+    const isBrushTool = (t) => !!TERRAIN_TOOLS[t] || t === "zone";
 
     // ------------------------------------------------------------------ helpers
     const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -97,7 +100,7 @@
 
     function currentJSON() {
         state.level.name = ($("level-name").value || "Untitled Level").slice(0, 60);
-        return state.level;
+        return Level.serialize(state.level);
     }
 
     // ------------------------------------------------------------- world build
@@ -113,6 +116,10 @@
         group.add(WorldGen.buildTerrainMesh(lv));
         world.water = WorldGen.buildWaterMesh(lv);
         group.add(world.water);
+
+        world.zones = WorldGen.buildZoneOverlay(lv);
+        world.zones.visible = $("chk-zones").checked;
+        group.add(world.zones);
 
         world.grid = new THREE.GridHelper(lv.size, Math.min(lv.grid, 128), 0x9aa3c0, 0x3b4057);
         world.grid.position.y = lv.seaLevel + 0.05;
@@ -218,6 +225,40 @@
             const d = m.userData.ref;
             if (d) m.position.y = Level.sampleHeight(lv, d.x, d.z);
         });
+    }
+
+    // Rebuild the coloured zone patches (cheap: only tagged cells are drawn).
+    function refreshZoneOverlay() {
+        if (!world.zones) return;
+        const parent = world.zones.parent;
+        parent.remove(world.zones);
+        disposeMesh(world.zones);
+        world.zones = WorldGen.buildZoneOverlay(state.level);
+        world.zones.visible = $("chk-zones").checked;
+        parent.add(world.zones);
+    }
+
+    // Paint the selected fishing zone over every cell within the brush.
+    function applyZoneBrush(point, clear) {
+        const lv = state.level;
+        const cell = Level.cellSize(lv);
+        const r = state.radius;
+        const c = Level.worldToCell(lv, point.x, point.z);
+        const rad = Math.ceil(r / cell) + 1;
+        const id = clear ? 0 : state.zoneId;
+        let touched = false;
+        for (let gz = c.gz - rad; gz <= c.gz + rad; gz++) {
+            for (let gx = c.gx - rad; gx <= c.gx + rad; gx++) {
+                if (gx < 0 || gz < 0 || gx >= lv.grid || gz >= lv.grid) continue;
+                const cc = Level.cellCenter(lv, gx, gz);
+                const d = Math.hypot(cc.x - point.x, cc.z - point.z);
+                if (d > r) continue;
+                const idx = gz * lv.grid + gx;
+                if (lv.zones[idx] !== id) { lv.zones[idx] = id; touched = true; }
+            }
+        }
+        if (touched) { zonesDirty = true; statsDirty = true; }
+        return touched;
     }
 
     // ----------------------------------------------------------------- painting
@@ -354,9 +395,10 @@
     function beginStroke(point, secondary) {
         state.refHeight = Level.sampleHeight(state.level, point.x, point.z);
         pushUndo();
-        if (TERRAIN_TOOLS[state.tool]) {
+        if (isBrushTool(state.tool)) {
             state.painting = true;
-            applyBrush(point, secondary);
+            if (state.tool === "zone") applyZoneBrush(point, secondary);
+            else applyBrush(point, secondary);
         } else if (state.tool === "erase") {
             onSecondary(point);
         } else {
@@ -414,14 +456,11 @@
             if (!state.looking && e.target === renderer.domElement) {
                 updatePick();
                 if (state.pick) {
-                    if (TERRAIN_TOOLS[state.tool]) {
-                        pushUndo();
-                        applyBrush(state.pick, true);
-                        markDirty();
-                    } else {
-                        pushUndo();
-                        onSecondary(state.pick);
-                    }
+                    pushUndo();
+                    if (state.tool === "zone") applyZoneBrush(state.pick, true);
+                    else if (TERRAIN_TOOLS[state.tool]) applyBrush(state.pick, true);
+                    else onSecondary(state.pick);
+                    markDirty();
                 }
             }
             state.looking = false;
@@ -483,6 +522,7 @@
     function snapshot() {
         return JSON.stringify({
             heights: state.level.heights,
+            zones: state.level.zones,
             trees: state.level.trees,
             rocks: state.level.rocks,
             npcs: state.level.npcs
@@ -499,11 +539,13 @@
     function restore(str) {
         const data = JSON.parse(str);
         state.level.heights = data.heights;
+        if (data.zones) state.level.zones = data.zones;
         state.level.trees = data.trees;
         state.level.rocks = data.rocks;
         state.level.npcs = data.npcs;
         refreshTerrain();
         rebuildProps();
+        refreshZoneOverlay();
         markDirty();
         refreshStats();
     }
@@ -539,9 +581,21 @@
         $("st-trees").textContent = lv.trees.length;
         $("st-rocks").textContent = lv.rocks.length;
         $("st-npcs").textContent = lv.npcs.length;
+
+        const counts = Level.countZoneWater(lv);
+        const el = $("st-zones");
+        if (el) {
+            const rows = Level.ZONES
+                .filter((z) => z.id !== 0 && counts[z.id] > 0)
+                .map((z) => '<div class="stat"><span><i class="zone-dot" style="background:#' +
+                    new THREE.Color(z.color).getHexString() + '"></i>' + z.name +
+                    '</span><b>' + counts[z.id] + "</b></div>");
+            el.innerHTML = rows.length ? rows.join("") : '<div class="hint">No zones tagged &mdash; all water counts as ocean.</div>';
+        }
     }
 
     let statsDirty = false;
+    let zonesDirty = false;
     function markDirty() { state.dirty = true; statsDirty = true; }
 
     // ------------------------------------------------------------------- UI bits
@@ -571,8 +625,9 @@
         $("brush-tip").textContent = t ? t.tip : "";
         $("st-tool").innerHTML = "<b>" + (t ? t.name : id) + "</b>";
         $("sec-npc").style.display = id === "npc" ? "flex" : "none";
+        $("sec-zone").style.display = id === "zone" ? "flex" : "none";
         // Terrain brushes benefit from a radius; single-object tools do not.
-        $("brush-radius").parentElement.style.opacity = TERRAIN_TOOLS[id] || id === "erase" ? "1" : ".45";
+        $("brush-radius").parentElement.style.opacity = isBrushTool(id) || id === "erase" ? "1" : ".45";
     }
 
     function buildNpcList() {
@@ -586,6 +641,26 @@
             d.onclick = () => {
                 state.npcType = t.id;
                 [...el.children].forEach((c) => c.classList.toggle("is-on", c.dataset.npc === t.id));
+            };
+            el.appendChild(d);
+        });
+    }
+
+    function buildZoneList() {
+        const el = $("zone-list");
+        el.innerHTML = "";
+        Level.ZONES.forEach((z) => {
+            const d = document.createElement("div");
+            d.className = "npc-pick zone-pick" + (z.id === state.zoneId ? " is-on" : "");
+            d.dataset.zone = z.id;
+            d.title = z.id === 0
+                ? "Untagged water (default) — right-click repaints water as ocean."
+                : z.name + " — the game draws the " + z.fish + " fish pool here.";
+            d.innerHTML = '<i class="zone-dot" style="background:#' + new THREE.Color(z.color).getHexString() +
+                '"></i><span>' + z.name + "</span>";
+            d.onclick = () => {
+                state.zoneId = z.id;
+                [...el.children].forEach((c) => c.classList.toggle("is-on", +c.dataset.zone === z.id));
             };
             el.appendChild(d);
         });
@@ -610,6 +685,7 @@
             for (let gx = 0; gx < grid; gx++) {
                 const c = Level.cellCenter(next, gx, gz);
                 next.heights[gz * grid + gx] = Level.sampleHeight(old, c.x, c.z);
+                next.zones[gz * grid + gx] = Level.zoneAt(old, c.x, c.z);
             }
         }
         // Drop props that would now be out of bounds.
@@ -692,6 +768,22 @@
 
         $("chk-grid").onchange = (e) => { if (world.grid) world.grid.visible = e.target.checked; };
         $("chk-water").onchange = (e) => { if (world.water) world.water.visible = e.target.checked; };
+        $("chk-zones").onchange = (e) => { if (world.zones) world.zones.visible = e.target.checked; };
+
+        $("btn-auto-zone").onclick = () => {
+            pushUndo();
+            const n = Level.autoZones(state.level);
+            refreshZoneOverlay(); refreshStats(); markDirty();
+            toast(n ? "Tagged " + n + " enclosed water tiles as Lake" : "No enclosed water found");
+        };
+        $("btn-clear-zone").onclick = () => {
+            pushUndo();
+            const zones = state.level.zones;
+            let n = 0;
+            for (let i = 0; i < zones.length; i++) if (zones[i]) { zones[i] = 0; n++; }
+            refreshZoneOverlay(); refreshStats(); markDirty();
+            toast(n ? "Cleared " + n + " zone tags" : "No zone tags to clear");
+        };
 
         $("btn-apply").onclick = () => {
             const grid = clamp(parseInt($("set-grid").value, 10) || state.level.grid, 8, 256);
@@ -785,7 +877,10 @@
 
         updateCamera(dt);
 
-        if (state.painting && TERRAIN_TOOLS[state.tool]) {
+        if (state.painting && state.tool === "zone") {
+            updatePick();
+            if (state.pick) applyZoneBrush(state.pick, false);
+        } else if (state.painting && TERRAIN_TOOLS[state.tool]) {
             updatePick();
             if (state.pick) {
                 const step = state.tool === "raise" || state.tool === "lower" ? 6 * dt : 1;
@@ -822,6 +917,7 @@
             refreshStats();
         }
         if (statsDirty) { statsDirty = false; refreshStats(); }
+        if (zonesDirty) { zonesDirty = false; refreshZoneOverlay(); }
 
         // Brush ring follows the cursor.
         updatePick();
@@ -840,9 +936,14 @@
         const h = Level.sampleHeight(state.level, p.x, p.z);
         world.ring.visible = true;
         world.ring.position.set(p.x, h + 0.25, p.z);
-        const isTerrainTool = !!TERRAIN_TOOLS[state.tool];
-        world.ring.material.color.setHex(isTerrainTool ? 0xf2c14e : 0x6fb54a);
-        const r = isTerrainTool ? state.radius : Math.max(2.5, state.radius * 0.6);
+        const isBrush = isBrushTool(state.tool);
+        const r = isBrush ? state.radius : Math.max(2.5, state.radius * 0.6);
+        if (state.tool === "zone") {
+            world.ring.material.color.setHex(Level.zoneInfo(state.zoneId).color);
+            world.ring.position.y = state.level.seaLevel + 0.3;
+        } else {
+            world.ring.material.color.setHex(isBrush ? 0xf2c14e : 0x6fb54a);
+        }
         world.ring.scale.set(r, r, r);
     }
 
@@ -882,6 +983,7 @@
 
         buildTools();
         buildNpcList();
+        buildZoneList();
         bindUI();
         bindInput();
         selectTool("land");
@@ -918,8 +1020,13 @@
     window.EditorAPI = {
         state: state,
         level: () => state.level,
+        scene: () => scene,
+        world: world,
         selectTool: selectTool,
         applyBrush: applyBrush,
+        applyZoneBrush: applyZoneBrush,
+        autoZones: () => Level.autoZones(state.level),
+        refreshZoneOverlay: refreshZoneOverlay,
         placeProp: placeProp,
         removeNearest: removeNearest,
         refreshTerrain: refreshTerrain,

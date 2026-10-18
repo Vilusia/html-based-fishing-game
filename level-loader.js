@@ -8,10 +8,13 @@
     "use strict";
 
     const KEY = "htmlfishing.level";
+    // A level handed over by a multiplayer host lives here for this tab only,
+    // so it never overwrites whatever the player saved in their own editor.
+    const SESSION_KEY = "htmlfishing.level.session";
 
     function readStored() {
         try {
-            const raw = localStorage.getItem(KEY);
+            const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(KEY);
             return raw ? window.Level.normalize(JSON.parse(raw)) : null;
         } catch (err) {
             return null;
@@ -35,8 +38,12 @@
         if (!nameEl) return;
         const lv = shownLevel();
         if (lv) {
+            const counts = window.Level.countZoneWater(lv);
+            let zoned = 0;
+            Object.keys(counts).forEach(function (k) { if (+k !== 0) zoned += counts[k]; });
             nameEl.textContent = lv.name + "  ·  " + lv.trees.length + " trees, " +
                 lv.rocks.length + " rocks, " + lv.npcs.length + " NPCs" +
+                (zoned ? ", " + zoned + " zoned tiles" : "") +
                 (window.CUSTOM_LEVEL ? "  (active)" : "");
             nameEl.style.color = window.CUSTOM_LEVEL ? "var(--p-good)" : "var(--p-text-dim)";
         } else {
@@ -53,14 +60,19 @@
         stored: readStored,
         set: function (obj) {
             window.CUSTOM_LEVEL = window.Level.normalize(obj);
-            try { localStorage.setItem(KEY, JSON.stringify(window.CUSTOM_LEVEL)); } catch (err) { /* ignore */ }
+            try { localStorage.setItem(KEY, JSON.stringify(window.Level.serialize(window.CUSTOM_LEVEL))); } catch (err) { /* ignore */ }
             refreshUI();
         },
         clear: function () {
             window.CUSTOM_LEVEL = null;
-            try { localStorage.removeItem(KEY); } catch (err) { /* ignore */ }
+            try {
+                localStorage.removeItem(KEY);
+                sessionStorage.removeItem(SESSION_KEY);
+            } catch (err) { /* ignore */ }
             refreshUI();
-        }
+        },
+        // Key the game uses to hand a level to a joining multiplayer player.
+        sessionKey: SESSION_KEY
     };
 
     function note(msg) {

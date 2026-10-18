@@ -13,10 +13,14 @@
 //   oceanFloor: -6,       // default depth of unpainted ocean
 //   landHeight: 2,        // default height when painting fresh land
 //   heights: number[],    // grid*grid cell heights, index = gz*grid + gx
+//   zoneMap: "0011223...",// grid*grid fishing-zone ids as a digit string (optional)
 //   trees: [{x,z,scale,rot,tint}],
 //   rocks: [{x,z,scale,rx,ry,rz}],
 //   npcs:  [{type,x,z,rot}]
 // }
+//
+// Fishing zones: every water cell can be tagged with a zone id so the game
+// picks the matching fish pool. 0 = ocean (the default for anything untagged).
 (function () {
     "use strict";
 
@@ -29,6 +33,82 @@
 
     const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const lerp = (a, b, t) => a + (b - a) * t;
+
+    // -------------------------------------------------------- Fishing zones
+    // `fish` is the zone name the game's fishing code understands. Ponds are
+    // special-cased later (lightpond / darkpond) but both use fishingZone 'pond'.
+    const ZONES = [
+        { id: 0, key: "ocean", name: "Ocean", color: 0x3d7fb8, fish: "ocean" },
+        { id: 1, key: "lake", name: "Lake", color: 0x3fae9c, fish: "lake" },
+        { id: 2, key: "river", name: "River", color: 0x5ec8e8, fish: "river" },
+        { id: 3, key: "lightpond", name: "Light Pond", color: 0x8fe07a, fish: "lightpond" },
+        { id: 4, key: "darkpond", name: "Dark Pond", color: 0x8a4fd0, fish: "darkpond" },
+        { id: 5, key: "cave", name: "Cave / Secret", color: 0xe0a03a, fish: "secret" }
+    ];
+    const ZONE_BY_KEY = {};
+    const ZONE_BY_ID = {};
+    ZONES.forEach((z) => { ZONE_BY_KEY[z.key] = z; ZONE_BY_ID[z.id] = z; });
+
+    function zoneInfo(id) { return ZONE_BY_ID[id] || ZONES[0]; }
+    function zoneIdByKey(key) { return ZONE_BY_KEY[key] ? ZONE_BY_KEY[key].id : 0; }
+
+    // Nearest-cell zone lookup. Outside the grid => ocean.
+    function zoneAt(level, x, z) {
+        if (!inBounds(level, x, z) || !level.zones) return 0;
+        const cs = cellSize(level);
+        const half = level.size / 2;
+        const gx = clamp(Math.floor((x + half) / cs), 0, level.grid - 1);
+        const gz = clamp(Math.floor((z + half) / cs), 0, level.grid - 1);
+        return level.zones[gz * level.grid + gx] || 0;
+    }
+
+    // How many *water* cells carry each zone (used by the editor's stats).
+    function countZoneWater(level) {
+        const out = {};
+        ZONES.forEach((z) => { out[z.id] = 0; });
+        const g = level.grid;
+        for (let i = 0; i < level.heights.length; i++) {
+            if (level.heights[i] >= level.seaLevel - 0.001) continue;
+            const id = (level.zones && level.zones[i]) || 0;
+            out[id] = (out[id] || 0) + 1;
+        }
+        return out;
+    }
+
+    // Flood outward from the map's edge water so everything connected to the
+    // open sea reads as ocean; any enclosed water left untagged becomes a lake.
+    // Returns the number of cells changed.
+    function autoZones(level) {
+        const g = level.grid;
+        const zones = level.zones;
+        const seen = new Uint8Array(g * g);
+        const queue = [];
+        const isW = (i) => level.heights[i] < level.seaLevel - 0.001;
+        const push = (gx, gz) => {
+            const i = gz * g + gx;
+            if (seen[i] || !isW(i)) return;
+            seen[i] = 1;
+            queue.push(i);
+        };
+        for (let gx = 0; gx < g; gx++) { push(gx, 0); push(gx, g - 1); }
+        for (let gz = 0; gz < g; gz++) { push(0, gz); push(g - 1, gz); }
+        while (queue.length) {
+            const i = queue.pop();
+            const gx = i % g, gz = (i / g) | 0;
+            if (gx > 0) push(gx - 1, gz);
+            if (gx < g - 1) push(gx + 1, gz);
+            if (gz > 0) push(gx, gz - 1);
+            if (gz < g - 1) push(gx, gz + 1);
+        }
+        let changed = 0;
+        for (let i = 0; i < g * g; i++) {
+            if (!isW(i) || seen[i]) continue;
+            // Never stomp a zone the author painted by hand.
+            if ((zones[i] || 0) !== 0) continue;
+            zones[i] = 1; changed++;
+        }
+        return changed;
+    }
 
     // ---------------------------------------------------------------- Level
 
@@ -45,6 +125,7 @@
             oceanFloor: opts.oceanFloor != null ? opts.oceanFloor : DEFAULT_OCEAN_FLOOR,
             landHeight: opts.landHeight != null ? opts.landHeight : DEFAULT_LAND_HEIGHT,
             heights: new Array(grid * grid).fill(opts.oceanFloor != null ? opts.oceanFloor : DEFAULT_OCEAN_FLOOR),
+            zones: new Array(grid * grid).fill(0),
             trees: [],
             rocks: [],
             npcs: []
@@ -73,6 +154,20 @@
         }
         out.heights = heights;
 
+        // Fishing zones: accept either a digit string (zoneMap) or an array.
+        const zoneSrc = typeof out.zoneMap === "string"
+            ? out.zoneMap
+            : (Array.isArray(out.zones) ? out.zones : null);
+        const zones = new Array(need);
+        for (let i = 0; i < need; i++) {
+            let v;
+            if (typeof zoneSrc === "string") v = zoneSrc.charCodeAt(i) - 48;
+            else if (zoneSrc) v = Number(zoneSrc[i]);
+            zones[i] = ZONE_BY_ID[v] ? v : 0;
+        }
+        out.zones = zones;
+        delete out.zoneMap;
+
         out.trees = Array.isArray(out.trees) ? out.trees.filter(validObj).map(normTree) : [];
         out.rocks = Array.isArray(out.rocks) ? out.rocks.filter(validObj).map(normRock) : [];
         out.npcs = Array.isArray(out.npcs) ? out.npcs.filter(validObj).map(normNpc) : [];
@@ -87,6 +182,26 @@
     }
     function normNpc(n) {
         return { type: String(n.type || "merchant"), x: +n.x, z: +n.z, rot: Number(n.rot) || 0 };
+    }
+
+    // Plain, JSON-safe copy of a level. Zones are stored as a compact digit
+    // string so big grids stay small.
+    function serialize(level) {
+        const lv = normalize(level);
+        return {
+            version: LEVEL_VERSION,
+            name: lv.name,
+            size: lv.size,
+            grid: lv.grid,
+            seaLevel: lv.seaLevel,
+            oceanFloor: lv.oceanFloor,
+            landHeight: lv.landHeight,
+            heights: lv.heights,
+            zoneMap: Array.prototype.join.call(lv.zones, ""),
+            trees: lv.trees,
+            rocks: lv.rocks,
+            npcs: lv.npcs
+        };
     }
 
     function cellSize(level) { return level.size / level.grid; }
@@ -426,6 +541,45 @@
         return mesh;
     }
 
+    // Translucent coloured patches over tagged water so the editor can show
+    // where each fishing zone is. Only cells with a non-ocean zone are drawn.
+    function buildZoneOverlay(level) {
+        const g = level.grid;
+        const cs = cellSize(level);
+        const half = level.size / 2;
+        const y = level.seaLevel + 0.06;
+        const positions = [];
+        const colors = [];
+        const indices = [];
+        const col = new THREE.Color();
+        let v = 0;
+        for (let gz = 0; gz < g; gz++) {
+            for (let gx = 0; gx < g; gx++) {
+                const zid = (level.zones && level.zones[gz * g + gx]) || 0;
+                if (!zid) continue;
+                const x0 = -half + gx * cs, x1 = x0 + cs;
+                const z0 = -half + gz * cs, z1 = z0 + cs;
+                positions.push(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1);
+                col.setHex(zoneInfo(zid).color);
+                for (let k = 0; k < 4; k++) colors.push(col.r, col.g, col.b);
+                indices.push(v, v + 1, v + 2, v, v + 2, v + 3);
+                v += 4;
+            }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+        geo.setIndex(indices);
+        const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            vertexColors: true, transparent: true, opacity: 0.55,
+            depthWrite: false, side: THREE.DoubleSide
+        }));
+        mesh.position.y = 0;
+        mesh.userData.isZoneOverlay = true;
+        mesh.name = "levelZones";
+        return mesh;
+    }
+
     function buildOceanFloorMesh(level) {
         const span = level.size * 4;
         const mesh = new THREE.Mesh(
@@ -489,13 +643,16 @@
         NPC_TYPES, npcType, makeNpcPreview, makeLabelSprite,
         terrainVertexColor,
         buildTerrainGeometry, buildTerrainMesh, buildWaterMesh, buildOceanFloorMesh,
-        addLevelProps, buildCustomWorld
+        buildZoneOverlay,
+        addLevelProps, buildCustomWorld,
+        ZONES, zoneInfo, zoneIdByKey, zoneAt, countZoneWater, autoZones
     };
 
     window.Level = {
         LEVEL_VERSION,
-        createDefault, normalize,
+        createDefault, normalize, serialize,
         cellSize, cellCenter, worldToCell, inBounds,
-        sampleHeight, isWater, countLand
+        sampleHeight, isWater, countLand,
+        ZONES, zoneInfo, zoneIdByKey, zoneAt, countZoneWater, autoZones
     };
 })();

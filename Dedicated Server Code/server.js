@@ -431,6 +431,13 @@ let playerData = {};
 let bannedIPs = new Set();
 let activeProps = []; // { id, type, x, z, owner, timestamp }
 
+// --- CUSTOM LEVEL SYNC ---
+// The level authored in the level editor lives on a player's machine; the
+// server just holds one copy and hands it to everyone who connects, so a
+// joining player builds the right world instead of the stock island.
+let activeLevel = null;
+const MAX_LEVEL_BYTES = 3 * 1024 * 1024;
+
 let worldTime = 12.0;
 const DAY_DURATION = 1200; // 20 Minutes
 setInterval(() => {
@@ -579,6 +586,10 @@ wss.on('connection', (ws, req) => {
         // --- PROP SYNC ---
         activeProps: activeProps,
         // -----------------
+
+        // --- CUSTOM LEVEL ---
+        level: activeLevel,
+        // -------------------
 
         playerList: Object.fromEntries(
             Object.entries(clients).map(([cid, c]) => [cid, c.meta])
@@ -737,6 +748,36 @@ wss.on('connection', (ws, req) => {
 
             broadcastPlayerList();
         }
+
+        // --- CUSTOM LEVEL ---
+        // First player with a level running claims the map; after that only an
+        // admin may replace it. Rejections are silent for normal players so a
+        // mismatched local level never turns into a fight over the world.
+        else if (msg.type === 'setLevel') {
+            const level = msg.level;
+            const valid = level && typeof level === 'object'
+                && typeof level.grid === 'number' && level.grid > 0 && level.grid <= 256
+                && Array.isArray(level.heights) && level.heights.length === level.grid * level.grid;
+
+            if (valid && JSON.stringify(level).length <= MAX_LEVEL_BYTES) {
+                const nowLvl = Date.now();
+                if (!info.lastLevelSet || nowLvl - info.lastLevelSet > 15000) {
+                    if (!activeLevel || info.meta.isAdmin) {
+                        info.lastLevelSet = nowLvl;
+                        activeLevel = level;
+                        broadcast({ type: 'worldLevel', level: activeLevel }, null);
+                        logToFile(`LEVEL: "${info.meta.name}" published a custom level (${level.grid}x${level.grid})`);
+                    }
+                }
+            }
+        }
+
+        // A client asking which level is in force. Answered per-client so it
+        // lands after any setLevel they sent on the same socket.
+        else if (msg.type === 'levelSync') {
+            info.ws.send(JSON.stringify({ type: 'worldLevel', level: activeLevel }));
+        }
+        // -------------------
 
 
         else if (['chat', 'sound', 'anim', 'punch_hit', 'spawnPortal', 'forceGhost'].includes(msg.type)) {

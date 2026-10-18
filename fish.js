@@ -612,6 +612,9 @@ let staticColliders = [];
 let treeMeshes = [];
 let fishingState = 'idle', bobber = null, biteTimer = null, bobberInitialY = 0;
 let fishingZone = 'lake';
+// Set by releaseCast() when a custom level supplies a fishing zone; null means
+// "use the normal island's position-based pond rules".
+let fishingZoneCategory = null;
 
 let isRaining = false;
 let rainSystem = null;
