@@ -388,6 +388,8 @@ const DEFAULT_SAVE_STATE = {
     wood: 0, // Resource
     stone: 0,
     displayName: "Fisher",
+    lobbyName: "",          // Public server-browser name used while hosting
+    lobbyPublic: true,      // Whether our hosted lobby is listed in the browser
     journal: {},
     unlockedBobbers: ['classic'],
     currentBobber: 'classic',

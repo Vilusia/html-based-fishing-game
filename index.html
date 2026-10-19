@@ -2480,11 +2480,17 @@
     <div id="server-browser-overlay" class="overlay-screen" style="z-index: 3100;">
         <button class="close-x-btn" onclick="closeServerBrowser()">×</button>
         <h2>Community Servers</h2>
+        <p style="color: var(--p-text-dim); font-size: 15px; margin: 0 0 10px; max-width: 560px;">
+            Public lobbies hosted by other players, plus dedicated servers. No room code needed —
+            just hit JOIN.
+        </p>
         <div id="server-list-content"
-            style="width: 90%; max-width: 500px; max-height: 70vh; overflow-y: auto; text-align: left;">
+            style="width: 90%; max-width: 560px; max-height: 60vh; overflow-y: auto; text-align: left;">
         </div>
-        <br>
-        <button class="btn-lg" onclick="closeServerBrowser()">CLOSE</button>
+        <div style="display: flex; gap: 5px; margin-top: 12px;">
+            <button class="btn-lg" onclick="refreshServerBrowser()" style="margin: 0;">REFRESH</button>
+            <button class="btn-lg" onclick="closeServerBrowser()" style="margin: 0;">CLOSE</button>
+        </div>
     </div>
 
     <div id="lobby-screen" style="display: none;">
@@ -2496,6 +2502,15 @@
 
             <hr style="width: 100%; border: 0; border-top: 2px solid var(--p-line); margin: 15px 0;">
             <div id="start-options">
+                <label>Lobby Name:</label>
+                <input type="text" id="lobby-name-input" placeholder="My Lobby" maxlength="24"
+                    style="text-align:center;">
+                <div
+                    style="display:flex; align-items:center; justify-content:center; gap:8px; margin:2px 0 10px;">
+                    <input type="checkbox" id="lobby-public-input" checked
+                        style="width:18px; height:18px; margin:0; accent-color: var(--p-good);">
+                    <span style="font-size:16px; color:var(--p-text-dim);">List in Server Browser</span>
+                </div>
                 <button class="btn-lg btn-green" id="btn-host">HOST GAME</button>
                 <div style="margin: 10px;">OR</div>
                 <input type="text" id="room-id-input" placeholder="Enter Room ID" style="text-align:center;">
@@ -3314,14 +3329,26 @@
 
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
+    <!-- Master server (Python). It ONLY lists public lobbies so players can find
+         each other without room codes - gameplay itself stays peer-to-peer.
+         Point this at the machine running "Master Server Code/master_server.py".
+         Override by setting window.MASTER_SERVER_URL before this tag. -->
+    <script>
+        window.MASTER_SERVER_URL = window.MASTER_SERVER_URL || (
+            (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '')
+                ? 'http://localhost:8081'
+                : 'https://htmlfishing.com/master'
+        );
+    </script>
+
     <script src="icons.js?v=6"></script>
     <script src="worldgen.js?v=7"></script>
-    <script src="core.js?v=12.33"></script>
+    <script src="core.js?v=12.34"></script>
     <script src="fish.js?v=12.40"></script>
     <script src="character3d.js?v=5"></script>
     <script src="networking.js?v=12.31"></script>
     <script src="audio.js?v=12.31"></script>
-    <script src="ui.js?v=12.62"></script>
+    <script src="ui.js?v=12.63"></script>
     <script src="props.js?v=12.34"></script>
     <script src="level-loader.js?v=4"></script>
 

@@ -1005,6 +1005,8 @@ function generateRoomId() { return 'fish-' + Math.floor(1000 + Math.random() * 9
 function hostGame() {
     saveGame();
     const roomId = generateRoomId();
+    // Read the lobby name up front so the host panel can show it immediately.
+    myLobbyName = lobbyNameFromUI();
     document.getElementById('lobby-status').innerText = "Creating Room...";
 
 
@@ -1022,6 +1024,11 @@ function hostGame() {
         document.getElementById('lobby-screen').style.display = 'none';
 
         document.getElementById('btn-host-panel').style.display = 'block';
+
+        // Announce the lobby to the master server so players can find it
+        // without a room code. Kept alive by a heartbeat while we host.
+        myLobbyName = lobbyNameFromUI();
+        startLobbyHeartbeat();
 
         generateWorld(roomId);
         startGame();
@@ -1075,6 +1082,7 @@ function hostGame() {
                 removePlayer(conn.peer);
                 broadcastPlayerList();
                 updateHostPanel();
+                publishLobby(); // player left: refresh the browser count
             }
         });
 
@@ -1113,6 +1121,7 @@ function hostGame() {
         // Force an immediate update so they don't load into a void
         broadcastPlayerList();
         updateHostPanel();
+        publishLobby(); // refresh the player count in the server browser
         showToast("Player Joined!");
     });
 
@@ -1740,78 +1749,295 @@ function connectToDedicatedServer(customUrl = null) {
     });
 }
 
-const MASTER_SERVER_URL = 'https://html-fishing-master-server.onrender.com'; // Matches Part 1
+// ---------------------------------------------------------------------------
+// MASTER SERVER (public lobby directory)
+// ---------------------------------------------------------------------------
+// The Python master server is a pure directory: it lists public lobbies so
+// players can find each other without swapping room codes. Gameplay itself is
+// untouched - a join is still a direct PeerJS/WebRTC connection to the host.
+//
+// POSTs go out as text/plain on purpose: the browser then treats them as
+// "simple" requests, which skips the CORS preflight round-trip and lets the
+// unload beacon fire reliably. The master parses the JSON body either way.
+const MASTER_SERVER_URL = String(window.MASTER_SERVER_URL || '').replace(/\/+$/, '');
+const MASTER_TIMEOUT_MS = 6000;
+const LOBBY_HEARTBEAT_MS = 10000;
 
-async function openServerBrowser() {
-    const container = document.getElementById('server-list-content');
-    container.innerHTML = 'Loading servers...';
-    document.getElementById('server-browser-overlay').style.display = 'flex';
+let lobbyHeartbeatTimer = null;
+let lobbyPublished = false;
+let myLobbyName = '';
+let serverBrowserTimer = null;
+
+function masterEnabled() { return !!MASTER_SERVER_URL; }
+
+async function masterRequest(path, body) {
+    if (!masterEnabled()) throw new Error('No master server configured');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), MASTER_TIMEOUT_MS);
+    try {
+        const res = await fetch(MASTER_SERVER_URL + path, {
+            method: body === undefined ? 'GET' : 'POST',
+            headers: body === undefined ? undefined : { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+            signal: controller.signal,
+            cache: 'no-store'
+        });
+        if (!res.ok) throw new Error('Master responded ' + res.status);
+        return await res.json();
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// --- lobby naming ---------------------------------------------------------
+
+function defaultLobbyName() {
+    const who = String(saveState.displayName || 'Fisher').slice(0, 16);
+    return who + "'s Lobby";
+}
+
+function lobbyNameFromUI() {
+    const input = document.getElementById('lobby-name-input');
+    const typed = input && input.value ? input.value.trim() : '';
+    return (typed || saveState.lobbyName || '').slice(0, 24) || defaultLobbyName();
+}
+
+function lobbyIsPublic() {
+    const box = document.getElementById('lobby-public-input');
+    if (box) return box.checked;
+    return saveState.lobbyPublic !== false;
+}
+
+// Renames a live lobby and pushes the change to the master straight away.
+window.setLobbyName = function (name) {
+    const next = String(name || '').trim().slice(0, 24) || defaultLobbyName();
+    const stored = next === defaultLobbyName() ? '' : next;
+
+    saveState.lobbyName = stored;
+    const input = document.getElementById('lobby-name-input');
+    if (input) input.value = stored;
+
+    const changed = next !== myLobbyName;
+    myLobbyName = next;
+    saveGame();
+
+    if (changed) {
+        publishLobby();
+        showToast('Lobby renamed to "' + next + '"');
+    }
+};
+
+// --- directory registration ----------------------------------------------
+
+function lobbyPlayerCount() {
+    return 1 + Object.keys(clientConns || {}).length;
+}
+
+async function publishLobby() {
+    if (!isHost || !myPeerId || !masterEnabled()) return;
+
+    if (!lobbyIsPublic()) {
+        if (lobbyPublished) unpublishLobby();
+        return;
+    }
 
     try {
-        const res = await fetch(`${MASTER_SERVER_URL}/list`);
-        const servers = await res.json();
-
-        container.innerHTML = '';
-
-        if (servers.length === 0) {
-            container.innerHTML = '<div style="padding:10px;">No public servers found.</div>';
-            return;
-        }
-
-        servers.forEach(s => {
-            const row = document.createElement('div');
-            row.style.background = 'var(--p-face-2)';
-            row.style.border = '2px solid var(--p-line)';
-            row.style.marginBottom = '5px';
-            row.style.padding = '10px';
-            row.style.borderRadius = '0';
-            row.style.display = 'flex';
-            row.style.justifyContent = 'space-between';
-            row.style.alignItems = 'center';
-
-            const info = document.createElement('div');
-            // Escape everything from the master list: a hostile server entry
-            // would otherwise run JS on the game origin.
-            info.innerHTML = `<b>${escapeHTML(String(s.name || 'Server').slice(0, 40))}</b><br><span style="font-size:15px;color:var(--p-text-dim);">${escapeHTML(String(s.players == null ? '?' : s.players).slice(0, 10))} Players</span>`;
-
-            const btn = document.createElement('button');
-            btn.className = 'btn-sm btn-green';
-            btn.innerText = "JOIN";
-
-            btn.onclick = () => {
-                // --- FIX START: Save Name Before Connecting ---
-                saveGame();
-                // --- FIX END ----------------------------------
-
-                // --- FIX: Detect HTTPS and force WSS ---
-                const isSecure = window.location.protocol === 'https:';
-                const protocol = isSecure ? 'wss' : 'ws';
-
-                // --- CLOUDFLARE TUNNEL FIX ---
-                let targetPort = s.port;
-                if (/[a-zA-Z]/.test(s.ip) && isSecure) {
-                    targetPort = 443;
-                }
-
-                const wsUrl = `${protocol}://${s.ip}:${targetPort}`;
-                console.log("Connecting to:", wsUrl);
-                connectToDedicatedServer(wsUrl);
-                document.getElementById('server-browser-overlay').style.display = 'none';
-            };
-
-            row.appendChild(info);
-            row.appendChild(btn);
-            container.appendChild(row);
+        await masterRequest('/register', {
+            kind: 'p2p',
+            id: myPeerId,
+            peerId: myPeerId,
+            name: myLobbyName || defaultLobbyName(),
+            host: saveState.displayName,
+            players: lobbyPlayerCount(),
+            room: currentRoomId || myPeerId,
+            version: GAME_VERSION,
+            locked: false
         });
-
-    } catch (e) {
-        container.innerText = "Error fetching server list.";
-        console.error(e);
+        lobbyPublished = true;
+    } catch (err) {
+        // An unreachable master is not fatal: hosting still works, and a room
+        // code still lets friends join.
+        lobbyPublished = false;
+        console.warn('[master] could not publish lobby:', err && err.message);
     }
+}
+
+function startLobbyHeartbeat() {
+    stopLobbyHeartbeat();
+    publishLobby();
+    lobbyHeartbeatTimer = setInterval(publishLobby, LOBBY_HEARTBEAT_MS);
+}
+
+function stopLobbyHeartbeat() {
+    if (lobbyHeartbeatTimer) {
+        clearInterval(lobbyHeartbeatTimer);
+        lobbyHeartbeatTimer = null;
+    }
+}
+
+function unpublishLobby() {
+    lobbyPublished = false;
+    stopLobbyHeartbeat();
+    if (!masterEnabled() || !myPeerId) return Promise.resolve();
+    return masterRequest('/unregister', { id: myPeerId, peerId: myPeerId }).catch(() => { });
+}
+
+// Called from beforeunload: a beacon is the only request guaranteed to leave
+// the browser while the page is being torn down.
+function leaveLobbyDirectory() {
+    stopLobbyHeartbeat();
+    if (!lobbyPublished || !masterEnabled() || !myPeerId) return;
+    lobbyPublished = false;
+    const payload = JSON.stringify({ id: myPeerId, peerId: myPeerId });
+    try {
+        const blob = new Blob([payload], { type: 'text/plain;charset=UTF-8' });
+        if (navigator.sendBeacon && navigator.sendBeacon(MASTER_SERVER_URL + '/unregister', blob)) return;
+    } catch (err) { /* fall through to fetch */ }
+    try {
+        fetch(MASTER_SERVER_URL + '/unregister', {
+            method: 'POST',
+            keepalive: true,
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: payload
+        });
+    } catch (err) { /* nothing more we can do */ }
+}
+
+// --- server browser -------------------------------------------------------
+
+async function openServerBrowser() {
+    document.getElementById('server-browser-overlay').style.display = 'flex';
+    refreshServerBrowser();
+    if (serverBrowserTimer) clearInterval(serverBrowserTimer);
+    serverBrowserTimer = setInterval(refreshServerBrowser, 5000);
 }
 
 function closeServerBrowser() {
     document.getElementById('server-browser-overlay').style.display = 'none';
+    if (serverBrowserTimer) {
+        clearInterval(serverBrowserTimer);
+        serverBrowserTimer = null;
+    }
+}
+
+async function refreshServerBrowser() {
+    const container = document.getElementById('server-list-content');
+    if (!container) return;
+    if (document.getElementById('server-browser-overlay').style.display !== 'flex') return;
+
+    if (!masterEnabled()) {
+        container.innerHTML = '<div style="padding:10px;">No master server configured.</div>';
+        return;
+    }
+    if (!container.dataset.ready) {
+        container.innerHTML = '<div style="padding:10px;">Loading servers…</div>';
+    }
+
+    let servers;
+    try {
+        const data = await masterRequest('/list');
+        servers = Array.isArray(data) ? data : ((data && data.servers) || []);
+    } catch (err) {
+        container.dataset.loaded = '1';
+        container.innerHTML = '<div style="padding:10px;color:var(--p-bad);">Could not reach the master server.</div>';
+        return;
+    }
+    renderServerList(container, servers);
+}
+
+function renderServerList(container, servers) {
+    container.dataset.loaded = '1';
+    container.innerHTML = '';
+
+    if (!servers.length) {
+        const empty = document.createElement('div');
+        empty.style.padding = '10px';
+        empty.textContent = lobbyPublished
+            ? 'Your lobby is the only one online right now.'
+            : 'No public lobbies are online right now. Host one!';
+        container.appendChild(empty);
+        return;
+    }
+
+    servers.forEach(s => container.appendChild(buildServerRow(s)));
+}
+
+function buildServerRow(s) {
+    const isDedicated = s.kind === 'dedicated';
+    const isMine = !isDedicated && myPeerId && s.peerId === myPeerId;
+
+    const row = document.createElement('div');
+    row.style.cssText = 'background:var(--p-face-2);border:2px solid var(--p-line);margin-bottom:6px;' +
+        'padding:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;';
+
+    const info = document.createElement('div');
+    info.style.minWidth = '0';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight:bold;overflow:hidden;text-overflow:ellipsis;';
+
+    const tag = document.createElement('span');
+    tag.textContent = isDedicated ? 'DEDICATED' : (isMine ? 'YOUR LOBBY' : 'PLAYER');
+    tag.style.cssText = 'font-size:12px;padding:1px 6px;border:1px solid var(--p-line);' +
+        'color:var(--p-text-dim);margin-right:6px;vertical-align:middle;';
+    title.appendChild(tag);
+
+    const nameSpan = document.createElement('span');
+    // textContent: a hostile master entry can never inject markup here.
+    nameSpan.textContent = String(s.name || 'Server').slice(0, 40);
+    title.appendChild(nameSpan);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'font-size:15px;color:var(--p-text-dim);margin-top:3px;';
+    const players = Math.max(0, Math.min(999, parseInt(s.players, 10) || 0));
+    const maxPlayers = Math.max(0, Math.min(999, parseInt(s.maxPlayers, 10) || 0));
+    const bits = [maxPlayers > players ? `${players}/${maxPlayers} Players` : (players === 1 ? '1 Player' : players + ' Players')];
+    if (s.host) bits.push('by ' + String(s.host).slice(0, 16));
+    if (!isDedicated && (s.room || s.peerId)) bits.push('code ' + String(s.room || s.peerId).slice(0, 24));
+    if (parseInt(s.age, 10) >= 60) bits.push('up ' + Math.floor(s.age / 60) + 'm');
+    meta.textContent = bits.join(' · ');
+
+    info.appendChild(title);
+    info.appendChild(meta);
+
+    const btn = document.createElement('button');
+    btn.className = 'btn-sm btn-green';
+    btn.style.flexShrink = '0';
+    btn.innerText = isMine ? 'HOSTING' : 'JOIN';
+    btn.disabled = !!isMine;
+    if (isMine) btn.style.opacity = '0.5';
+    btn.onclick = () => joinBrowsedServer(s);
+
+    row.appendChild(info);
+    row.appendChild(btn);
+    return row;
+}
+
+function joinBrowsedServer(s) {
+    saveGame();
+
+    // Player-hosted lobbies are peer-to-peer: the PeerJS id IS the join target.
+    if (s.kind !== 'dedicated') {
+        const target = String(s.peerId || s.room || '').trim();
+        if (!target) return;
+        showToast('Joining "' + String(s.name || 'lobby').slice(0, 30) + '"...');
+        document.getElementById('room-id-input').value = target;
+        closeServerBrowser();
+        joinGame();
+        return;
+    }
+
+    // Dedicated server: same WebSocket path as the official server.
+    const isSecure = window.location.protocol === 'https:';
+    const protocol = isSecure ? 'wss' : 'ws';
+    let targetPort = s.port;
+    if (/[a-zA-Z]/.test(String(s.ip || '')) && isSecure) {
+        targetPort = 443;
+    }
+    const wsUrl = `${protocol}://${s.ip}:${targetPort}`;
+    console.log('Connecting to:', wsUrl);
+    closeServerBrowser();
+    connectToDedicatedServer(wsUrl);
 }
 
 // Run after DOM ready to wire up the Official Server button
@@ -10857,6 +11083,9 @@ clock = new THREE.Clock();
 
 // Gracefully disconnect from peer server on window close.
 window.addEventListener('beforeunload', () => {
+    // Drop our row from the master's server browser right away instead of
+    // waiting for it to time out.
+    leaveLobbyDirectory();
     if (peer) {
         peer.destroy();
         peer = null;
@@ -11830,6 +12059,12 @@ function loadSave() {
     const eyePicker = document.getElementById('eye-color-picker');
 
     if (usernameInput) usernameInput.value = saveState.displayName;
+
+    // Remembered lobby settings, shown on the start screen.
+    const lobbyNameInput = document.getElementById('lobby-name-input');
+    if (lobbyNameInput) lobbyNameInput.value = saveState.lobbyName || '';
+    const lobbyPublicBox = document.getElementById('lobby-public-input');
+    if (lobbyPublicBox) lobbyPublicBox.checked = saveState.lobbyPublic !== false;
     if (furPicker) furPicker.value = saveState.catColor;
     if (bellyPicker) bellyPicker.value = saveState.bellyColor;
     if (eyePicker) eyePicker.value = saveState.eyeColor;
@@ -11868,6 +12103,12 @@ function loadSave() {
 
 function saveGame() {
     saveState.displayName = document.getElementById('username-input').value.substring(0, 12) || "Fisher";
+
+    // Persist the server-browser settings typed on the start screen.
+    const lobbyNameInput = document.getElementById('lobby-name-input');
+    if (lobbyNameInput) saveState.lobbyName = lobbyNameInput.value.trim().slice(0, 24);
+    const lobbyPublicBox = document.getElementById('lobby-public-input');
+    if (lobbyPublicBox) saveState.lobbyPublic = lobbyPublicBox.checked;
 
     myData.name = saveState.displayName;
     // Update myData with parts
@@ -14702,7 +14943,54 @@ function toggleLocalMute(pid, type) {
 // Updated Host Panel
 function updateHostPanel() {
     const container = document.getElementById('host-player-list');
+
+    // The panel refreshes whenever someone joins or leaves, which would yank
+    // the text out from under a host who is mid-rename. Remember it.
+    const liveInput = document.getElementById('lobby-name-live');
+    const wasTyping = liveInput && document.activeElement === liveInput;
+    const typingValue = wasTyping ? liveInput.value : null;
+
     container.innerHTML = '';
+
+    // Hosts can rename their public lobby on the fly; the change is pushed to
+    // the master server immediately.
+    if (isHost) {
+        const nameDiv = document.createElement('div');
+        nameDiv.style.cssText = 'margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid var(--p-line);text-align:center;';
+
+        const label = document.createElement('div');
+        label.textContent = 'Lobby Name';
+        label.style.cssText = 'font-family:var(--font-display);font-size:10px;letter-spacing:1px;color:var(--p-sand);margin-bottom:6px;';
+
+        const input = document.createElement('input');
+        input.id = 'lobby-name-live';
+        input.type = 'text';
+        input.maxLength = 24;
+        input.value = myLobbyName || defaultLobbyName();
+        input.style.cssText = 'width:100%;text-align:center;margin-bottom:6px;box-sizing:border-box;';
+
+        const apply = () => setLobbyName(input.value);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        });
+        input.addEventListener('blur', apply);
+
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size:14px;color:var(--p-text-mute);';
+        note.textContent = lobbyIsPublic()
+            ? 'Listed in the server browser · ' + lobbyPlayerCount() + ' in lobby'
+            : 'Private — join with room code ' + (currentRoomId || '—');
+
+        nameDiv.appendChild(label);
+        nameDiv.appendChild(input);
+        nameDiv.appendChild(note);
+        container.appendChild(nameDiv);
+
+        if (typingValue !== null) {
+            input.value = typingValue;
+            input.focus();
+        }
+    }
 
     if (isHost || isAdminOnDedicated) {
         const adminDiv = document.createElement('div');
