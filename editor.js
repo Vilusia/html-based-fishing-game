@@ -54,9 +54,9 @@
         { id: "zone", name: "Fishing Zones", icon: "fish", key: "0", tip: "Tag water with a fishing zone (lake, river, ponds, cave) so the right fish show up. Right-click clears back to ocean." },
         { id: "tree", name: "Trees", icon: "tree", key: "6", tip: "Place trees on land. Right-click removes the nearest." },
         { id: "rock", name: "Rocks", icon: "rock", key: "7", tip: "Place rocks on land. Right-click removes the nearest." },
-        { id: "npc", name: "NPCs", icon: "users", key: "8", tip: "Place the selected NPC on land. Right-click removes it." },
+        { id: "npc", name: "NPCs", icon: "users", key: "8", tip: "Place the selected NPC on land. Right-click removes it. Hover one and press R to rotate (Shift+R the other way)." },
         { id: "building", name: "Buildings", icon: "home", key: "B", tip: "Place the selected building on land (docks can go on water). Doors face you. Right-click removes the nearest." },
-        { id: "prop", name: "Props", icon: "lantern", key: "X", tip: "Place the selected prop. Drag to scatter. Reeds and rowboats can go on water. Right-click removes the nearest." },
+        { id: "prop", name: "Props", icon: "lantern", key: "X", tip: "Place the selected prop. Drag to scatter. Reeds and rowboats can go on water. Right-click removes the nearest. Hover one and press R to rotate (Shift+R the other way)." },
         { id: "cave", name: "Caves", icon: "cave", key: "E", tip: "Place the selected cave entrance on land — the mouth faces you. Scenic only; tag nearby water as Cave for secret fish." },
         { id: "erase", name: "Erase", icon: "trash", key: "9", tip: "Remove the prop, building or NPC under the cursor." },
         { id: "spawn", name: "Spawn", icon: "tent", key: "P", tip: "Set where players start (one per level). Click on land to move it; right-click clears it so the game picks the middle of the map." }
@@ -430,6 +430,35 @@
         bestList.splice(bestList.indexOf(best), 1);
         rebuildProps();
         markDirty();
+        return true;
+    }
+
+    // R rotates the prop or NPC under the cursor in 45° steps (Shift+R the
+    // other way). Same nearest-search as removeNearest but props + NPCs only,
+    // and it never deletes anything.
+    function rotateNearest(point, dir) {
+        const lv = state.level;
+        const maxD = Math.max(3, state.radius);
+        let best = null, bestD = maxD * maxD, bestKind = null;
+        const scan = (list, k) => {
+            list.forEach((d) => {
+                const dd = (d.x - point.x) ** 2 + (d.z - point.z) ** 2;
+                if (dd < bestD) { bestD = dd; best = d; bestKind = k; }
+            });
+        };
+        scan(lv.props, "prop"); scan(lv.npcs, "npc");
+        if (!best) return false;
+        pushUndo();
+        const step = Math.PI / 4;
+        // Props are placed at random angles — snap to the 45° grid first, so
+        // every press lands on a clean multiple of 45°.
+        const cur = Number(best.rot) || 0;
+        best.rot = +(Math.round(cur / step) * step + dir * step).toFixed(3);
+        rebuildProps();
+        markDirty();
+        const name = bestKind === "npc" ? WorldGen.npcType(best.type).name : WorldGen.propInfo(best.type).name;
+        const deg = Math.round(((best.rot * 180 / Math.PI) % 360 + 360) % 360);
+        toast(name + " rotated — " + deg + "°");
         return true;
     }
 
@@ -1046,6 +1075,13 @@
             if (t) selectTool(t.id);
             if (e.code === "KeyG") { $("chk-grid").checked = !$("chk-grid").checked; $("chk-grid").onchange({ target: $("chk-grid") }); }
             if (e.code === "KeyF") frameLevel();
+            // R rotates the prop / NPC under the cursor. Only when the pointer
+            // is actually over the 3D view — otherwise state.pick is a stale
+            // point from behind whatever panel the cursor moved onto.
+            if (e.code === "KeyR" && document.elementFromPoint(mouse.x, mouse.y) === renderer.domElement) {
+                updatePick();
+                if (state.pick && !rotateNearest(state.pick, e.shiftKey ? -1 : 1)) toast("No prop or NPC near the cursor");
+            }
             if (e.code === "Escape") { $("ov-help").classList.remove("on"); }
         });
         window.addEventListener("keyup", (e) => {
@@ -1219,6 +1255,7 @@
         refreshZoneOverlay: refreshZoneOverlay,
         placeProp: placeProp,
         removeNearest: removeNearest,
+        rotateNearest: rotateNearest,
         placeSpawn: placeSpawn,
         clearSpawn: clearSpawn,
         refreshTerrain: refreshTerrain,
