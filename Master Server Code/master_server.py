@@ -115,6 +115,28 @@ def clean_bool(value):
     return bool(value)
 
 
+def clean_tags(value, max_count=10, max_len=24):
+    """A short list of safe, human-readable search tags."""
+    if not isinstance(value, list):
+        return []
+    out = []
+    seen = set()
+    for item in value:
+        if len(out) >= max_count:
+            break
+        tag = clean_text(item, max_len)
+        if not tag:
+            continue
+        key = tag.lower()
+        if key in seen:
+            continue
+        if not re.fullmatch(r"[A-Za-z0-9 +&_-]{1,24}", tag):
+            continue
+        seen.add(key)
+        out.append(tag)
+    return out
+
+
 def clean_host(value):
     """An IP address or a hostname. Rejects anything that isn't one."""
     text = clean_text(value, 253)
@@ -471,6 +493,8 @@ class MasterHandler(BaseHTTPRequestHandler):
             "room": clean_text(body.get("room"), 40) or peer_id,
             "version": clean_text(body.get("version"), 24),
             "locked": clean_bool(body.get("locked")),
+            "tags": clean_tags(body.get("tags")),
+            "adult": clean_bool(body.get("adult")),
             "ip": "",
             "port": 0,
         }
@@ -502,6 +526,8 @@ class MasterHandler(BaseHTTPRequestHandler):
             "room": "",
             "version": clean_text(body.get("version"), 24),
             "locked": clean_bool(body.get("locked")),
+            "tags": clean_tags(body.get("tags")),
+            "adult": clean_bool(body.get("adult")),
         }
         if self.registry.upsert(entry) is None:
             return self._send(503, {"error": "directory full"})

@@ -16,7 +16,9 @@ process.on('unhandledRejection', (err) => {
 
 const SERVER_NAME = process.env.SERVER_NAME || "Official Server";
 const PORT = process.env.PORT || 8080;
-const MASTER_URL = "https://html-fishing-master-server.onrender.com";
+// The master is a directory only; the dedicated server just heartbeats into it.
+// Override with MASTER_URL when pointing at a different master.
+const MASTER_URL = process.env.MASTER_URL || "http://204.12.227.121:8081";
 const MY_PUBLIC_IP = "play.htmlfishing.com";
 const ADMIN_SALT = crypto.randomBytes(10).toString('hex');
 

@@ -969,7 +969,11 @@ window.onload = function () {
     animate();
     initAudio();
 
-    document.getElementById('btn-host').onclick = hostGame;
+    // MAKE LOBBY opens the dedicated creation screen; JOIN uses a room code.
+    const btnMakeLobby = document.getElementById('btn-make-lobby');
+    if (btnMakeLobby) btnMakeLobby.onclick = openCreateLobby;
+    const btnHostLegacy = document.getElementById('btn-host');
+    if (btnHostLegacy) btnHostLegacy.onclick = hostGame;
     document.getElementById('btn-join').onclick = joinGame;
 
     const btnAdmin = document.getElementById('btn-admin-login');
@@ -1768,6 +1772,22 @@ let lobbyPublished = false;
 let myLobbyName = '';
 let serverBrowserTimer = null;
 
+// The fixed tag vocabulary shared by the Make Lobby screen and the browser.
+// Keeping it fixed means tags stay searchable and can't be used to smuggle
+// arbitrary text into everyone's server list.
+const LOBBY_TAGS = [
+    'Chill', 'Competitive', 'Talkative', 'Quiet', 'Voice Chat',
+    'Beginner Friendly', 'Grinding', 'Fishing Only', 'Mini Games',
+    'Roleplay', 'Events', 'LGBTQ+ Friendly', 'No Swearing',
+    'Mic On', 'Just Fun', 'Long Session'
+];
+const MAX_LOBBY_TAGS = 10;
+
+// Server-browser filter state, kept in module scope so a refresh doesn't
+// wipe what the player typed.
+let browserTagFilter = new Set();
+let browserAdultOnly = false;
+
 function masterEnabled() { return !!MASTER_SERVER_URL; }
 
 async function masterRequest(path, body) {
@@ -1807,6 +1827,87 @@ function lobbyIsPublic() {
     if (box) return box.checked;
     return saveState.lobbyPublic !== false;
 }
+
+// --- Make Lobby screen ------------------------------------------------------
+// A dedicated overlay so the main start menu stays uncluttered: the player
+// names the lobby, decides whether it is listed, marks it 18+ and picks tags
+// before any PeerJS connection is opened.
+
+function lobbyDraft() {
+    const nameInput = document.getElementById('lobby-name-input');
+    const publicBox = document.getElementById('lobby-public-input');
+    const adultBox = document.getElementById('lobby-adult-input');
+    return {
+        name: (nameInput && nameInput.value ? nameInput.value.trim() : '').slice(0, 24),
+        isPublic: publicBox ? publicBox.checked : saveState.lobbyPublic !== false,
+        adult: adultBox ? adultBox.checked : saveState.lobbyAdult === true
+    };
+}
+
+function renderTagButtons(container, selected, onToggle) {
+    container.innerHTML = '';
+    LOBBY_TAGS.forEach(tagName => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-sm';
+        btn.textContent = tagName;
+        const on = selected.has(tagName);
+        btn.style.cssText = 'margin:0;' + (on
+            ? 'background:var(--p-good);color:#111;border-color:var(--p-line);'
+            : 'opacity:0.65;');
+        btn.onclick = () => onToggle(tagName);
+        container.appendChild(btn);
+    });
+}
+
+function openCreateLobby() {
+    const overlay = document.getElementById('create-lobby-overlay');
+    if (!overlay) return;
+
+    const nameInput = document.getElementById('lobby-name-input');
+    if (nameInput) nameInput.value = saveState.lobbyName || '';
+    const publicBox = document.getElementById('lobby-public-input');
+    if (publicBox) publicBox.checked = saveState.lobbyPublic !== false;
+    const adultBox = document.getElementById('lobby-adult-input');
+    if (adultBox) adultBox.checked = saveState.lobbyAdult === true;
+
+    const selected = new Set(Array.isArray(saveState.lobbyTags) ? saveState.lobbyTags : []);
+    const tagBox = document.getElementById('lobby-tag-buttons');
+    const counter = document.getElementById('lobby-tag-count');
+
+    const toggle = (tagName) => {
+        if (selected.has(tagName)) selected.delete(tagName);
+        else if (selected.size < MAX_LOBBY_TAGS) selected.add(tagName);
+        else showToast('Tag limit reached (' + MAX_LOBBY_TAGS + ')');
+        paint();
+    };
+    const paint = () => {
+        if (counter) counter.textContent = selected.size + '/' + MAX_LOBBY_TAGS;
+        renderTagButtons(tagBox, selected, toggle);
+    };
+    openCreateLobby._selected = selected;
+    paint();
+
+    overlay.style.display = 'flex';
+    if (nameInput) nameInput.focus();
+}
+
+function closeCreateLobby() {
+    const overlay = document.getElementById('create-lobby-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+// Persists whatever the Make Lobby screen holds, then starts hosting.
+window.createLobbyAndHost = function () {
+    const draft = lobbyDraft();
+    saveState.lobbyName = draft.name;
+    saveState.lobbyPublic = draft.isPublic;
+    saveState.lobbyAdult = draft.adult;
+    saveState.lobbyTags = Array.from(openCreateLobby._selected || []).slice(0, MAX_LOBBY_TAGS);
+    saveGame();
+    closeCreateLobby();
+    hostGame();
+};
 
 // Renames a live lobby and pushes the change to the master straight away.
 window.setLobbyName = function (name) {
@@ -1851,7 +1952,9 @@ async function publishLobby() {
             players: lobbyPlayerCount(),
             room: currentRoomId || myPeerId,
             version: GAME_VERSION,
-            locked: false
+            locked: false,
+            tags: Array.isArray(saveState.lobbyTags) ? saveState.lobbyTags.slice(0, MAX_LOBBY_TAGS) : [],
+            adult: saveState.lobbyAdult === true
         });
         lobbyPublished = true;
     } catch (err) {
@@ -1907,9 +2010,51 @@ function leaveLobbyDirectory() {
 
 async function openServerBrowser() {
     document.getElementById('server-browser-overlay').style.display = 'flex';
+    initBrowserFilters();
     refreshServerBrowser();
     if (serverBrowserTimer) clearInterval(serverBrowserTimer);
     serverBrowserTimer = setInterval(refreshServerBrowser, 5000);
+}
+
+// Builds the tag-filter buttons and wires the search box / 18+ toggle the
+// first time the browser opens. Filter state survives refreshes.
+function initBrowserFilters() {
+    const tagBox = document.getElementById('server-tag-filters');
+    if (tagBox && !tagBox.childElementCount) {
+        LOBBY_TAGS.forEach(tagName => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-sm';
+            btn.textContent = tagName;
+            btn.style.cssText = 'margin:0;font-size:12px;padding:3px 8px;opacity:0.65;';
+            btn.onclick = () => {
+                if (browserTagFilter.has(tagName)) browserTagFilter.delete(tagName);
+                else browserTagFilter.add(tagName);
+                btn.style.cssText = 'margin:0;font-size:12px;padding:3px 8px;' +
+                    (browserTagFilter.has(tagName)
+                        ? 'background:var(--p-good);color:#111;border-color:var(--p-line);opacity:1;'
+                        : 'opacity:0.65;');
+                refreshServerBrowser();
+            };
+            tagBox.appendChild(btn);
+        });
+    }
+
+    const search = document.getElementById('server-search-input');
+    if (search && !search.dataset.wired) {
+        search.dataset.wired = '1';
+        search.addEventListener('input', () => refreshServerBrowser());
+    }
+
+    const adultToggle = document.getElementById('server-adult-filter');
+    if (adultToggle && !adultToggle.dataset.wired) {
+        adultToggle.dataset.wired = '1';
+        adultToggle.checked = browserAdultOnly;
+        adultToggle.addEventListener('change', () => {
+            browserAdultOnly = adultToggle.checked;
+            refreshServerBrowser();
+        });
+    }
 }
 
 function closeServerBrowser() {
@@ -1947,19 +2092,39 @@ async function refreshServerBrowser() {
 
 function renderServerList(container, servers) {
     container.dataset.loaded = '1';
+
+    const query = (document.getElementById('server-search-input')?.value || '').trim().toLowerCase();
+    const filtered = servers.filter(s => {
+        if (browserAdultOnly && s.adult !== true) return false;
+        if (browserTagFilter.size) {
+            const tags = Array.isArray(s.tags) ? s.tags.map(t => String(t).toLowerCase()) : [];
+            for (const wanted of browserTagFilter) {
+                if (!tags.includes(wanted.toLowerCase())) return false;
+            }
+        }
+        if (query) {
+            const haystack = [s.name, s.host, ...(Array.isArray(s.tags) ? s.tags : [])]
+                .join(' ').toLowerCase();
+            if (!haystack.includes(query)) return false;
+        }
+        return true;
+    });
+
     container.innerHTML = '';
 
-    if (!servers.length) {
+    if (!filtered.length) {
         const empty = document.createElement('div');
         empty.style.padding = '10px';
-        empty.textContent = lobbyPublished
-            ? 'Your lobby is the only one online right now.'
-            : 'No public lobbies are online right now. Host one!';
+        empty.textContent = servers.length
+            ? 'No lobbies match your filters.'
+            : (lobbyPublished
+                ? 'Your lobby is the only one online right now.'
+                : 'No public lobbies are online right now. Host one!');
         container.appendChild(empty);
         return;
     }
 
-    servers.forEach(s => container.appendChild(buildServerRow(s)));
+    filtered.forEach(s => container.appendChild(buildServerRow(s)));
 }
 
 function buildServerRow(s) {
@@ -1999,6 +2164,28 @@ function buildServerRow(s) {
 
     info.appendChild(title);
     info.appendChild(meta);
+
+    // Tag chips + 18+ marker, so a glance is enough to judge the room.
+    const tags = Array.isArray(s.tags) ? s.tags.slice(0, 8) : [];
+    if (tags.length || s.adult === true) {
+        const chipRow = document.createElement('div');
+        chipRow.style.cssText = 'margin-top:5px;display:flex;flex-wrap:wrap;gap:4px;';
+        if (s.adult === true) {
+            const adultChip = document.createElement('span');
+            adultChip.textContent = '18+';
+            adultChip.style.cssText = 'font-size:12px;padding:1px 6px;border:1px solid #c0392b;' +
+                'background:#5a1f1a;color:#ffb3ab;';
+            chipRow.appendChild(adultChip);
+        }
+        tags.forEach(tagName => {
+            const chip = document.createElement('span');
+            chip.textContent = String(tagName).slice(0, 24);
+            chip.style.cssText = 'font-size:12px;padding:1px 6px;border:1px solid var(--p-line);' +
+                'color:var(--p-text-dim);background:var(--p-sunken);';
+            chipRow.appendChild(chip);
+        });
+        info.appendChild(chipRow);
+    }
 
     const btn = document.createElement('button');
     btn.className = 'btn-sm btn-green';
@@ -12060,11 +12247,14 @@ function loadSave() {
 
     if (usernameInput) usernameInput.value = saveState.displayName;
 
-    // Remembered lobby settings, shown on the start screen.
+    // Remembered lobby settings, shown on the Make Lobby screen.
     const lobbyNameInput = document.getElementById('lobby-name-input');
     if (lobbyNameInput) lobbyNameInput.value = saveState.lobbyName || '';
     const lobbyPublicBox = document.getElementById('lobby-public-input');
     if (lobbyPublicBox) lobbyPublicBox.checked = saveState.lobbyPublic !== false;
+    const lobbyAdultBox = document.getElementById('lobby-adult-input');
+    if (lobbyAdultBox) lobbyAdultBox.checked = saveState.lobbyAdult === true;
+    if (!Array.isArray(saveState.lobbyTags)) saveState.lobbyTags = [];
     if (furPicker) furPicker.value = saveState.catColor;
     if (bellyPicker) bellyPicker.value = saveState.bellyColor;
     if (eyePicker) eyePicker.value = saveState.eyeColor;
@@ -12109,6 +12299,8 @@ function saveGame() {
     if (lobbyNameInput) saveState.lobbyName = lobbyNameInput.value.trim().slice(0, 24);
     const lobbyPublicBox = document.getElementById('lobby-public-input');
     if (lobbyPublicBox) saveState.lobbyPublic = lobbyPublicBox.checked;
+    const lobbyAdultBox = document.getElementById('lobby-adult-input');
+    if (lobbyAdultBox) saveState.lobbyAdult = lobbyAdultBox.checked;
 
     myData.name = saveState.displayName;
     // Update myData with parts

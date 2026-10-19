@@ -390,6 +390,8 @@ const DEFAULT_SAVE_STATE = {
     displayName: "Fisher",
     lobbyName: "",          // Public server-browser name used while hosting
     lobbyPublic: true,      // Whether our hosted lobby is listed in the browser
+    lobbyTags: [],          // Searchable tags shown in the server browser
+    lobbyAdult: false,      // 18+/adult-only flag for the server browser
     journal: {},
     unlockedBobbers: ['classic'],
     currentBobber: 'classic',
