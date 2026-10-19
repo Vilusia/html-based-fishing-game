@@ -5341,37 +5341,92 @@ function updateMidiUI() {
 
 // --- MODULAR CHARACTER DRAWING FUNCTIONS ---
 
+// Rounded-rectangle path helper (kept local so we don't depend on
+// CanvasRenderingContext2D.roundRect).
+function rrect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
 // Draw the base body and head (shared by all characters)
 function drawBody(ctx, col, bellyCol, back) {
-    // VISUAL UPGRADE: Gradient Shading - Taller Characters
+    const dark = shadeColor(col, -0.24);
+    const light = shadeColor(col, 0.26);
 
-    // Body Gradient (taller)
-    const bodyGrad = ctx.createLinearGradient(0, 28, 0, 68);
+    // --- Torso: rounded, top-lit gradient ---
+    const BX = 20, BY = 28, BW = 24, BH = 40;
+    const bodyGrad = ctx.createLinearGradient(0, BY, 0, BY + BH);
     bodyGrad.addColorStop(0, col);
-    bodyGrad.addColorStop(1, shadeColor(col, -0.2)); // Darker bottom
-
+    bodyGrad.addColorStop(0.5, col);
+    bodyGrad.addColorStop(1, dark);
+    rrect(ctx, BX, BY, BW, BH, 5);
     ctx.fillStyle = bodyGrad;
-    ctx.fillRect(20, 28, 24, 40); // Taller body
+    ctx.fill();
 
     if (!back) {
+        // Side ambient occlusion so the torso reads as a soft cylinder.
+        ctx.save();
+        rrect(ctx, BX, BY, BW, BH, 5);
+        ctx.clip();
+        const side = ctx.createLinearGradient(BX, 0, BX + BW, 0);
+        side.addColorStop(0, 'rgba(0,0,0,0.14)');
+        side.addColorStop(0.32, 'rgba(0,0,0,0)');
+        side.addColorStop(0.68, 'rgba(0,0,0,0)');
+        side.addColorStop(1, 'rgba(0,0,0,0.14)');
+        ctx.fillStyle = side;
+        ctx.fillRect(BX, BY, BW, BH);
+        ctx.restore();
+
+        // Belly patch
         ctx.fillStyle = bellyCol;
-        // Rounded belly patch (adjusted for taller body)
         ctx.beginPath();
-        ctx.ellipse(32, 48, 8, 12, 0, 0, Math.PI * 2);
+        ctx.ellipse(32, 49, 8, 12, 0, 0, Math.PI * 2);
         ctx.fill();
     }
 
-    // Head Gradient (taller)
-    const headGrad = ctx.createLinearGradient(0, 8, 0, 38);
-    headGrad.addColorStop(0, shadeColor(col, 0.1)); // Lighter top
-    headGrad.addColorStop(1, col);
-
+    // --- Head: rounded, top-lit gradient ---
+    const HX = 14, HY = 8, HW = 36, HH = 28;
+    const headGrad = ctx.createLinearGradient(0, HY, 0, HY + HH);
+    headGrad.addColorStop(0, light);
+    headGrad.addColorStop(0.45, col);
+    headGrad.addColorStop(1, shadeColor(col, -0.12));
+    rrect(ctx, HX, HY, HW, HH, 7);
     ctx.fillStyle = headGrad;
-    ctx.fillRect(14, 8, 36, 28); // Taller head
+    ctx.fill();
 
-    // Chin Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.1)';
-    ctx.fillRect(14, 34, 36, 2);
+    if (!back) {
+        ctx.save();
+        rrect(ctx, HX, HY, HW, HH, 7);
+        ctx.clip();
+        // Soft highlight on the upper-left of the head.
+        const hl = ctx.createRadialGradient(27, 15, 1, 27, 15, 17);
+        hl.addColorStop(0, 'rgba(255,255,255,0.30)');
+        hl.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = hl;
+        ctx.fillRect(HX, HY, HW, HH);
+        // Side shading.
+        const hside = ctx.createLinearGradient(HX, 0, HX + HW, 0);
+        hside.addColorStop(0, 'rgba(0,0,0,0.12)');
+        hside.addColorStop(0.3, 'rgba(0,0,0,0)');
+        hside.addColorStop(0.7, 'rgba(0,0,0,0)');
+        hside.addColorStop(1, 'rgba(0,0,0,0.12)');
+        ctx.fillStyle = hside;
+        ctx.fillRect(HX, HY, HW, HH);
+        // Chin / neck shadow where the head meets the torso.
+        ctx.fillStyle = 'rgba(0,0,0,0.16)';
+        ctx.fillRect(HX, 33, HW, 3);
+        ctx.restore();
+    }
 }
 
 // Helper for shading
@@ -7502,6 +7557,40 @@ function drawHair(ctx, hairId, col, back) {
     }
 }
 
+// Stamp a crisp dark outline just outside the sprite silhouette. Run on the
+// fully composited texture so the outline wraps the whole figure - ears, hat,
+// hair, tail, everything - as one continuous border. Operates on device pixels,
+// so it is unaffected by the canvas transform.
+function addSpriteOutline(ctx, canvas, colorHex = '#111219', thickness = 2) {
+    const W = canvas.width, H = canvas.height;
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    const c3 = new THREE.Color(colorHex);
+    const R = Math.round(c3.r * 255), G = Math.round(c3.g * 255), B = Math.round(c3.b * 255);
+    const SOLID = 140;                 // alpha at/above this counts as drawn art
+    const reach = thickness * thickness;
+    const isSolid = (x, y) => x >= 0 && y >= 0 && x < W && y < H && d[(y * W + x) * 4 + 3] >= SOLID;
+    const px = [];
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            if (d[(y * W + x) * 4 + 3] >= SOLID) continue;   // never touch the art itself
+            let near = false;
+            for (let dy = -thickness; dy <= thickness && !near; dy++) {
+                for (let dx = -thickness; dx <= thickness; dx++) {
+                    if (dx * dx + dy * dy > reach) continue;
+                    if (isSolid(x + dx, y + dy)) { near = true; break; }
+                }
+            }
+            if (near) px.push((y * W + x) * 4);
+        }
+    }
+    for (let i = 0; i < px.length; i++) {
+        const o = px[i];
+        d[o] = R; d[o + 1] = G; d[o + 2] = B; d[o + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
 // Main texture compositing function. Combines species, colors, and all cosmetics into one texture.
 // partColors is optional: { earsColor, noseColor, miscColor, tailColor }
 function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none', partColors = null, hairId = 'none', hairColor = null) {
@@ -7566,6 +7655,9 @@ function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shir
     }
 
     drawHat(ctx, hatId, back);
+
+    // One continuous outline around the finished figure (matches the fish art).
+    addSpriteOutline(ctx, c);
 
     const t = new THREE.CanvasTexture(c);
     t.magFilter = THREE.NearestFilter;
@@ -12558,6 +12650,7 @@ function updateLocalVisuals() {
         drawCollar(tempCtx, saveState.currentCollar, false);
         drawHair(tempCtx, saveState.currentHair, saveState.hairColor, false);
         drawHat(tempCtx, saveState.currentHat, false);
+        addSpriteOutline(tempCtx, tempCanvas, '#111219', 1);
 
         // Scale to preview canvas (centered, scaled to fit 96x96)
         const scale = 96 / 94;
@@ -12567,13 +12660,14 @@ function updateLocalVisuals() {
         frontCtx.drawImage(tempCanvas, 0, 0, 64, 94, offsetX, 0, drawW, drawH);
 
         // Clear temp and draw back view
-        tempCtx.clearRect(0, 0, 64, 94);
+        tempCtx.clearRect(0, -24, 64, 120);
         drawSpecies(tempCtx, parts, saveState.catColor, saveState.bellyColor, saveState.eyeColor, true, partColors);
         drawPattern(tempCtx, saveState.currentPattern, saveState.catColor, true);
         drawShirt(tempCtx, saveState.currentShirt, true);
         drawCollar(tempCtx, saveState.currentCollar, true);
         drawHair(tempCtx, saveState.currentHair, saveState.hairColor, true);
         drawHat(tempCtx, saveState.currentHat, true);
+        addSpriteOutline(tempCtx, tempCanvas, '#111219', 1);
 
         backCtx.drawImage(tempCanvas, 0, 0, 64, 94, offsetX, 0, drawW, drawH);
     }
@@ -12692,6 +12786,7 @@ function updateLocalVisuals() {
                 drawShirt(ctx, saveState.currentShirt, false);
                 drawCollar(ctx, item.id, false);
                 drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
+                addSpriteOutline(ctx, canvas, '#111219', 1);
                 entry.appendChild(canvas);
 
                 const name = document.createElement('div');
@@ -12747,6 +12842,7 @@ function updateLocalVisuals() {
 
                 drawPattern(ctx, pattern.id, saveState.catColor, false);
                 drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
+                addSpriteOutline(ctx, canvas, '#111219', 1);
                 entry.appendChild(canvas);
 
                 const name = document.createElement('div');
@@ -12802,6 +12898,7 @@ function updateLocalVisuals() {
                 drawCollar(ctx, saveState.currentCollar, false);
                 drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
                 drawHat(ctx, saveState.currentHat, false); // Add drawHat here
+                addSpriteOutline(ctx, canvas, '#111219', 1);
                 entry.appendChild(canvas);
 
                 const name = document.createElement('div');
@@ -12855,6 +12952,7 @@ function updateLocalVisuals() {
                 drawCollar(ctx, saveState.currentCollar, false);
                 drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
                 drawHat(ctx, hat.id, false);
+                addSpriteOutline(ctx, canvas, '#111219', 1);
                 entry.appendChild(canvas);
 
                 const name = document.createElement('div');
