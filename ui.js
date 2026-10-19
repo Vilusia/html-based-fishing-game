@@ -960,6 +960,14 @@ function updateVoiceVisuals() {
 // --- GAME INITIALIZATION & LOBBY ---
 window.onload = function () {
     loadSave();
+
+    // Stamp the version labels from GAME_VERSION so the loading screen and the
+    // lobby screen can never disagree with what's sent over the network.
+    const verLabel = document.getElementById('version');
+    if (verLabel) verLabel.textContent = GAME_VERSION;
+    const lobbyVerLabel = document.getElementById('lobby-version');
+    if (lobbyVerLabel) lobbyVerLabel.textContent = GAME_VERSION;
+
     // Seed the progression counters (daily bounties, money baseline, and any
     // achievements the save already qualifies for) before the first frame.
     if (typeof ensureProgression === 'function') {
