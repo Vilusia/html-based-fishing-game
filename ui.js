@@ -13183,9 +13183,11 @@ function updateLocalVisuals() {
             }
         }
     }
-    window.renderJournal = function renderJournal(zoneFilter = 'all') {
-        const container = document.getElementById('journal-container');
-        container.innerHTML = '';
+}
+
+window.renderJournal = function renderJournal(zoneFilter = 'all') {
+    const container = document.getElementById('journal-container');
+    container.innerHTML = '';
 
         const rarityMap = { "Common": 1, "Uncommon": 2, "Rare": 3, "Epic": 4, "Legendary": 5 };
 
@@ -14884,7 +14886,6 @@ function updateLocalVisuals() {
         const newDist = MAX_ZOOM - (value * (MAX_ZOOM - MIN_ZOOM));
         cameraDistance = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newDist));
     }
-}
 
 function updateBaitSelector() {
     const sel = document.getElementById('bait-select');
