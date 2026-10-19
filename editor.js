@@ -472,7 +472,7 @@
         } else if (state.tool === "building") {
             const r = bInfo.radius;
             const overlap = lv.buildings.some((d) =>
-                Math.hypot(d.x - point.x, d.z - point.z) < (r + WorldGen.buildingInfo(d.type).radius) * 0.8);
+                Math.hypot(d.x - point.x, d.z - point.z) < r + WorldGen.buildingInfo(d.type).radius);
             const near = (arr) => arr.some((d) => Math.hypot(d.x - point.x, d.z - point.z) < r + 0.5);
             if (overlap || near(lv.trees) || near(lv.rocks) || near(lv.caves)) return false;
             lv.buildings.push({ type: state.buildingType, x: +point.x.toFixed(2), z: +point.z.toFixed(2), rot: cameraFacing(point), scale: 1 });

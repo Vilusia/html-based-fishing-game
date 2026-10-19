@@ -9681,8 +9681,12 @@ function animate() {
 
             if (!isInVoid && !isInLavaWorld) {
                 for (let t of treeColliders) {
-                    // OPTIMIZATION: Reuse vector
-                    if (testPos.distanceTo(_optVec2.set(t.x, 0, t.z)) < 0.5 + t.radius) hitWall = true;
+                    // Horizontal-only check: colliders sit at y=0 but the player stands
+                    // on terrain, so a 3D distance would shrink (or erase) the blocking
+                    // radius on hills and raised custom-level land.
+                    const rr = 0.5 + t.radius;
+                    const tdx = testPos.x - t.x, tdz = testPos.z - t.z;
+                    if (tdx * tdx + tdz * tdz < rr * rr) hitWall = true;
                 }
                 for (let b of staticColliders) {
                     if (testPos.x > b.minX - 0.5 && testPos.x < b.maxX + 0.5 &&
@@ -9765,8 +9769,12 @@ function animate() {
             else {
                 // Main World Trees & Walls
                 for (let t of treeColliders) {
-                    // OPTIMIZATION: Reuse vector
-                    if (np.distanceTo(_optVec3.set(t.x, 0, t.z)) < 0.5 + t.radius) col = true;
+                    // Horizontal-only check: colliders sit at y=0 but the player stands
+                    // on terrain, so a 3D distance would shrink (or erase) the blocking
+                    // radius on hills and raised custom-level land.
+                    const rr = 0.5 + t.radius;
+                    const tdx = np.x - t.x, tdz = np.z - t.z;
+                    if (tdx * tdx + tdz * tdz < rr * rr) col = true;
                 }
                 for (let b of staticColliders) {
                     if (np.x > b.minX - 0.5 && np.x < b.maxX + 0.5 &&

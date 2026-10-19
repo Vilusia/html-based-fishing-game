@@ -636,16 +636,16 @@
     // of requiring dry land.
 
     const BUILDING_TYPES = [
-        { id: "hut", name: "Straw Hut", radius: 2.3, color: 0xE0BE8C },
-        { id: "house", name: "House", radius: 2.8, color: 0xF2E8D5 },
-        { id: "cabin", name: "Log Cabin", radius: 2.8, color: 0x8A5A33 },
-        { id: "shed", name: "Shed", radius: 2.0, color: 0x9C7A4F },
-        { id: "lighthouse", name: "Lighthouse", radius: 2.2, color: 0xC8503C },
-        { id: "windmill", name: "Windmill", radius: 2.6, color: 0xE6D8B8 },
-        { id: "tower", name: "Watchtower", radius: 2.4, color: 0x6B4A2F },
-        { id: "stall", name: "Market Stall", radius: 2.2, color: 0xE0A03A },
-        { id: "temple", name: "Temple Ruins", radius: 3.2, color: 0xD6D2C4 },
-        { id: "dock", name: "Wooden Dock", radius: 1.8, water: true, color: 0xA97B4F }
+        { id: "hut", name: "Straw Hut", radius: 3.8, color: 0xE0BE8C },
+        { id: "house", name: "House", radius: 3.7, color: 0xF2E8D5 },
+        { id: "cabin", name: "Log Cabin", radius: 3.6, color: 0x8A5A33 },
+        { id: "shed", name: "Shed", radius: 2.4, color: 0x9C7A4F },
+        { id: "lighthouse", name: "Lighthouse", radius: 2.7, color: 0xC8503C },
+        { id: "windmill", name: "Windmill", radius: 3.3, color: 0xE6D8B8 },
+        { id: "tower", name: "Watchtower", radius: 2.7, color: 0x6B4A2F },
+        { id: "stall", name: "Market Stall", radius: 2.9, color: 0xE0A03A },
+        { id: "temple", name: "Temple Ruins", radius: 4.1, color: 0xD6D2C4 },
+        { id: "dock", name: "Wooden Dock", radius: 2.6, water: true, color: 0xA97B4F }
     ];
 
     const PROP_TYPES = [
@@ -724,129 +724,166 @@
         g.userData.buildingType = data.type;
         switch (String(data.type)) {
             case "house": {
-                g.add(at(mBox(3.2, 2.2, 2.8, 0xF2E8D5), 0, 1.1, 0));
-                const roof = mCone(2.6, 1.5, 4, 0xB8503C);
+                // 6.6 x 4.6 x 5.6 body: the player is ~2.9 tall, so the 2.8-tall
+                // door matches them and the walls clear their head.
+                g.add(at(mBox(6.6, 4.6, 5.6, 0xF2E8D5), 0, 2.3, 0));
+                const roof = mCone(5.4, 3.2, 4, 0xB8503C);
                 roof.rotation.y = Math.PI / 4;
-                roof.position.y = 2.95;
+                roof.position.y = 6.2;
                 g.add(roof);
-                g.add(at(mBox(0.8, 1.3, 0.15, 0x7A4A2A), 0, 0.65, 1.42));
-                g.add(at(mBox(0.65, 0.65, 0.12, 0x9FD9FF), -1.05, 1.45, 1.42));
+                g.add(at(mBox(1.6, 2.8, 0.35, 0x7A4A2A), 0, 1.4, 2.92));
+                g.add(at(mBox(1.3, 1.3, 0.25, 0x9FD9FF), -2.1, 3.2, 2.92));
+                g.add(at(mBox(1.3, 1.3, 0.25, 0x9FD9FF), 2.1, 3.2, 2.92));
+                g.add(at(mBox(0.9, 7.0, 0.9, 0x8E8E96), 2.4, 3.5, -1.7));
+                g.add(at(mBox(1.15, 0.3, 1.15, 0x5A5A62), 2.4, 7.15, -1.7));
                 break;
             }
             case "cabin": {
-                // Stacked log walls: rows alternate direction like notched logs.
-                const logGeo = new THREE.CylinderGeometry(0.19, 0.19, 3.1, 6);
-                for (let i = 0; i < 5; i++) {
-                    const y = 0.36 + i * 0.38;
-                    const axis = i % 2 === 0 ? "x" : "z";
-                    [-1.25, 1.25].forEach((off) => {
-                        const l = new THREE.Mesh(logGeo, mMat(0x8A5A33));
-                        if (axis === "x") { l.rotation.x = Math.PI / 2; l.position.set(off, y, 0); }
-                        else { l.rotation.z = Math.PI / 2; l.position.set(0, y, off); }
+                // Full log walls: four logs per row (all four walls), with the
+                // overhanging pair alternating row to row like real notched logs.
+                const logLong = new THREE.CylinderGeometry(0.3, 0.3, 6.4, 8);
+                const logShort = new THREE.CylinderGeometry(0.3, 0.3, 5.8, 8);
+                for (let i = 0; i < 6; i++) {
+                    const y = 0.55 + i * 0.58;
+                    const sideLong = i % 2 === 0;
+                    // Side walls: logs running along Z at x = ±2.6
+                    [-2.6, 2.6].forEach((off) => {
+                        const l = new THREE.Mesh(sideLong ? logLong : logShort, mMat(0x8A5A33));
+                        l.rotation.x = Math.PI / 2;
+                        l.position.set(off, y, 0);
+                        g.add(l);
+                    });
+                    // Front/back walls: logs running along X at z = ±2.6
+                    [-2.6, 2.6].forEach((off) => {
+                        const l = new THREE.Mesh(sideLong ? logShort : logLong, mMat(0x8A5A33));
+                        l.rotation.z = Math.PI / 2;
+                        l.position.set(0, y, off);
                         g.add(l);
                     });
                 }
-                const p1 = at(mBox(3.6, 0.16, 1.9, 0x5C3A22), 0, 2.5, -0.75); p1.rotation.x = -0.62; g.add(p1);
-                const p2 = at(mBox(3.6, 0.16, 1.9, 0x5C3A22), 0, 2.5, 0.75); p2.rotation.x = 0.62; g.add(p2);
-                g.add(at(mBox(0.75, 1.25, 0.14, 0x4A3A28), 0, 0.62, 1.34));
+                // Gable roof: two panels meeting on the ridge at z=0, y≈5.5
+                const p1 = at(mBox(7.2, 0.22, 3.5, 0x5C3A22), 0, 4.35, -1.35); p1.rotation.x = -0.72; g.add(p1);
+                const p2 = at(mBox(7.2, 0.22, 3.5, 0x5C3A22), 0, 4.35, 1.35); p2.rotation.x = 0.72; g.add(p2);
+                g.add(at(mBox(7.3, 0.25, 0.55, 0x4A3A28), 0, 5.5, 0));
+                // Gable-end triangles close the wall-to-roof gap at x = ±2.6
+                const gab = new THREE.Shape();
+                gab.moveTo(-1.95, 0); gab.lineTo(1.95, 0); gab.lineTo(0, 1.7); gab.closePath();
+                const gabGeo = new THREE.ExtrudeGeometry(gab, { depth: 0.35, bevelEnabled: false });
+                [1, -1].forEach((sx) => {
+                    const m = new THREE.Mesh(gabGeo, mMat(0x6B4A2F, { side: THREE.DoubleSide }));
+                    m.rotation.y = sx * Math.PI / 2;
+                    m.position.set(sx * 2.6, 3.75, 0);
+                    g.add(m);
+                });
+                // Recessed dark opening + proud door slab, frame, windows
+                g.add(at(mBox(1.8, 2.8, 0.32, 0x2A1D12), 0, 1.4, 2.82));
+                g.add(at(mBox(1.35, 2.5, 0.12, 0x9C7A4F), 0, 1.27, 3.04));
+                g.add(at(mBox(0.1, 0.1, 0.08, 0x2A1D12), 0.45, 1.3, 3.14));
+                g.add(at(mBox(0.9, 1.1, 0.22, 0x9FD9FF), -1.7, 2.35, 2.90));
+                g.add(at(mBox(0.9, 1.1, 0.22, 0x9FD9FF), 1.7, 2.35, 2.90));
+                // Stone chimney through the roof
+                g.add(at(mBox(0.85, 6.9, 0.85, 0x8E8E96), 2.1, 3.45, -1.0));
+                g.add(at(mBox(1.1, 0.28, 1.1, 0x5A5A62), 2.1, 7.04, -1.0));
                 break;
             }
             case "shed": {
-                g.add(at(mBox(2.0, 1.6, 1.6, 0x9C7A4F), 0, 0.8, 0));
-                const roof = at(mBox(2.35, 0.14, 1.95, 0x4F5D46), 0, 1.78, 0);
+                g.add(at(mBox(4.0, 3.0, 3.4, 0x9C7A4F), 0, 1.5, 0));
+                const roof = at(mBox(4.7, 0.28, 4.1, 0x4F5D46), 0, 3.2, 0);
                 roof.rotation.x = -0.16;
                 g.add(roof);
-                g.add(at(mBox(0.7, 1.15, 0.12, 0x6B4A2F), 0, 0.58, 0.83));
+                g.add(at(mBox(1.4, 2.4, 0.3, 0x6B4A2F), 0, 1.2, 1.75));
                 break;
             }
             case "lighthouse": {
-                g.add(at(mCyl(0.85, 1.3, 5.6, 10, 0xF4F1E8), 0, 2.8, 0));
-                g.add(at(mCyl(0.98, 1.06, 0.9, 10, 0xC8503C), 0, 1.7, 0));
-                g.add(at(mCyl(0.78, 0.86, 0.9, 10, 0xC8503C), 0, 4.4, 0));
-                g.add(at(mCyl(1.1, 1.1, 0.2, 10, 0x3A3F52), 0, 5.7, 0));
-                g.add(at(mCyl(0.68, 0.68, 0.85, 8, 0xFFE9A8, { emissive: 0xF2C14E }), 0, 6.2, 0));
-                g.add(at(mCone(0.95, 0.7, 10, 0xC8503C), 0, 6.95, 0));
-                g.add(at(mBox(0.7, 1.0, 0.14, 0x3A3F52), 0, 0.5, 1.22));
+                g.add(at(mCyl(1.5, 2.3, 10, 12, 0xF4F1E8), 0, 5, 0));
+                g.add(at(mCyl(2.25, 2.35, 1.6, 12, 0xC8503C), 0, 3.0, 0));
+                g.add(at(mCyl(1.85, 1.95, 1.6, 12, 0xC8503C), 0, 7.8, 0));
+                g.add(at(mCyl(2.1, 2.1, 0.35, 12, 0x3A3F52), 0, 10.2, 0));
+                g.add(at(mCyl(1.2, 1.2, 1.5, 10, 0xFFE9A8, { emissive: 0xF2C14E }), 0, 11.1, 0));
+                g.add(at(mCone(1.7, 1.4, 12, 0xC8503C), 0, 12.6, 0));
+                g.add(at(mBox(1.2, 2.0, 0.35, 0x3A3F52), 0, 1.0, 2.3));
                 break;
             }
             case "windmill": {
-                g.add(at(mCyl(1.1, 1.7, 4.5, 10, 0xE6D8B8), 0, 2.25, 0));
-                g.add(at(mCone(1.4, 1.05, 10, 0x7A4A2A), 0, 5.0, 0));
+                g.add(at(mCyl(1.9, 2.9, 8, 10, 0xE6D8B8), 0, 4, 0));
+                g.add(at(mCone(2.4, 1.8, 10, 0x7A4A2A), 0, 8.9, 0));
                 const blades = new THREE.Group();
-                blades.position.set(0, 4.1, 1.55);
+                blades.position.set(0, 5.5, 3.0);
                 for (let i = 0; i < 4; i++) {
                     const pivot = new THREE.Group();
                     pivot.rotation.z = i * Math.PI / 2 + Math.PI / 4;
-                    pivot.add(at(mBox(0.34, 3.2, 0.09, 0xEDE6D2), 0, 1.7, 0));
+                    pivot.add(at(mBox(0.6, 5.6, 0.16, 0xEDE6D2), 0, 3.0, 0));
                     blades.add(pivot);
                 }
-                const hub = mCyl(0.24, 0.24, 0.5, 6, 0x5C3A22);
+                const hub = mCyl(0.42, 0.42, 1.6, 6, 0x5C3A22);
                 hub.rotation.x = Math.PI / 2;
                 blades.add(hub);
                 g.add(blades);
-                g.add(at(mBox(0.7, 1.2, 0.14, 0x7A4A2A), 0, 0.6, 1.55));
+                g.add(at(mBox(1.3, 2.2, 0.4, 0x7A4A2A), 0, 1.1, 2.75));
                 break;
             }
             case "tower": {
-                [[-0.95, -0.95], [0.95, -0.95], [-0.95, 0.95], [0.95, 0.95]].forEach((p) => {
-                    g.add(at(mBox(0.22, 3.4, 0.22, 0x6B4A2F), p[0], 1.7, p[1]));
+                [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]].forEach((p) => {
+                    g.add(at(mBox(0.4, 6.0, 0.4, 0x6B4A2F), p[0], 3.0, p[1]));
                 });
-                g.add(at(mBox(2.7, 0.22, 2.7, 0x8A5A33), 0, 3.5, 0));
-                g.add(at(mBox(2.7, 0.5, 0.1, 0x5C3A22), 0, 3.95, -1.3));
-                g.add(at(mBox(2.7, 0.5, 0.1, 0x5C3A22), 0, 3.95, 1.3));
-                g.add(at(mBox(0.1, 0.5, 2.7, 0x5C3A22), -1.3, 3.95, 0));
-                g.add(at(mBox(0.1, 0.5, 2.7, 0x5C3A22), 1.3, 3.95, 0));
-                [[-1.15, -1.15], [1.15, -1.15], [-1.15, 1.15], [1.15, 1.15]].forEach((p) => {
-                    g.add(at(mBox(0.12, 1.0, 0.12, 0x6B4A2F), p[0], 4.1, p[1]));
+                g.add(at(mBox(4.6, 0.4, 4.6, 0x8A5A33), 0, 6.2, 0));
+                g.add(at(mBox(4.6, 0.9, 0.16, 0x5C3A22), 0, 6.85, -2.2));
+                g.add(at(mBox(4.6, 0.9, 0.16, 0x5C3A22), 0, 6.85, 2.2));
+                g.add(at(mBox(0.16, 0.9, 4.6, 0x5C3A22), -2.2, 6.85, 0));
+                g.add(at(mBox(0.16, 0.9, 4.6, 0x5C3A22), 2.2, 6.85, 0));
+                [[-2.1, -2.1], [2.1, -2.1], [-2.1, 2.1], [2.1, 2.1]].forEach((p) => {
+                    g.add(at(mBox(0.22, 2.0, 0.22, 0x6B4A2F), p[0], 7.0, p[1]));
                 });
-                const roof = mCone(2.1, 1.2, 4, 0x4F5D46);
+                const roof = mCone(3.6, 2.4, 4, 0x4F5D46);
                 roof.rotation.y = Math.PI / 4;
-                roof.position.y = 5.2;
+                roof.position.y = 9.2;
                 g.add(roof);
                 break;
             }
             case "stall": {
-                [[-1.25, -0.75], [1.25, -0.75], [-1.25, 0.75], [1.25, 0.75]].forEach((p) => {
-                    g.add(at(mCyl(0.09, 0.09, 2.2, 6, 0x8A5A33), p[0], 1.1, p[1]));
+                [[-2.1, -1.3], [2.1, -1.3], [-2.1, 1.3], [2.1, 1.3]].forEach((p) => {
+                    g.add(at(mCyl(0.16, 0.16, 3.6, 6, 0x8A5A33), p[0], 1.8, p[1]));
                 });
-                g.add(at(mBox(2.7, 0.7, 1.5, 0x8A5A33), 0, 0.35, 0));
-                g.add(at(mBox(2.95, 0.12, 1.7, 0xD9B26A), 0, 0.76, 0));
+                g.add(at(mBox(4.6, 1.2, 2.6, 0x8A5A33), 0, 0.6, 0));
+                g.add(at(mBox(5.0, 0.2, 3.0, 0xD9B26A), 0, 1.3, 0));
                 const awning = new THREE.Group();
-                awning.position.set(0, 2.35, 0);
+                awning.position.set(0, 3.7, 0);
                 awning.rotation.x = -0.1;
-                awning.add(at(mBox(3.2, 0.12, 2.1, 0xC8503C), 0, 0, 0));
-                [-1.1, 0, 1.1].forEach((x) => { awning.add(at(mBox(0.55, 0.04, 2.14, 0xF2E8D5), x, 0.08, 0)); });
+                awning.add(at(mBox(5.4, 0.2, 3.6, 0xC8503C), 0, 0, 0));
+                [-1.8, 0, 1.8].forEach((x) => { awning.add(at(mBox(0.9, 0.07, 3.66, 0xF2E8D5), x, 0.12, 0)); });
                 g.add(awning);
-                g.add(at(mBox(0.45, 0.4, 0.45, 0xE0A03A), -0.7, 1.02, 0.3));
-                g.add(at(mBox(0.4, 0.35, 0.4, 0x6FB54A), 0.65, 1.0, 0.35));
+                g.add(at(mBox(0.8, 0.7, 0.8, 0xE0A03A), -1.2, 1.75, 0.5));
+                g.add(at(mBox(0.7, 0.6, 0.7, 0x6FB54A), 1.1, 1.7, 0.6));
                 break;
             }
             case "temple": {
-                g.add(at(mBox(4.4, 0.4, 3.6, 0xB9B4A8), 0, 0.2, 0));
-                [[-1.7, -1.3, 2.7], [1.7, -1.3, 1.7], [-1.7, 1.3, 2.2], [1.7, 1.3, 0.9]].forEach((c) => {
-                    g.add(at(mCyl(0.32, 0.37, c[2], 8, 0xD6D2C4), c[0], 0.4 + c[2] / 2, c[1]));
+                g.add(at(mBox(7.4, 0.7, 6.0, 0xB9B4A8), 0, 0.35, 0));
+                [[-2.9, -2.2, 4.2], [2.9, -2.2, 4.2], [-2.9, 2.2, 3.8], [2.9, 2.2, 1.5]].forEach((c) => {
+                    g.add(at(mCyl(0.55, 0.62, c[2], 10, 0xD6D2C4), c[0], 0.7 + c[2] / 2, c[1]));
                 });
-                g.add(at(mBox(4.0, 0.45, 0.9, 0xC9C4B4), 0, 3.15, 1.3));
-                const fallen = mCyl(0.32, 0.32, 1.9, 8, 0xD6D2C4);
+                // Intact lintel across the front pair; broken stub on the rear stump
+                g.add(at(mBox(6.8, 0.75, 1.6, 0xC9C4B4), 0, 5.275, -2.2));
+                g.add(at(mBox(2.6, 0.7, 1.5, 0xC9C4B4), -1.7, 4.85, 2.2));
+                const fallen = mCyl(0.55, 0.55, 3.2, 10, 0xD6D2C4);
                 fallen.rotation.z = Math.PI / 2;
-                fallen.position.set(0.3, 0.75, -0.1);
+                fallen.position.set(0.5, 1.2, -0.2);
                 g.add(fallen);
                 break;
             }
             case "dock": {
-                g.add(at(mBox(2.2, 0.18, 5.0, 0xA97B4F), 0, 0.45, 0));
-                [-1.8, -0.6, 0.6, 1.8].forEach((z) => { g.add(at(mBox(2.24, 0.03, 0.14, 0x8A5A33), 0, 0.55, z)); });
-                [[-0.95, -2.2], [0.95, -2.2], [-0.95, 2.2], [0.95, 2.2]].forEach((p) => {
-                    g.add(at(mCyl(0.13, 0.13, 2.4, 6, 0x6B4A2F), p[0], -0.5, p[1]));
-                    g.add(at(mCyl(0.17, 0.17, 0.22, 6, 0x8A5A33), p[0], 0.8, p[1]));
+                g.add(at(mBox(3.4, 0.3, 8.0, 0xA97B4F), 0, 0.55, 0));
+                [-3.0, -1.5, 0, 1.5, 3.0].forEach((z) => { g.add(at(mBox(3.44, 0.05, 0.2, 0x8A5A33), 0, 0.72, z)); });
+                [[-1.4, -3.4], [1.4, -3.4], [-1.4, 3.4], [1.4, 3.4]].forEach((p) => {
+                    g.add(at(mCyl(0.22, 0.22, 6.6, 8, 0x6B4A2F), p[0], -2.0, p[1]));
+                    g.add(at(mCyl(0.28, 0.28, 0.3, 8, 0x8A5A33), p[0], 1.45, p[1]));
                 });
                 break;
             }
             default: {
                 // Straw hut (also the fallback for unknown types).
-                g.add(at(mCyl(1.5, 1.7, 1.5, 10, 0xE0BE8C), 0, 0.75, 0));
-                g.add(at(mCone(2.1, 1.7, 10, 0xC7A34A), 0, 2.35, 0));
-                g.add(at(mBox(0.7, 1.05, 0.15, 0x6B4A2F), 0, 0.52, 1.62));
+                g.add(at(mCyl(3.0, 3.4, 3.0, 10, 0xE0BE8C), 0, 1.5, 0));
+                g.add(at(mCone(4.4, 3.6, 10, 0xC7A34A), 0, 4.8, 0));
+                g.add(at(mBox(1.4, 2.6, 0.5, 0x6B4A2F), 0, 1.3, 3.25));
                 break;
             }
         }
