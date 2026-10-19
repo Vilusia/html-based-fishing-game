@@ -8067,8 +8067,9 @@ function makeRod(rodId) {
     rodId = rodId || 'bamboo';
     if (saveState.model3D && window.Character3D && Character3D.buildRod) {
         const g = Character3D.buildRod(rodId);
-        g.position.set(0.62, 1.32, 0.3);
-        g.rotation.set(-0.2, 0, 0.12);
+        // Rod is modelled pointing forward (+Z); hang the handle off the hand.
+        g.position.set(0.58, 0.82, 0.14);
+        g.rotation.set(-0.2, 0, 0);
         return g;
     }
     const rodTex = createRodTexture(rodId);

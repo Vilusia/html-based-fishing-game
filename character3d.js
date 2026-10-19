@@ -1169,13 +1169,21 @@
         var reel = rod.reel || '#8B4513';
         var len = 2.4;
 
-        var blank = cyl(mats, g, 0.04, 0.07, len, 6, col, 0, len / 2, 0);
+        // Everything is modelled pointing up the +Y axis, then laid flat along
+        // +Z by the inner group.  That way the idle rotation.x (-0.2) lifts the
+        // rod up-and-out and the cast rotation.x (0.8) swings it down-and-out,
+        // so the rod always points away from the body instead of across it.
+        var inner = new THREE.Group();
+        inner.rotation.x = Math.PI / 2;
+        g.add(inner);
+
+        var blank = cyl(mats, inner, 0.04, 0.07, len, 6, col, 0, len / 2, 0);
         blank.rotation.z = 0.14;
-        cyl(mats, g, 0.09, 0.09, 0.5, 8, '#2b2b2b', 0, 0.25, 0);
-        cyl(mats, g, 0.12, 0.12, 0.1, 10, reel, -0.12, 0.5, 0, 0, 0, Math.PI / 2);
-        cyl(mats, g, 0.05, 0.05, 0.14, 8, '#111111', -0.2, 0.5, 0, 0, 0, Math.PI / 2);
+        cyl(mats, inner, 0.09, 0.09, 0.5, 8, '#2b2b2b', 0, 0.25, 0);
+        cyl(mats, inner, 0.12, 0.12, 0.1, 10, reel, -0.12, 0.5, 0, 0, 0, Math.PI / 2);
+        cyl(mats, inner, 0.05, 0.05, 0.14, 8, '#111111', -0.2, 0.5, 0, 0, 0, Math.PI / 2);
         [0.9, 1.5, 2.05].forEach(function (y) {
-            torus(mats, g, 0.06, 0.015, '#d9d9d9', 0.02, y, 0);
+            torus(mats, inner, 0.06, 0.015, '#d9d9d9', 0.02, y, 0);
         });
 
         // Marker at the very tip of the blank so the fishing line can attach to
