@@ -2187,6 +2187,110 @@ function disposeDecorGroup(group) {
     scene.remove(group);
 }
 
+// --- CUSTOM LEVEL FLOWERS ---
+// Scatter pickable flowers across a hand-built level's dry land, keeping clear
+// of everything the author placed (props, NPCs, buildings, caves, trees and
+// rocks) so nothing grows on top of them. Positions are seeded from the level
+// itself, so a level always grows the same flowers on every reload.
+function spawnCustomLevelFlowers(level) {
+    if (!level || !window.Level || !window.WorldGen) return 0;
+    const LV = window.Level, WG = window.WorldGen;
+
+    const half = level.size / 2;
+    const margin = Math.max(3, (level.size / level.grid) * 1.5); // keep off the map edge
+    const reach = half - margin;
+    if (!(reach > 1)) return 0;
+
+    const rand = mulberry32(xmur3(levelFingerprint(level))());
+
+    // Everything already placed becomes a {x, z, r} keep-out circle. `r` is the
+    // item's own footprint plus a comfort margin, so flowers land "not near or
+    // on" it.
+    const keepOut = [];
+    const addKeepOut = (list, radiusOf) => {
+        (list || []).forEach((d) => {
+            if (!d || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return;
+            const r = radiusOf(d);
+            if (r > 0) keepOut.push({ x: d.x, z: d.z, r: r });
+        });
+    };
+    addKeepOut(level.props, (d) => Math.max(1.4, WG.propInfo(d.type).radius * (d.scale || 1) + 1.0));
+    addKeepOut(level.npcs, () => 2.5);
+    addKeepOut(level.buildings, (d) => WG.buildingInfo(d.type).radius * (d.scale || 1) + 1.2);
+    addKeepOut(level.caves, (d) => WG.caveInfo(d.size).radius * 0.62 + 1.2);
+    addKeepOut(level.trees, (d) => 1.5 * (d.scale || 1) + 0.8);
+    addKeepOut(level.rocks, (d) => Math.max(0.8, (d.scale || 1) * 0.8) + 0.8);
+    if (level.spawn && Number.isFinite(level.spawn.x)) keepOut.push({ x: level.spawn.x, z: level.spawn.z, r: 3 });
+    // The game always drops its five built-in NPCs somewhere; if the author
+    // didn't place one it stays at its island default, so guard those spots too.
+    if (typeof LAKE_RADIUS === "number") {
+        const d = LAKE_RADIUS + 3;
+        [[d, 0], [-d, 0], [0, d], [0, -d], [16, 16]].forEach((p) => keepOut.push({ x: p[0], z: p[1], r: 2.5 }));
+    }
+
+    const blocked = (x, z) => {
+        for (let i = 0; i < keepOut.length; i++) {
+            const k = keepOut[i], dx = x - k.x, dz = z - k.z;
+            if (dx * dx + dz * dz < k.r * k.r) return true;
+        }
+        return false;
+    };
+
+    const floristryXP = (saveState.skills && saveState.skills.floristry) ? saveState.skills.floristry.xp : 0;
+    const floristryLevel = getLevelFromXP(floristryXP);
+
+    // Aim for the island's flower density: about one flower per ~560 world units².
+    const cell = level.size / level.grid;
+    const landCells = (typeof LV.countLand === "function") ? LV.countLand(level) : level.grid * level.grid * 0.5;
+    const target = Math.max(4, Math.min(80, Math.round((landCells * cell * cell) / 560)));
+    const tries = target * 60 + 400;
+
+    const planted = [];
+    for (let n = 0; n < tries && planted.length < target; n++) {
+        const x = (rand() * 2 - 1) * reach;
+        const z = (rand() * 2 - 1) * reach;
+
+        // Dry, reasonably flat land only.
+        const h = LV.sampleHeight(level, x, z);
+        if (h <= level.seaLevel + 0.2) continue;
+        const t = 1.5;
+        const slope = Math.max(
+            Math.abs(LV.sampleHeight(level, x + t, z) - h),
+            Math.abs(LV.sampleHeight(level, x - t, z) - h),
+            Math.abs(LV.sampleHeight(level, x, z + t) - h),
+            Math.abs(LV.sampleHeight(level, x, z - t) - h));
+        if (slope > 1.5) continue;
+
+        if (blocked(x, z)) continue;
+
+        let crowded = false;
+        for (let i = 0; i < planted.length; i++) {
+            const p = planted[i];
+            if ((p.x - x) * (p.x - x) + (p.z - z) * (p.z - z) < 2.5 * 2.5) { crowded = true; break; }
+        }
+        if (crowded) continue;
+
+        const flowerType = getResourceForLevel(floristryLevel, FLOWER_TYPES);
+        const flower = createFlowerMesh(flowerType.color);
+        flower.position.set(x, h, z);
+        flower.rotation.y = rand() * Math.PI * 2;
+        flower.rotation.x = (rand() - 0.5) * 0.3;
+        flower.rotation.z = (rand() - 0.5) * 0.3;
+        const scale = 0.8 + rand() * 0.5;
+        flower.scale.set(scale, scale, scale);
+        flower.userData.isFlower = true;
+        flower.userData.isPicked = false;
+        flower.userData.typeId = flowerType.id;
+        flower.userData.originalScale = scale;
+
+        scene.add(flower);
+        treeMeshes.push(flower);
+        pickableFlowers.push(flower);
+        planted.push({ x: x, z: z });
+    }
+    return planted.length;
+}
+
 function generateWorld(seedStr) {
     treeMeshes.forEach(t => scene.remove(t));
     treeMeshes = []; treeColliders = [];
@@ -2201,6 +2305,9 @@ function generateWorld(seedStr) {
     if (window.CUSTOM_LEVEL && window.WorldGen) {
         const res = WorldGen.addLevelProps(scene, window.CUSTOM_LEVEL, { trees: treeMeshes, colliders: treeColliders });
         if (res && res.decor) customLevelDecor = res.decor;
+        // Also grow pickable flowers on the level's open land, clear of the
+        // props and NPCs the author placed.
+        spawnCustomLevelFlowers(window.CUSTOM_LEVEL);
         return;
     }
 
