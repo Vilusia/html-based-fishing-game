@@ -2339,16 +2339,30 @@
         }
 
         /* --- JOURNAL ENTRIES / LIST ROWS --- */
+        /* Rows must be tall enough for the 64px fish art + name + rarity +
+           tier medals, otherwise the height-constrained scroll grid collapses
+           them and the art spills outside the boxes. */
+        #journal-container {
+            grid-auto-rows: minmax(150px, max-content);
+        }
+
         .journal-entry {
             background: var(--p-face-2);
             border: 2px solid var(--p-line);
             border-radius: 0;
             min-height: 0;
+            overflow: hidden;
             transition: background 0.08s steps(2);
         }
 
         .journal-entry.unlocked {
             background: var(--p-face-3);
+        }
+
+        .journal-entry canvas {
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
         }
 
         /* --- HOST PANEL ROWS --- */
@@ -3309,7 +3323,7 @@
     <script src="character3d.js?v=3"></script>
     <script src="networking.js?v=12.31"></script>
     <script src="audio.js?v=12.31"></script>
-    <script src="ui.js?v=12.52"></script>
+    <script src="ui.js?v=12.53"></script>
     <script src="props.js?v=12.34"></script>
     <script src="level-loader.js?v=4"></script>
 

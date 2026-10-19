@@ -7615,190 +7615,424 @@ function createFishTexture(fishName, colorHex) {
     const rarity = fishData ? fishData.rarity : "Common";
     const name = fishName.toLowerCase();
 
-    // --- 1. Determine Styles ---
-    let fillStyle = colorHex;
-    let strokeStyle = '#000000';
-    let hasScales = false;
-    let hasGlitter = false;
-    let hasGlow = false;
+    // --- 1. Palette ---
+    const OUTLINE = '#111219';
+    let baseCol = (typeof colorHex === 'string' && colorHex) ? colorHex : '#7fae7f';
+    let fillStyle = null;      // gradient (or solid) used to fill the body
+    let glowColor = null;
+    let sheen = false;
 
-    if (rarity === 'Rare') {
-        hasScales = true;
-    } else if (rarity === 'Epic') {
-        hasScales = true; strokeStyle = colorHex; hasGlow = true;
-    } else if (rarity === 'Legendary') {
-        hasGlitter = true; hasGlow = true;
-        const grd = ctx.createLinearGradient(10, 10, 54, 54);
-        if (name.includes('golden') || name.includes('gold')) {
-            grd.addColorStop(0, '#FFFFA0'); grd.addColorStop(0.5, '#FFD700'); grd.addColorStop(1, '#B8860B');
-            fillStyle = grd;
-        } else if (name.includes('rainbow')) {
-            grd.addColorStop(0, 'red'); grd.addColorStop(0.2, 'orange'); grd.addColorStop(0.4, 'yellow');
-            grd.addColorStop(0.6, 'green'); grd.addColorStop(0.8, 'blue'); grd.addColorStop(1, 'violet');
-            fillStyle = grd;
-        } else if (name.includes('void') || name.includes('cosmic')) {
-            grd.addColorStop(0, '#000000'); grd.addColorStop(0.5, '#300030'); grd.addColorStop(1, '#000000');
-            fillStyle = grd; strokeStyle = '#ffffff';
-        } else {
-            grd.addColorStop(0, '#ffffff'); grd.addColorStop(0.5, colorHex); grd.addColorStop(1, '#000000');
-            fillStyle = grd;
-        }
+    const linGrad = (stops) => {
+        const g = ctx.createLinearGradient(0, 10, 0, 54);
+        stops.forEach(s => g.addColorStop(s[0], s[1]));
+        return g;
+    };
+
+    // Name-driven recolours (legendary / event variants)
+    if (name.includes('golden') || name.includes('gold')) {
+        baseCol = '#e8b923';
+        fillStyle = linGrad([[0, '#fff3b0'], [0.45, '#f5c518'], [1, '#9c6b0a']]);
+    } else if (name.includes('rainbow')) {
+        fillStyle = linGrad([[0, '#ff5c5c'], [0.18, '#ffb84c'], [0.38, '#fff06b'], [0.58, '#66e08a'], [0.8, '#59a7ff'], [1, '#a868ff']]);
+    } else if (name.includes('void') || name.includes('cosmic')) {
+        baseCol = '#241035';
+        fillStyle = linGrad([[0, '#3a1a5c'], [0.5, '#1a0b27'], [1, '#080410']]);
+        glowColor = '#8f5bff';
+    } else if (name.includes('lava') || name.includes('magma')) {
+        baseCol = '#d8451d';
+        fillStyle = linGrad([[0, '#ffd24a'], [0.45, '#ff6a2b'], [1, '#7c1e06']]);
+        glowColor = '#ff5a1f';
+    } else if (name.includes('ice') || name.includes('frost')) {
+        baseCol = '#9fd8ef';
+        fillStyle = linGrad([[0, '#eaffff'], [0.5, '#a9e0f5'], [1, '#4f9bc4']]);
+        glowColor = '#5fd8ff';
     }
 
-    // --- 2. Define the Shape (Path2D) ---
-    // We use 'p' instead of 'ctx' to define the shape so it doesn't get lost
+    if (!fillStyle) {
+        fillStyle = linGrad([[0, shadeColor(baseCol, 0.25)], [0.5, baseCol], [1, shadeColor(baseCol, -0.28)]]);
+    }
+
+    // Rarity flourishes
+    const hasScales = (rarity === 'Rare' || rarity === 'Epic' || name.includes('dragon'));
+    const hasGlitter = (rarity === 'Legendary');
+    if (rarity === 'Legendary' && !glowColor) glowColor = shadeColor(baseCol, 0.2);
+    else if (rarity === 'Epic' && !glowColor) glowColor = shadeColor(baseCol, 0.08);
+    if (rarity === 'Uncommon' || rarity === 'Epic') sheen = true;
+
+    const finCol = shadeColor(baseCol, -0.12);
+    const bellyCol = shadeColor(baseCol, 0.5);
+
+    // Per-shape decorations, assigned in the shape section below.
+    let eye = { x: 47, y: 28, r: 3 };
+    let behind = null;   // drawn before the body (fins/tails/claws)
+    let front = null;    // drawn after the outline (details on top)
+
+    // --- 2. Build the silhouette (every fish faces right, kept inside 1..63) ---
     const p = new Path2D();
 
-    // TYPE: TURTLE
-    if (name.includes('turtle')) {
-        p.arc(54, 32, 5, 0, Math.PI * 2); // Head
-        p.moveTo(20, 20); p.lineTo(14, 12); p.lineTo(26, 12); // TL
-        p.moveTo(20, 44); p.lineTo(14, 52); p.lineTo(26, 52); // BL
-        p.moveTo(44, 20); p.lineTo(50, 12); p.lineTo(38, 12); // TR
-        p.moveTo(44, 44); p.lineTo(50, 52); p.lineTo(38, 52); // BR
-        p.moveTo(14, 32); p.lineTo(6, 28); p.lineTo(6, 36); // Tail
-        p.moveTo(50, 32);
-        p.ellipse(32, 32, 16, 13, 0, 0, Math.PI * 2); // Shell
+    // TYPE: BOOT ("Old Boot")
+    if (name.includes('boot')) {
+        p.moveTo(22, 10); p.lineTo(37, 10); p.lineTo(38, 32);
+        p.lineTo(52, 35); p.quadraticCurveTo(59, 38, 57, 47);
+        p.lineTo(55, 56); p.lineTo(21, 56); p.lineTo(20, 42);
+        p.closePath();
+        eye = null;
     }
     // TYPE: URCHIN
     else if (name.includes('urchin')) {
-        p.arc(32, 32, 14, 0, Math.PI * 2);
-        for (let i = 0; i < 12; i++) {
-            const angle = (i / 12) * Math.PI * 2;
-            const sx = 32 + Math.cos(angle) * 14;
-            const sy = 32 + Math.sin(angle) * 14;
-            const ex = 32 + Math.cos(angle) * 22;
-            const ey = 32 + Math.sin(angle) * 22;
-            p.moveTo(sx, sy); p.lineTo(ex, ey);
-        }
+        p.arc(31, 33, 13, 0, Math.PI * 2);
+        eye = null;
+        behind = (g) => {
+            g.strokeStyle = OUTLINE; g.lineWidth = 3.2; g.lineCap = 'round';
+            for (let i = 0; i < 16; i++) {
+                const a = (i / 16) * Math.PI * 2;
+                g.beginPath();
+                g.moveTo(31 + Math.cos(a) * 11.5, 33 + Math.sin(a) * 11.5);
+                g.lineTo(31 + Math.cos(a) * 20, 33 + Math.sin(a) * 20);
+                g.stroke();
+            }
+        };
     }
     // TYPE: SEAHORSE
     else if (name.includes('seahorse')) {
-        p.moveTo(54, 18); p.lineTo(48, 18);
-        p.bezierCurveTo(48, 10, 38, 10, 38, 20);
-        p.bezierCurveTo(38, 30, 46, 35, 38, 45);
-        p.bezierCurveTo(30, 55, 24, 50, 28, 45);
-        p.lineTo(26, 45);
-        p.bezierCurveTo(20, 55, 32, 60, 44, 45);
-        p.bezierCurveTo(52, 30, 44, 25, 44, 20);
+        p.moveTo(44, 12);
+        p.quadraticCurveTo(51, 13, 49, 19);
+        p.lineTo(54, 21);
+        p.quadraticCurveTo(51, 25, 44, 24);
+        p.quadraticCurveTo(38, 26, 36, 34);
+        p.quadraticCurveTo(34, 43, 27, 46);
+        p.quadraticCurveTo(19, 50, 24, 56);
+        p.quadraticCurveTo(30, 60, 34, 54);
+        p.quadraticCurveTo(38, 49, 44, 47);
+        p.quadraticCurveTo(50, 44, 46, 33);
+        p.quadraticCurveTo(42, 22, 44, 12);
+        p.closePath();
+        eye = { x: 45, y: 18, r: 2.4 };
+    }
+    // TYPE: TURTLE
+    else if (name.includes('turtle')) {
+        p.ellipse(30, 34, 17, 13, 0, 0, Math.PI * 2);
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            [[18, 22, -1, -1], [18, 46, -1, 1], [42, 22, 1, -1], [42, 46, 1, 1]].forEach(([fx, fy, sx, sy]) => {
+                g.beginPath(); g.moveTo(fx, fy);
+                g.lineTo(fx + sx * 7, fy + sy * 8);
+                g.lineTo(fx + sx * 9, fy + sy * 1);
+                g.closePath(); g.fill(); g.stroke();
+            });
+            g.fillStyle = finCol;
+            g.beginPath(); g.moveTo(14, 34); g.lineTo(5, 30); g.lineTo(5, 38); g.closePath(); g.fill(); g.stroke();
+            g.fillStyle = baseCol;
+            g.beginPath(); g.arc(51, 34, 6, 0, Math.PI * 2); g.fill(); g.stroke();
+        };
+        eye = { x: 53, y: 32, r: 1.8 };
     }
     // TYPE: CRAB / LOBSTER
     else if (name.includes('crab') || name.includes('lobster')) {
-        p.ellipse(32, 35, 16, 11, 0, 0, Math.PI * 2);
-        p.moveTo(20, 35); p.lineTo(8, 22); p.lineTo(14, 18); p.lineTo(10, 16); p.lineTo(6, 20);
-        p.moveTo(44, 35); p.lineTo(56, 22); p.lineTo(50, 18); p.lineTo(54, 16); p.lineTo(58, 20);
-        p.moveTo(18, 40); p.lineTo(8, 45);
-        p.moveTo(22, 44); p.lineTo(14, 50);
-        p.moveTo(46, 40); p.lineTo(56, 45);
-        p.moveTo(42, 44); p.lineTo(50, 50);
+        p.ellipse(32, 36, 15, 11, 0, 0, Math.PI * 2);
+        behind = (g) => {
+            g.lineJoin = 'round'; g.lineCap = 'round';
+            g.strokeStyle = OUTLINE; g.lineWidth = 2.4;
+            for (let i = 0; i < 3; i++) {
+                const lx = 21 + i * 5;
+                g.beginPath(); g.moveTo(lx, 44); g.lineTo(lx - 2, 55); g.stroke();
+                g.beginPath(); g.moveTo(43 - i * 5, 44); g.lineTo(45 - i * 5, 55); g.stroke();
+            }
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            [[20, 28, -1], [45, 28, 1]].forEach(([cx, cy, sx]) => {
+                g.beginPath();
+                g.moveTo(cx, cy + 4);
+                g.lineTo(cx + sx * 11, cy - 7);
+                g.lineTo(cx + sx * 15, cy + 3);
+                g.lineTo(cx + sx * 5, cy + 8);
+                g.closePath(); g.fill(); g.stroke();
+            });
+        };
+        eye = { x: 40, y: 30, r: 2.4 };
+        front = (g) => {
+            g.fillStyle = '#ffffff'; g.beginPath(); g.arc(24, 30, 2.4, 0, Math.PI * 2); g.fill();
+            g.strokeStyle = OUTLINE; g.lineWidth = 1; g.stroke();
+            g.fillStyle = '#0d0f16'; g.beginPath(); g.arc(25, 30, 1, 0, Math.PI * 2); g.fill();
+        };
     }
-    // TYPE: SQUID / JELLY
+    // TYPE: SQUID / JELLY / KRAKEN
     else if (name.includes('squid') || name.includes('jelly') || name.includes('kraken')) {
-        p.moveTo(20, 45);
-        p.bezierCurveTo(20, 10, 44, 10, 44, 45);
-        for (let x = 44; x >= 20; x -= 4) {
-            p.lineTo(x - 2, 58);
-            p.lineTo(x - 4, 45);
+        const isJelly = name.includes('jelly');
+        if (isJelly) {
+            p.moveTo(16, 32);
+            p.quadraticCurveTo(16, 12, 32, 12);
+            p.quadraticCurveTo(48, 12, 48, 32);
+            p.quadraticCurveTo(42, 38, 32, 38);
+            p.quadraticCurveTo(22, 38, 16, 32);
+            p.closePath();
+        } else {
+            p.moveTo(22, 34);
+            p.quadraticCurveTo(20, 10, 32, 10);
+            p.quadraticCurveTo(44, 10, 42, 34);
+            p.quadraticCurveTo(36, 40, 32, 40);
+            p.quadraticCurveTo(28, 40, 22, 34);
+            p.closePath();
         }
+        const tentacles = (g) => {
+            const n = 4, x0 = isJelly ? 20 : 24, x1 = isJelly ? 44 : 40, y0 = isJelly ? 35 : 37;
+            g.lineCap = 'round';
+            for (let pass = 0; pass < 2; pass++) {
+                g.strokeStyle = pass === 0 ? OUTLINE : finCol;
+                g.lineWidth = pass === 0 ? 3.4 : 1.6;
+                for (let i = 0; i < n; i++) {
+                    const x = x0 + i * ((x1 - x0) / (n - 1));
+                    g.beginPath(); g.moveTo(x, y0);
+                    g.quadraticCurveTo(x - 3, y0 + 10, x + 3, y0 + 20);
+                    g.stroke();
+                }
+            }
+        };
+        front = tentacles;
+        eye = isJelly ? { x: 26, y: 24, r: 2.2 } : { x: 38, y: 22, r: 2.2 };
+        if (!isJelly) {
+            front = (g) => {
+                tentacles(g);
+                g.fillStyle = '#ffffff'; g.beginPath(); g.arc(24, 22, 2.2, 0, Math.PI * 2); g.fill();
+                g.strokeStyle = OUTLINE; g.lineWidth = 1; g.stroke();
+                g.fillStyle = '#0d0f16'; g.beginPath(); g.arc(25, 22, 0.9, 0, Math.PI * 2); g.fill();
+            };
+        }
+    }
+    // TYPE: EEL / SERPENT / WORM
+    else if (name.includes('eel') || name.includes('serpent') || name.includes('worm') || name.includes('leviathan') || name.includes('hydra')) {
+        p.moveTo(58, 22);
+        p.bezierCurveTo(40, 12, 26, 40, 8, 30);
+        p.lineTo(5, 38);
+        p.bezierCurveTo(26, 48, 40, 24, 58, 32);
         p.closePath();
+        eye = { x: 53, y: 26, r: 2.4 };
     }
-    // TYPE: EEL / SERPENT
-    else if (name.includes('eel') || name.includes('serpent') || name.includes('worm')) {
-        p.moveTo(54, 15);
-        p.bezierCurveTo(10, 10, 10, 50, 50, 50);
-        p.bezierCurveTo(30, 50, 30, 30, 54, 30);
-        p.arc(54, 22.5, 7.5, -Math.PI / 2, Math.PI / 2);
-    }
-    // TYPE: RAY / MANTA
+    // TYPE: RAY / MANTA / SKATE
     else if (name.includes('ray') || name.includes('skate') || name.includes('manta')) {
-        p.moveTo(32, 10); p.lineTo(60, 32); p.lineTo(32, 54); p.lineTo(4, 32); p.closePath();
-        p.moveTo(32, 54); p.lineTo(32, 64); // Tail
+        p.moveTo(32, 6);
+        p.quadraticCurveTo(52, 16, 58, 32);
+        p.quadraticCurveTo(46, 28, 32, 30);
+        p.quadraticCurveTo(18, 28, 6, 32);
+        p.quadraticCurveTo(12, 16, 32, 6);
+        p.closePath();
+        p.moveTo(29, 29); p.lineTo(34, 58); p.lineTo(30, 58); p.closePath();
+        eye = { x: 42, y: 20, r: 2.4 };
+        front = (g) => {
+            g.fillStyle = '#ffffff'; g.beginPath(); g.arc(22, 20, 2.2, 0, Math.PI * 2); g.fill();
+            g.strokeStyle = OUTLINE; g.lineWidth = 1; g.stroke();
+            g.fillStyle = '#0d0f16'; g.beginPath(); g.arc(21, 20, 0.9, 0, Math.PI * 2); g.fill();
+        };
     }
-    // TYPE: SHARK / WHALE
+    // TYPE: SHARK / WHALE / ORCA
     else if (name.includes('shark') || name.includes('whale') || name.includes('orca')) {
         const isWhale = name.includes('whale') || name.includes('orca');
         p.moveTo(58, 32);
-        p.quadraticCurveTo(32, isWhale ? 10 : 15, 8, 25);
-        p.lineTo(2, 15); p.lineTo(2, 45); p.lineTo(8, 35);
-        p.quadraticCurveTo(32, 50, 58, 32);
+        p.quadraticCurveTo(48, isWhale ? 21 : 22, 34, isWhale ? 21 : 22);
+        p.quadraticCurveTo(22, isWhale ? 21 : 22, 15, 27);
+        p.quadraticCurveTo(12, 30, 12, 32);
+        p.quadraticCurveTo(12, 34, 15, 37);
+        p.quadraticCurveTo(22, 43, 34, 43);
+        p.quadraticCurveTo(48, 43, 58, 32);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(15, 29); g.lineTo(3, 16); g.lineTo(8, 32); g.lineTo(3, 48); g.lineTo(15, 35); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(27, isWhale ? 21 : 22); g.lineTo(34, isWhale ? 6 : 10); g.lineTo(44, isWhale ? 21 : 22); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(30, 37); g.lineTo(22, 47); g.lineTo(37, 42); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 49, y: 29, r: 2.4 };
     }
-    // TYPE: SWORDFISH
-    else if (name.includes('sword') || name.includes('marlin') || name.includes('pike')) {
-        p.moveTo(64, 30); p.lineTo(44, 26); p.lineTo(10, 26);
-        p.lineTo(4, 20); p.lineTo(4, 40); p.lineTo(10, 34);
-        p.lineTo(44, 34); p.lineTo(64, 30);
+    // TYPE: SWORD / MARLIN / SAILFISH / PIKE
+    else if (name.includes('sword') || name.includes('marlin') || name.includes('pike') || name.includes('sail')) {
+        const isSail = name.includes('sail');
+        p.moveTo(58, 30.5);
+        p.lineTo(50, 28);
+        p.quadraticCurveTo(40, 22, 30, 23);
+        p.quadraticCurveTo(20, 24, 14, 28);
+        p.lineTo(4, 18);
+        p.lineTo(9, 32);
+        p.lineTo(4, 46);
+        p.lineTo(14, 36);
+        p.quadraticCurveTo(20, 41, 30, 42);
+        p.quadraticCurveTo(40, 43, 50, 37);
+        p.lineTo(58, 33.5);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            if (isSail) {
+                g.beginPath(); g.moveTo(20, 23); g.quadraticCurveTo(32, 5, 44, 22); g.closePath(); g.fill(); g.stroke();
+            } else {
+                g.beginPath(); g.moveTo(26, 23); g.lineTo(33, 11); g.lineTo(42, 23); g.closePath(); g.fill(); g.stroke();
+            }
+        };
+        eye = { x: 47, y: 29, r: 2.4 };
+    }
+    // TYPE: PUFFERFISH
+    else if (name.includes('puffer')) {
+        p.arc(31, 32, 14, 0, Math.PI * 2);
+        behind = (g) => {
+            g.lineCap = 'round';
+            g.strokeStyle = OUTLINE; g.lineWidth = 3.2;
+            for (let i = 0; i < 16; i++) {
+                const a = (i / 16) * Math.PI * 2;
+                g.beginPath();
+                g.moveTo(31 + Math.cos(a) * 12.5, 32 + Math.sin(a) * 12.5);
+                g.lineTo(31 + Math.cos(a) * 20, 32 + Math.sin(a) * 20);
+                g.stroke();
+            }
+            g.fillStyle = finCol; g.lineJoin = 'round';
+            g.beginPath(); g.moveTo(44, 32); g.lineTo(59, 24); g.lineTo(54, 32); g.lineTo(59, 40); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 37, y: 28, r: 3.2 };
+        front = (g) => {
+            g.fillStyle = '#ffffff'; g.beginPath(); g.arc(24, 28, 3.2, 0, Math.PI * 2); g.fill();
+            g.strokeStyle = OUTLINE; g.lineWidth = 1; g.stroke();
+            g.fillStyle = '#0d0f16'; g.beginPath(); g.arc(25, 28, 1.3, 0, Math.PI * 2); g.fill();
+        };
+    }
+    // TYPE: ANGLERFISH
+    else if (name.includes('angler')) {
+        p.moveTo(58, 32);
+        p.quadraticCurveTo(50, 23, 34, 22);
+        p.quadraticCurveTo(18, 22, 13, 32);
+        p.quadraticCurveTo(13, 42, 28, 46);
+        p.quadraticCurveTo(44, 49, 56, 40);
+        p.quadraticCurveTo(58, 37, 58, 30);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round'; g.lineCap = 'round';
+            g.strokeStyle = OUTLINE; g.lineWidth = 3;
+            g.beginPath(); g.moveTo(40, 24); g.quadraticCurveTo(45, 12, 52, 12); g.stroke();
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(15, 32); g.lineTo(4, 22); g.lineTo(8, 34); g.lineTo(4, 46); g.lineTo(16, 38); g.closePath(); g.fill(); g.stroke();
+        };
+        front = (g) => {
+            g.fillStyle = '#ffe066'; g.beginPath(); g.arc(52, 12, 4, 0, Math.PI * 2); g.fill();
+            g.strokeStyle = OUTLINE; g.lineWidth = 1; g.stroke();
+        };
+        eye = { x: 44, y: 30, r: 2.6 };
+    }
+    // TYPE: ROUND (koi, goldfish, sunfish, discus, betta, flounder...)
+    else if (name.includes('sunfish') || name.includes('discus') || name.includes('koi') || name.includes('goldfish') || name.includes('betta') || name.includes('pleco') || name.includes('flounder') || name.includes('bluegill')) {
+        p.ellipse(30, 32, 16, 18, 0, 0, Math.PI * 2);
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(16, 25); g.quadraticCurveTo(1, 14, 6, 32); g.quadraticCurveTo(1, 50, 16, 39); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(24, 15); g.quadraticCurveTo(32, 3, 40, 17); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 39, y: 26, r: 3 };
     }
     // TYPE: STANDARD (Default)
     else {
-        p.moveTo(56, 32);
-        p.quadraticCurveTo(44, 20, 32, 20);
-        p.lineTo(36, 12); p.lineTo(24, 14); p.lineTo(28, 20);
-        p.quadraticCurveTo(16, 20, 14, 28);
-        p.lineTo(4, 18); p.lineTo(4, 46); p.lineTo(14, 36);
-        p.quadraticCurveTo(16, 44, 32, 44);
-        p.lineTo(28, 50); p.lineTo(36, 48); p.lineTo(32, 44);
-        p.quadraticCurveTo(44, 44, 56, 32);
+        p.moveTo(57, 31);
+        p.quadraticCurveTo(50, 20, 36, 20);
+        p.quadraticCurveTo(22, 20, 14, 27);
+        p.lineTo(4, 18);
+        p.lineTo(11, 32);
+        p.lineTo(4, 46);
+        p.lineTo(14, 37);
+        p.quadraticCurveTo(22, 44, 36, 44);
+        p.quadraticCurveTo(50, 44, 57, 31);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(23, 21); g.quadraticCurveTo(30, 9, 41, 22); g.closePath(); g.fill(); g.stroke();
+        };
+        front = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(30, 35); g.quadraticCurveTo(23, 44, 36, 42); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 47, y: 28, r: 3 };
     }
 
-    // --- 3. Draw the Body (Using the saved 'p') ---
+    // --- 3. Draw ---
+    ctx.lineJoin = 'round';
+
+    if (behind) { ctx.save(); behind(ctx); ctx.restore(); }
+
     ctx.fillStyle = fillStyle;
-    if (hasGlow) {
-        ctx.shadowColor = strokeStyle;
-        ctx.shadowBlur = rarity === 'Legendary' ? 15 : 8;
-    }
     ctx.fill(p);
-    ctx.shadowBlur = 0;
 
-    // --- 4. Apply Effects (Scales, etc) ---
+    // --- 4. Body details (clipped to the silhouette) ---
     ctx.save();
-    ctx.clip(p); // Clip to the fish shape
+    ctx.clip(p);
 
-    // Draw Scales (FIXED: This no longer destroys the body path)
-    if (hasScales || name.includes('dragon')) {
-        ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
-        for (let y = 10; y < 60; y += 4) {
-            for (let x = 10; x < 60; x += 4) {
-                ctx.beginPath(); ctx.arc(x + (y % 8 == 0 ? 2 : 0), y, 2, 0, Math.PI); ctx.stroke();
+    // Scales
+    if (hasScales) {
+        ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 1;
+        for (let y = 8; y < 60; y += 5) {
+            for (let x = 6 + ((y / 5) % 2) * 3; x < 62; x += 6) {
+                ctx.beginPath(); ctx.arc(x, y, 2.2, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke();
             }
         }
     }
 
-    // Shine
-    if (rarity === 'Uncommon' || rarity === 'Epic') {
-        ctx.fillStyle = 'rgba(255,255,255,0.1)';
-        ctx.beginPath(); ctx.ellipse(32, 24, 15, 6, 0, 0, Math.PI * 2); ctx.fill();
+    // Name-driven patterns
+    if (name.includes('clown')) {
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        [20, 32, 44].forEach(bx => ctx.fillRect(bx, 0, 4, 64));
+    } else if (name.includes('striped')) {
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        for (let x = 12; x < 58; x += 8) ctx.fillRect(x, 0, 4, 64);
+    } else if (name.includes('spotted')) {
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        for (let i = 0; i < 16; i++) {
+            ctx.beginPath(); ctx.arc(8 + (i * 37) % 48, 10 + (i * 23) % 42, 2.4, 0, Math.PI * 2); ctx.fill();
+        }
+    } else if (name.includes('mud')) {
+        ctx.fillStyle = 'rgba(60,40,20,0.28)'; ctx.fillRect(0, 0, 64, 64);
     }
 
-    // Glitter
+    // Belly shading
+    if (eye) {
+        ctx.fillStyle = bellyCol; ctx.globalAlpha = 0.45;
+        ctx.beginPath(); ctx.ellipse(34, 40, 17, 6, -0.12, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+
+    // Sheen for uncommon / epic
+    if (sheen) {
+        ctx.fillStyle = 'rgba(255,255,255,0.14)';
+        ctx.beginPath(); ctx.ellipse(30, 22, 12, 5, -0.3, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // Glitter for legendary
     if (hasGlitter) {
         ctx.fillStyle = '#ffffff';
-        for (let i = 0; i < 10; i++) {
-            const rx = Math.random() * 64; const ry = Math.random() * 64;
-            ctx.beginPath(); ctx.arc(rx, ry, Math.random() * 1.5, 0, Math.PI * 2); ctx.fill();
+        for (let i = 0; i < 14; i++) {
+            ctx.beginPath(); ctx.arc((i * 29) % 60 + 2, (i * 17) % 60 + 2, (i % 3) * 0.6 + 0.7, 0, Math.PI * 2); ctx.fill();
         }
     }
     ctx.restore();
 
-    // --- 5. Draw Outline (Last, so it's on top) ---
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = strokeStyle;
-    ctx.stroke(p);
+    // --- 5. Outline ---
+    if (glowColor) {
+        ctx.save();
+        ctx.globalAlpha = rarity === 'Legendary' ? 0.6 : 0.4;
+        ctx.lineWidth = rarity === 'Legendary' ? 6 : 4;
+        ctx.strokeStyle = glowColor;
+        ctx.stroke(p);
+        ctx.restore();
+    }
+    ctx.lineWidth = 2; ctx.strokeStyle = OUTLINE; ctx.stroke(p);
+    if (rarity === 'Epic') { ctx.lineWidth = 1; ctx.strokeStyle = shadeColor(baseCol, 0.15); ctx.stroke(p); }
 
-    // --- 6. Draw Eyes (Overlay) ---
-    if (!name.includes('urchin') && !name.includes('ray') && !name.includes('manta')) {
-        const isSeahorse = name.includes('seahorse');
-        const eyeX = isSeahorse ? 48 : (name.includes('sword') ? 42 : 46);
-        const eyeY = isSeahorse ? 15 : 28;
+    // --- 6. Front details (fins drawn over the body) ---
+    if (front) { ctx.save(); front(ctx); ctx.restore(); }
 
-        ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(eyeX, eyeY, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(eyeX + 1, eyeY, 1, 0, Math.PI * 2); ctx.fill();
-
-        if (name.includes('crab') || name.includes('lobster') || name.includes('squid')) {
-            // Draw second eye for these types
-            const off = name.includes('squid') ? 8 : 12;
-            ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(eyeX - off, eyeY, 3, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(eyeX - off, eyeY, 1, 0, Math.PI * 2); ctx.fill();
-        }
+    // --- 7. Eyes ---
+    if (eye) {
+        ctx.lineWidth = 1;
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(eye.x, eye.y, eye.r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = OUTLINE; ctx.stroke();
+        ctx.fillStyle = '#0d0f16';
+        ctx.beginPath(); ctx.arc(eye.x + eye.r * 0.35, eye.y, eye.r * 0.5, 0, Math.PI * 2); ctx.fill();
     }
 
     const t = new THREE.CanvasTexture(c);
@@ -12075,7 +12309,7 @@ function updateLocalVisuals() {
             entry.style.display = 'flex';
             entry.style.flexDirection = 'column';
             entry.style.alignItems = 'center';
-            entry.style.justifyContent = 'center';
+            entry.style.justifyContent = 'flex-start';
             entry.style.padding = '10px';
             entry.style.gap = '5px';
 
