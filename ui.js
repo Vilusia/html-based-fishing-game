@@ -2854,8 +2854,7 @@ function createRemotePlayer(id, data) {
 
     s.userData.matFront.map = texF;
     s.userData.matBack.map = texB;
-    s.material = s.userData.matFront;
-    s.material.needsUpdate = true;
+    if (!s.userData.is3D) { s.material = s.userData.matFront; s.material.needsUpdate = true; }
 
     scene.add(group);
 
@@ -2948,8 +2947,7 @@ function updateRemotePlayer(id, data) {
         const s = p.mesh.getObjectByName('playerSprite');
         const texF = createSpeciesTexture(speciesOrParts, data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || '');
         const texB = createSpeciesTexture(speciesOrParts, data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || '');
-        s.userData.matFront.map = texF;
-        s.userData.matBack.map = texB;
+        setBodyTextures(s, texF, texB);
     }
 
     // 4. POSITION INTERPOLATION
@@ -4546,7 +4544,9 @@ function createNPCs() {
             const mesh = byType[n.type];
             if (!mesh) return;
             mesh.position.set(n.x, window.Level.sampleHeight(lv, n.x, n.z), n.z);
-            mesh.lookAt(0, mesh.position.y, 0);
+            // Face the way the editor rotated them (same convention as the
+            // editor preview: rotation.y 0 = facing world +Z).
+            mesh.rotation.y = Number(n.rot) || 0;
         });
     }
 }
@@ -5162,6 +5162,30 @@ function updateDebugUI() {
         btn.style.color = saveState.debugMode ? 'var(--p-good)' : 'var(--p-bad)';
     }
 }
+
+function updateModel3DUI() {
+    const btn = document.getElementById('btn-model3d-toggle');
+    if (btn) {
+        btn.innerText = saveState.model3D ? 'Models: 3D' : 'Models: 2D';
+    }
+}
+
+window.toggleModel3D = function () {
+    saveState.model3D = !saveState.model3D;
+    saveGame();
+    updateModel3DUI();
+
+    // Swap every character in the scene (local player, NPCs, remote players
+    // and the ghost) in place, keeping their cosmetic textures.
+    if (typeof scene !== 'undefined' && scene) {
+        const groups = new Set();
+        scene.traverse((o) => {
+            if (o.name === 'playerSprite' && o.parent) groups.add(o.parent);
+        });
+        groups.forEach(switchCharacterModel);
+    }
+    showToast(saveState.model3D ? 'Models: 3D' : 'Models: 2D');
+};
 // --- MODULAR CHARACTER DRAWING FUNCTIONS ---
 
 // Draw the base body and head (shared by all characters)
@@ -8013,19 +8037,77 @@ function createRodTexture(rodId) {
     return t;
 }
 
+// --- CHARACTER BODY MESH (2D billboard / 3D box) -------------------------
+// Both modes keep the front/back cosmetic canvases in userData.matFront /
+// userData.matBack, so every cosmetic system keeps working when the model
+// mode is toggled. The mesh is always named "playerSprite" so all existing
+// lookups (local visuals, remote players, NPCs, ghost) find it either way.
+function makeCharacterBody(tf, tb, col) {
+    const base = (typeof col === 'number') ? col : (col || '#ffffff');
+
+    if (!(typeof saveState !== 'undefined' && saveState.model3D)) {
+        const m1 = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+        const m2 = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.9375), m1);
+        mesh.name = 'playerSprite';
+        mesh.position.y = 1.46875;
+        mesh.userData = { matFront: m1, matBack: m2, is3D: false, baseColor: base };
+        return mesh;
+    }
+
+    const matF = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.2 });
+    const matB = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.2 });
+    const baseCol = new THREE.Color(base);
+    const matSide = new THREE.MeshBasicMaterial({ color: baseCol.clone().multiplyScalar(0.7) });
+    const geo = new THREE.BoxGeometry(2, 2.9375, 0.5);
+    // Box material slots: +X, -X, +Y, -Y, +Z (front), -Z (back).
+    const mesh = new THREE.Mesh(geo, [matSide, matSide, matSide, matSide, matF, matB]);
+    mesh.name = 'playerSprite';
+    mesh.position.y = 1.46875;
+    mesh.userData = { matFront: matF, matBack: matB, is3D: true, baseColor: base, sideMat: matSide };
+
+    // Solid core so transparent gaps in the sprite (between the ears, beside
+    // the head) show the body colour instead of the background.
+    const core = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 0.25), new THREE.MeshBasicMaterial({ color: baseCol }));
+    core.name = 'playerBody3D';
+    mesh.add(core);
+    return mesh;
+}
+
+// Swap just the cosmetic front/back textures. The 3D box must keep its
+// 6-material array, so it never gets a single material assigned here.
+function setBodyTextures(mesh, tf, tb) {
+    if (!mesh || !mesh.userData || !mesh.userData.matFront) return;
+    mesh.userData.matFront.map = tf;
+    mesh.userData.matBack.map = tb;
+    mesh.userData.matFront.needsUpdate = true;
+    mesh.userData.matBack.needsUpdate = true;
+    if (!mesh.userData.is3D) mesh.material = mesh.userData.matFront;
+}
+
+// Rebuild a character's body mesh in the current model mode, carrying over
+// its cosmetic textures and base colour (used by the 3D toggle).
+function switchCharacterModel(group) {
+    const old = group && group.getObjectByName('playerSprite');
+    if (!old || !old.userData || !old.userData.matFront) return;
+    const tf = old.userData.matFront.map;
+    const tb = old.userData.matBack.map;
+    const y = old.position.y, ro = old.renderOrder;
+    group.remove(old);
+    const next = makeCharacterBody(tf, tb, old.userData.baseColor);
+    next.position.y = y;
+    next.renderOrder = ro;
+    group.add(next);
+}
+
 function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species = 'cat', titleId = 'none', rodId = 'bamboo', hairId = 'none', hairColor = '') {
     const g = new THREE.Group();
 
     // Sprite Layers
-    // Sprite Layers
     const tf = createSpeciesTexture(species, col, '#ffffff', false, hatId, 'none', 'none', eyeHex, 'none', null, hairId, hairColor);
     const tb = createSpeciesTexture(species, col, '#ffffff', true, hatId, 'none', 'none', eyeHex, 'none', null, hairId, hairColor);
-    const m1 = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-    const m2 = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-    // Texture is 128x188 - match plane aspect so ears/hats aren't squashed or clipped
-    const s = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.9375), m1);
-    s.position.y = 1.46875; s.name = "playerSprite"; s.userData = { matFront: m1, matBack: m2 };
-    g.add(s);
+    const bodyMesh = makeCharacterBody(tf, tb, col);
+    g.add(bodyMesh);
 
     // Name & Title
     const ntMat = new THREE.SpriteMaterial({ map: createNameTagTexture(name), depthWrite: false, depthTest: false });
@@ -8230,6 +8312,9 @@ function resetKeybinds() {
 function updateSpriteDirection(obj, targetCamPos) {
     const sprite = obj.getObjectByName("playerSprite");
     if (!sprite || !sprite.userData.matFront) return;
+    // The 3D box shows both faces at once through its 6-material array, so
+    // swapping a single material here would flatten it back into a billboard.
+    if (sprite.userData.is3D) return;
 
     // OPTIMIZATION: Use reused vectors
     const toCam = _optVec1.copy(targetCamPos).sub(obj.position);
@@ -9443,10 +9528,7 @@ function spawnGhostMesh(x, z) {
     const texB = createSpeciesTexture('cat', '#000000', '#000000', true, 'none', 'none', 'none', '#FFFFFF');
 
     const s = ghostMesh.getObjectByName('playerSprite');
-    s.userData.matFront.map = texF;
-    s.userData.matBack.map = texB;
-    s.material = s.userData.matFront;
-    s.material.needsUpdate = true;
+    setBodyTextures(s, texF, texB);
 
     // Get terrain height for proper Y positioning
     const terrainY = (typeof getTerrainHeight === 'function') ? getTerrainHeight(x, z) : 0;
@@ -10969,6 +11051,8 @@ function loadSave() {
             if (d.unlockedTitles) saveState.unlockedTitles = d.unlockedTitles;
             if (d.currentTitle) saveState.currentTitle = d.currentTitle;
             if (d.showTitles !== undefined) saveState.showTitles = d.showTitles;
+            // Model style (2D billboard vs 3D box)
+            if (d.model3D !== undefined) saveState.model3D = !!d.model3D;
 
             // Audio
             if (d.micId) saveState.micId = d.micId;
@@ -11495,6 +11579,7 @@ window.toggleOptions = function () {
         updateMidiUI();
         updateTitleUI();
         updateDebugUI();
+        updateModel3DUI();
 
         const volSlider = document.getElementById('volume-slider');
         if (volSlider) volSlider.value = saveState.masterVolume;
@@ -11798,6 +11883,7 @@ function updateMusicUI() {
 function updateLocalVisuals() {
     if (player) {
         const s = player.getObjectByName('playerSprite');
+        if (!s || !s.userData.matFront) return;
 
         if (s.userData.matFront.map) disposeTexture(s.userData.matFront.map);
         if (s.userData.matBack.map) disposeTexture(s.userData.matBack.map);
@@ -11823,12 +11909,16 @@ function updateLocalVisuals() {
         const texF = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, false, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors, saveState.currentHair, saveState.hairColor);
         const texB = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, true, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors, saveState.currentHair, saveState.hairColor);
 
-        s.userData.matFront.map = texF;
-        s.userData.matBack.map = texB;
+        setBodyTextures(s, texF, texB);
 
-        // Force update
-        s.userData.matFront.needsUpdate = true;
-        s.userData.matBack.needsUpdate = true;
+        // Keep the 3D box's side/core colour in sync if the base colour changed.
+        if (s.userData.is3D) {
+            const bc = new THREE.Color(saveState.catColor || '#ffffff');
+            if (s.userData.sideMat) s.userData.sideMat.color.copy(bc.clone().multiplyScalar(0.7));
+            const core = s.getObjectByName('playerBody3D');
+            if (core && core.material) core.material.color.copy(bc);
+            s.userData.baseColor = saveState.catColor;
+        }
 
         // Title Update
         const oldT = player.getObjectByName('titleSprite');

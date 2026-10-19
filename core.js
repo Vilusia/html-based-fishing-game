@@ -453,6 +453,9 @@ const DEFAULT_SAVE_STATE = {
     // Debug
     debugMode: false,
 
+    // Character models: false = 2D billboards, true = 3D boxes
+    model3D: false,
+
     keybinds: { ...DEFAULT_KEYBINDS }
 };
 
