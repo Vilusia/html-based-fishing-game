@@ -9697,8 +9697,9 @@ function createBobberMesh(typeId) {
     });
     const sprite = new THREE.Sprite(mat);
 
-    // Scale: Reduced to 3.0 per user feedback
-    sprite.scale.set(3.0, 3.0, 3.0);
+    // The bobber now fills the texture (previously the art only covered ~22% of
+    // the 128px canvas), so the world scale is reduced to keep it the same size.
+    sprite.scale.set(1.0, 1.0, 1.0);
 
     return sprite;
 }
@@ -13115,59 +13116,183 @@ function updateLocalVisuals() {
         backCtx.drawImage(tempCanvas, 0, 0, 64, 94, offsetX, 0, drawW, drawH);
     }
 
+    // ------------------------------------------------------------------
+    // BOBBER SPRITES
+    // Everything is authored on a 64x64 design grid and scaled by `u` so the
+    // shop icon (64px) and the in-world billboard (128px) look identical.
+    // Each bobber gets a dark outline + top light so it reads against water.
+    // ------------------------------------------------------------------
     window.drawBobberIcon = function drawBobberIcon(ctx, type, size) {
-        const cx = size / 2, cy = size / 2;
+        const u = size / 64;
+        const OUT = '#0f1219';
+        const c = (type.color >>> 0);
+        const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+        const col = `rgb(${r},${g},${b})`;
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const dark = `rgb(${(r * 0.5) | 0},${(g * 0.5) | 0},${(b * 0.5) | 0})`;
+        const light = `rgb(${Math.min(255, r + 95)},${Math.min(255, g + 95)},${Math.min(255, b + 95)})`;
+        const stemCol = lum < 70 ? '#cfd8e3' : dark;
 
-        if (type.model === 'duck') {
-            ctx.fillStyle = '#ffdd00';
-            ctx.beginPath(); ctx.arc(cx, cy + 5, 12, 0, Math.PI * 2); ctx.fill(); // Body
-            ctx.beginPath(); ctx.arc(cx - 5, cy - 8, 9, 0, Math.PI * 2); ctx.fill(); // Head
-            ctx.fillStyle = '#ffaa00';
-            // Bigger Beak
-            ctx.beginPath(); ctx.moveTo(cx - 12, cy - 8); ctx.lineTo(cx - 24, cy - 5); ctx.lineTo(cx - 12, cy - 11); ctx.fill();
-            ctx.fillStyle = 'black';
-            ctx.beginPath(); ctx.arc(cx - 8, cy - 10, 2, 0, Math.PI * 2); ctx.fill(); // Eye
+        const X = v => v * u;
+        const circ = (x, y, rad, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(X(x), X(y), X(rad), 0, Math.PI * 2); ctx.fill(); };
+        const ring = (x, y, rad, fill, w) => { ctx.strokeStyle = fill; ctx.lineWidth = X(w); ctx.beginPath(); ctx.arc(X(x), X(y), X(rad), 0, Math.PI * 2); ctx.stroke(); };
+        const elli = (x, y, rx, ry, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.ellipse(X(x), X(y), X(rx), X(ry), 0, 0, Math.PI * 2); ctx.fill(); };
+        const poly = (pts, fill) => { ctx.fillStyle = fill; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(X(p[0]), X(p[1])) : ctx.moveTo(X(p[0]), X(p[1]))); ctx.closePath(); ctx.fill(); };
+        const path = (pts) => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(X(p[0]), X(p[1])) : ctx.moveTo(X(p[0]), X(p[1]))); ctx.closePath(); };
+        const rdp = (x, y, w, h, rad) => {
+            rad = Math.min(rad, w / 2, h / 2);
+            ctx.beginPath();
+            ctx.moveTo(X(x + rad), X(y));
+            ctx.lineTo(X(x + w - rad), X(y));
+            ctx.quadraticCurveTo(X(x + w), X(y), X(x + w), X(y + rad));
+            ctx.lineTo(X(x + w), X(y + h - rad));
+            ctx.quadraticCurveTo(X(x + w), X(y + h), X(x + w - rad), X(y + h));
+            ctx.lineTo(X(x + rad), X(y + h));
+            ctx.quadraticCurveTo(X(x), X(y + h), X(x), X(y + h - rad));
+            ctx.lineTo(X(x), X(y + rad));
+            ctx.quadraticCurveTo(X(x), X(y), X(x + rad), X(y));
+            ctx.closePath();
+        };
+        const rrect = (x, y, w, h, rad, fill) => { rdp(x, y, w, h, rad); ctx.fillStyle = fill; ctx.fill(); };
+        const spark = (x, y, s, fill) => {
+            ctx.strokeStyle = fill; ctx.lineWidth = Math.max(1, X(1.6)); ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(X(x - s), X(y)); ctx.lineTo(X(x + s), X(y));
+            ctx.moveTo(X(x), X(y - s)); ctx.lineTo(X(x), X(y + s));
+            ctx.moveTo(X(x - s * 0.6), X(y - s * 0.6)); ctx.lineTo(X(x + s * 0.6), X(y + s * 0.6));
+            ctx.moveTo(X(x + s * 0.6), X(y - s * 0.6)); ctx.lineTo(X(x - s * 0.6), X(y + s * 0.6));
+            ctx.stroke();
+        };
+
+        // Shared 3D "fishing float" body (stem + ball + shading).
+        const drawFloat = (bodyCol, stem, ballY, ballR) => {
+            rrect(29.5, 8, 5, ballY - 12, 2.5, stem);
+            circ(32, 7.5, 3.6, stem);
+            circ(32, ballY, ballR + 2, OUT);
+            circ(32, ballY, ballR, bodyCol);
+            ctx.save();
+            ctx.beginPath(); ctx.arc(X(32), X(ballY), X(ballR), 0, Math.PI * 2); ctx.clip();
+            ctx.fillStyle = 'rgba(255,255,255,0.16)';               // lit top
+            ctx.fillRect(0, 0, X(64), X(ballY));
+            ctx.fillStyle = 'rgba(0,0,0,0.22)';                     // shaded bottom
+            ctx.fillRect(0, X(ballY), X(64), X(64 - ballY));
+            ctx.restore();
+            circ(25, ballY - 8, 6.2, 'rgba(255,255,255,0.5)');
+            circ(23, ballY - 10, 3, 'rgba(255,255,255,0.8)');
+        };
+
+        ctx.save();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        const id = type.id || '';
+        const model = type.model || 'sphere';
+
+        if (id === 'duck') {
+            elli(32, 56, 15, 3.5, 'rgba(0,0,0,0.14)');                    // water shadow
+            poly([[26, 41], [15, 33], [27, 48]], OUT);                    // tail
+            poly([[26.5, 42], [17.5, 35], [27, 47]], '#ffd400');
+            elli(40, 44, 18, 13, OUT);                                    // body
+            elli(40, 44, 16, 11.2, '#ffd400');
+            elli(43, 45, 7.5, 6, '#ffc400');                              // wing
+            circ(29, 25, 12, OUT);                                        // head
+            circ(29, 25, 10.4, '#ffd400');
+            poly([[20, 22], [7, 25.5], [20, 29]], OUT);                   // beak
+            poly([[19.5, 23], [9.5, 25.5], [19.5, 28]], '#ff9f1a');
+            circ(26, 22, 2.6, '#141922');                                 // eye
+            circ(27, 20.6, 0.9, '#ffffff');
         }
-        else if (type.model === 'cube') {
-            ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
-            ctx.fillRect(cx - 12, cy - 12, 24, 24);
-            ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.strokeRect(cx - 12, cy - 12, 24, 24);
+        else if (model === 'cube') {
+            const top = [[32, 15], [50, 25], [32, 35], [14, 25]];
+            const left = [[14, 25], [32, 35], [32, 56], [14, 46]];
+            const right = [[50, 25], [32, 35], [32, 56], [50, 46]];
+            poly(top, light); poly(left, col); poly(right, dark);
+            ctx.strokeStyle = OUT; ctx.lineWidth = X(2.4);
+            path(top); ctx.stroke(); path(left); ctx.stroke(); path(right); ctx.stroke();
+            poly([[32, 18], [45.5, 25.5], [32, 33], [18.5, 25.5]], 'rgba(255,255,255,0.18)');
         }
-        else if (type.model === 'heart') {
-            ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
-            ctx.font = '32px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText('❤', cx, cy + 2);
+        else if (model === 'heart') {
+            const s = 17, hx = 32, hy = 37;
+            const p = (px, py) => [hx + px * s, hy + py * s];
+            const heart = () => {
+                ctx.beginPath();
+                const a = p(0, 0.92);
+                ctx.moveTo(X(a[0]), X(a[1]));
+                const c1 = p(-1.45, -0.15), c2 = p(-0.95, -1.28), c3 = p(0, -0.48);
+                const c4 = p(0.95, -1.28), c5 = p(1.45, -0.15);
+                ctx.bezierCurveTo(X(c1[0]), X(c1[1]), X(c2[0]), X(c2[1]), X(c3[0]), X(c3[1]));
+                ctx.bezierCurveTo(X(c4[0]), X(c4[1]), X(c5[0]), X(c5[1]), X(a[0]), X(a[1]));
+                ctx.closePath();
+            };
+            heart();
+            ctx.strokeStyle = OUT; ctx.lineWidth = X(3.4); ctx.stroke();
+            ctx.fillStyle = col; ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            ctx.beginPath(); ctx.ellipse(X(24), X(28), X(4), X(6), -0.5, 0, Math.PI * 2); ctx.fill();
         }
-        else if (type.model === 'star') {
-            ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
-            ctx.font = '32px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText('★', cx, cy + 2);
+        else if (model === 'star') {
+            const pts = [];
+            for (let i = 0; i < 10; i++) {
+                const a = -Math.PI / 2 + i * Math.PI / 5;
+                const rr = i % 2 ? 8.4 : 20;
+                pts.push([32 + Math.cos(a) * rr, 37 + Math.sin(a) * rr]);
+            }
+            path(pts);
+            ctx.strokeStyle = OUT; ctx.lineWidth = X(3.2); ctx.stroke();
+            ctx.fillStyle = col; ctx.fill();
+            circ(28, 29, 2.6, 'rgba(255,255,255,0.55)');
         }
-        else if (type.model === 'skull') {
-            ctx.fillStyle = '#ddd';
-            ctx.beginPath(); ctx.arc(cx, cy - 4, 11, 0, Math.PI * 2); ctx.fill(); // Head
-            ctx.fillRect(cx - 6, cy + 5, 12, 7); // Jaw
-            ctx.fillStyle = '#111';
-            // Big Sockets
-            ctx.beginPath(); ctx.arc(cx - 4, cy - 4, 4, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(cx + 4, cy - 4, 4, 0, Math.PI * 2); ctx.fill();
-            // Nose
-            ctx.beginPath(); ctx.moveTo(cx, cy + 2); ctx.lineTo(cx - 2, cy + 5); ctx.lineTo(cx + 2, cy + 5); ctx.fill();
+        else if (model === 'skull') {
+            circ(32, 31, 18, OUT); circ(32, 31, 16, '#e9edf2');           // cranium
+            rrect(22, 42, 20, 12, 5, OUT);
+            rrect(23.2, 43.2, 17.6, 9.6, 4, '#e9edf2');                   // jaw
+            circ(25, 30, 6, OUT); circ(25, 30, 5, '#141922');             // sockets
+            circ(39, 30, 6, OUT); circ(39, 30, 5, '#141922');
+            poly([[32, 33.5], [28.8, 40], [35.2, 40]], OUT);              // nose
+            ctx.strokeStyle = OUT; ctx.lineWidth = X(1.5);
+            [28, 32, 36].forEach(x => { ctx.beginPath(); ctx.moveTo(X(x), X(43)); ctx.lineTo(X(x), X(51)); ctx.stroke(); });
+            circ(25, 22, 4, 'rgba(255,255,255,0.55)');
+        }
+        else if (id === 'pumpkin') {
+            rrect(29.5, 14, 5, 9, 2, '#4f7a26');                          // stem
+            circ(32, 39, 20, OUT); circ(32, 39, 18, '#ff8a1e');
+            ctx.strokeStyle = 'rgba(150,64,0,0.5)'; ctx.lineWidth = X(1.7);
+            [[25, 4.5], [32, 5.8], [39, 4.5]].forEach(e => {
+                ctx.beginPath(); ctx.ellipse(X(e[0]), X(39), X(e[1]), X(17), 0, 0, Math.PI * 2); ctx.stroke();
+            });
+            circ(24, 31, 5, 'rgba(255,255,255,0.35)');
+        }
+        else if (id === 'bomb') {
+            ctx.strokeStyle = '#c9a227'; ctx.lineWidth = X(3);            // fuse
+            ctx.beginPath(); ctx.moveTo(X(33), X(22)); ctx.quadraticCurveTo(X(41), X(9), X(48), X(13)); ctx.stroke();
+            spark(48, 12, 4.5, '#ff8a1e');
+            circ(48.5, 12.5, 2.6, '#ffe08a');
+            rrect(28.5, 20, 7, 9, 2.5, OUT); rrect(29.6, 21, 4.8, 7.5, 2, '#4a5058'); // neck
+            circ(32, 41, 18, OUT); circ(32, 41, 16.3, col);
+            ring(32, 41, 16.3, 'rgba(255,255,255,0.28)', 1.4);
+            circ(25, 34, 5, 'rgba(255,255,255,0.22)');
+        }
+        else if (id === 'gold') {
+            rrect(29.5, 8, 5, 16, 2.5, '#8a6d1f');
+            circ(32, 7.5, 3.6, '#ffe08a');
+            circ(32, 37, 20, OUT); circ(32, 37, 18, '#ffd23f');
+            const grad = ctx.createRadialGradient(X(26), X(30), X(1), X(30), X(34), X(26));
+            grad.addColorStop(0, 'rgba(255,255,255,0.85)');
+            grad.addColorStop(0.35, 'rgba(255,240,150,0.35)');
+            grad.addColorStop(1, 'rgba(120,80,0,0.35)');
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(X(32), X(37), X(17.6), 0, Math.PI * 2); ctx.fill();
+            ring(32, 37, 18, 'rgba(255,255,255,0.55)', 1.4);
+            spark(19, 48, 4.5, '#fff3b0');
+            spark(46, 24, 3.4, '#fff3b0');
         }
         else {
-            // Sphere
-            ctx.fillStyle = '#' + type.color.toString(16).padStart(6, '0');
-            ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.fill();
-            // Shine
-            ctx.fillStyle = 'rgba(255,255,255,0.4)';
-            ctx.beginPath(); ctx.arc(cx - 5, cy - 5, 5, 0, Math.PI * 2); ctx.fill();
-
-            if (type.metallic) {
-                ctx.strokeStyle = 'rgba(255,255,200,0.5)';
-                ctx.lineWidth = 2;
-                ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI * 2); ctx.stroke();
-            }
+            // Classic fishing float (all the solid-colour bobbers)
+            drawFloat(col, stemCol, 37, 18);
+            if (lum < 70) ring(32, 37, 18, 'rgba(255,255,255,0.32)', 1.4);
         }
+
+        ctx.restore();
     }
 
     window.renderShop = function renderShop() {
