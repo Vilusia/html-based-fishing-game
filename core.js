@@ -18,6 +18,11 @@
 })();
 // --- CORE GAME CONFIGURATION ---
 const GAME_VERSION = "v12.31";
+
+// Save-file schema version. Bump whenever a change can't be read by older
+// code, and add a matching step in migrateSave() (ui.js). Kept separate from
+// GAME_VERSION so a routine content update doesn't force a migration.
+const SAVE_VERSION = 2;
 const MAX_VOICE_DISTANCE = 50;
 
 // --- MODULAR CHARACTER PART TYPES ---
@@ -456,6 +461,13 @@ const DEFAULT_SAVE_STATE = {
     oreInventory: {},   // e.g. { stone: 5, copper: 2 }
     woodInventory: {},  // e.g. { wood: 10, oak: 3 }
     flowerInventory: {}, // e.g. { daisy: 20, rose: 5 }
+
+    // Progression (achievements / daily bounties / quests) — see progression.js
+    saveVersion: 2,
+    achievements: {},       // { [id]: { unlocked: true, at: ts } }
+    bounties: { day: '', items: [] },
+    quests: { index: 0, completed: [] },
+    propsPlaced: 0,         // Lifetime prop placements (props themselves aren't saved)
 
     // Debug
     debugMode: false,

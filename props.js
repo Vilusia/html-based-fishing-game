@@ -145,6 +145,12 @@ function placeProp(type) {
                 rot // Send rotation to host
             });
         }
+
+        // Progression: count placements for the "Decorator" achievement. Props
+        // are session-scoped, so the count lives in the save rather than being
+        // derived from the scene.
+        saveState.propsPlaced = (Number(saveState.propsPlaced) || 0) + 1;
+        if (typeof notifyPropPlaced === 'function') notifyPropPlaced();
     }
 }
 

@@ -960,6 +960,15 @@ function updateVoiceVisuals() {
 // --- GAME INITIALIZATION & LOBBY ---
 window.onload = function () {
     loadSave();
+    // Seed the progression counters (daily bounties, money baseline, and any
+    // achievements the save already qualifies for) before the first frame.
+    if (typeof ensureProgression === 'function') {
+        ensureProgression();
+        ensureBounties();
+        progressionTrackMoney();
+        checkAchievements(true);
+        checkQuests(true);
+    }
     checkMobile();
     document.getElementById('loading').style.display = 'none';
     document.getElementById('lobby-screen').style.display = 'flex';
@@ -1668,8 +1677,13 @@ function connectToDedicatedServer(customUrl = null) {
 
             // Update journal with tier (fallback to 'normal' if undefined)
             const tierId = fish.tierId || 'normal';
+            const wasNewSpecies = !saveState.journal[fish.name];
             updateJournal(fish, tierId);
             saveGame();
+
+            if (typeof notifyFishCaught === 'function') {
+                notifyFishCaught(fish, wasNewSpecies);
+            }
 
             // Show UI with tier and size info
             const tierStr = tierId !== 'normal' ? ` (${fish.tierName || 'Special'})` : '';
@@ -10412,6 +10426,7 @@ function stopFishing(success, msg) {
 
         if (minigame.targetFish) {
             broadcastSound('catch');
+            const wasNewSpecies = !saveState.journal[minigame.targetFish.name];
             saveState.inventory.push(minigame.targetFish);
             updateJournal(minigame.targetFish, minigame.targetFish.tierId);
 
@@ -10426,6 +10441,11 @@ function stopFishing(success, msg) {
             addSkillXP('fishing', fishingXPGain);
 
             saveGame();
+
+            // Progression: bounties, achievements, quests.
+            if (typeof notifyFishCaught === 'function') {
+                notifyFishCaught(minigame.targetFish, wasNewSpecies);
+            }
 
             const tierStr = minigame.targetFish.tierId !== 'normal' ? ` (${minigame.targetFish.tierName})` : '';
             const sizeStr = minigame.targetFish.sizeLabel ? ` [${minigame.targetFish.sizeLabel}]` : '';
@@ -11924,6 +11944,7 @@ function chopTree(index, fromNetwork = false) {
         addSkillXP('lumberjack', woodType.xp);
 
         saveGame();
+        if (typeof notifyResourceGathered === 'function') notifyResourceGathered('chop', 1);
         showToast(`Chopped Tree! (+1 ${woodType.name}, +${woodType.xp} XP)`);
 
         // Broadcast to others
@@ -12038,6 +12059,7 @@ function mineRock(index, fromNetwork = false) {
         addSkillXP('mining', oreType.xp);
 
         saveGame();
+        if (typeof notifyResourceGathered === 'function') notifyResourceGathered('mine', 1);
         showToast(`Mined Rock! (+1 ${oreType.name}, +${oreType.xp} XP)`);
 
         // Reset Health
@@ -12094,6 +12116,23 @@ function respawnRock(index) {
 function mulberry32(a) { return function () { var t = a += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; } }
 function xmur3(str) { for (var i = 0, h = 1779033703 ^ str.length; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 3432918353), h = h << 13 | h >>> 19; return function () { h = Math.imul(h ^ h >>> 16, 2246822507); h = Math.imul(h ^ h >>> 13, 3266489909); return (h ^= h >>> 16) >>> 0; } }
 
+
+// Brings an older save up to SAVE_VERSION. Each branch is additive: it never
+// discards player data, only fills in or repairs fields newer code expects.
+// The old version is passed in because older saves have no saveVersion at all.
+function migrateSave(fromVersion) {
+    const from = Number(fromVersion) || 1;
+    if (from >= SAVE_VERSION) return;
+
+    if (from < 2) {
+        // v1 -> v2: progression systems arrived. Give the player a clean slate
+        // rather than fabricating achievements they may not deserve; the next
+        // checkAchievements() pass will award anything already earned.
+        ensureProgression();
+    }
+
+    saveState.saveVersion = SAVE_VERSION;
+}
 
 function loadSave() {
     const s = localStorage.getItem('islandFisherSave');
@@ -12244,8 +12283,19 @@ function loadSave() {
             if (d.keybinds) {
                 saveState.keybinds = { ...DEFAULT_KEYBINDS, ...d.keybinds };
             }
+
+            // Progression (achievements / bounties / quests)
+            if (d.achievements && typeof d.achievements === 'object') saveState.achievements = d.achievements;
+            if (d.bounties && typeof d.bounties === 'object') saveState.bounties = d.bounties;
+            if (d.quests && typeof d.quests === 'object') saveState.quests = d.quests;
+            if (typeof d.saveVersion === 'number') saveState.saveVersion = d.saveVersion;
+            if (typeof d.propsPlaced === 'number') saveState.propsPlaced = d.propsPlaced;
+
+            migrateSave(d.saveVersion);
         } catch (e) { console.error("Save Load Error", e); }
     }
+    // Even with no stored save we still want progression containers present.
+    if (typeof ensureProgression === 'function') ensureProgression();
 
     // Sync visual elements
     if (masterGain) masterGain.gain.value = saveState.masterVolume;
@@ -12362,6 +12412,11 @@ function saveGame() {
     } catch (e) {
         console.warn("Save failed", e);
     }
+
+    // Progression: detect income for the "earn gold" bounty. saveGame() runs
+    // after every sale, so watching the delta here covers all the sell paths
+    // without touching each one.
+    if (typeof progressionTrackMoney === 'function') progressionTrackMoney();
 }
 
 function updateWeatherVisuals() {
@@ -13255,7 +13310,9 @@ function updateLocalVisuals() {
             }
 
             let html = `<div class="journal-name" style="color:${isCaught ? fish.color : 'var(--p-text-mute)'}; font-size:15px; text-align:center;">${isCaught ? fish.name : "???"}</div>`;
-            html += `<div class="journal-rarity" style="font-size:14px; color:var(--p-text-mute);">${fish.rarity}</div>`;
+            // Undiscovered entries hide their rarity too, so the journal doesn't
+            // spoil which unknown fish are the rare ones before you find them.
+            html += `<div class="journal-rarity" style="font-size:14px; color:var(--p-text-mute);">${isCaught ? fish.rarity : 'Undiscovered'}</div>`;
 
             const textContainer = document.createElement('div');
             textContainer.innerHTML = html;
@@ -15564,6 +15621,7 @@ function pickFlower(index, fromNetwork = false) {
         addSkillXP('floristry', flowerType.xp);
 
         saveGame();
+        if (typeof notifyResourceGathered === 'function') notifyResourceGathered('flower', 1);
         showToast(`+1 ${flowerType.name} (+${flowerType.xp} XP)`);
 
         // Broadcast to others
