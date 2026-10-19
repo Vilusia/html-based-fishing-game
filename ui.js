@@ -3042,13 +3042,7 @@ function updateRemotePlayer(id, data) {
     if (data.guitar === true) {
         if (!guitar) {
             // ... (keep your existing guitar creation code) ...
-            const c = document.createElement('canvas'); c.width = 64; c.height = 64; const ctx = c.getContext('2d');
-            ctx.fillStyle = '#8B4513'; ctx.beginPath(); ctx.arc(32, 45, 12, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(32, 35, 10, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = '#222'; ctx.fillRect(30, 10, 4, 30);
-            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(32, 40, 4, 0, Math.PI * 2); ctx.fill();
-            const tex = new THREE.CanvasTexture(c);
-            tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+            const tex = createGuitarTexture();
             const mat = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5 });
             guitar = new THREE.Sprite(mat); guitar.name = 'guitarMesh'; guitar.position.set(0.3, 1.25, 0.2); guitar.scale.set(1.5, 1.5, 1); p.mesh.add(guitar);
         }
@@ -3061,10 +3055,7 @@ function updateRemotePlayer(id, data) {
     else if (data.glove === true) {
         if (!glove) {
             // ... (keep your existing glove creation code) ...
-            const c = document.createElement('canvas'); c.width = 64; c.height = 64; const ctx = c.getContext('2d');
-            ctx.fillStyle = '#cc0000'; ctx.beginPath(); ctx.arc(32, 32, 20, 0, Math.PI * 2); ctx.fill();
-            const tex = new THREE.CanvasTexture(c);
-            tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+            const tex = createGloveTexture();
             const mat = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5 });
             glove = new THREE.Sprite(mat); glove.name = 'gloveMesh'; glove.position.set(0.6, 1.25, 0.5); glove.scale.set(1.2, 1.2, 1); p.mesh.add(glove);
         }
@@ -11215,39 +11206,57 @@ function selectTool(index) {
     saveGame();
 }
 
-// --- HELPER: AXE TEXTURE ---
-function createAxeTexture() {
-    const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+// --- PIXEL-ART TOOL SPRITE HELPER ---
+// Renders a 16x16 pixel-art grid (array of 16-char strings) into a crisp 64x64
+// canvas texture. '.' (or a space) is transparent; palette maps chars to colors.
+// Using hard rectangles + NearestFilter keeps the tools sharp and 8-bit looking
+// instead of blurry anti-aliased vector art.
+function makeToolTexture(rows, palette) {
+    const S = 4, W = 16, H = 16;
+    const c = document.createElement('canvas');
+    c.width = W * S; c.height = H * S; // 64x64
     const ctx = c.getContext('2d');
-
-    // Handle (Diagonal)
-    ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(10, 54); ctx.lineTo(54, 10); ctx.stroke();
-
-    // Axe Head
-    ctx.fillStyle = '#aaa';
-    ctx.beginPath();
-    // Blade shape
-    ctx.moveTo(54, 10);
-    ctx.quadraticCurveTo(40, 0, 30, 10); // Top curve
-    ctx.lineTo(20, 20); // Edge
-    ctx.quadraticCurveTo(40, 30, 54, 10);
-    ctx.fill();
-
-    // Blade Edge
-    ctx.strokeStyle = '#ddd';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(20, 20);
-    ctx.quadraticCurveTo(25, 15, 30, 10);
-    ctx.stroke();
-
+    for (let y = 0; y < H && y < rows.length; y++) {
+        const row = rows[y];
+        for (let x = 0; x < W && x < row.length; x++) {
+            const col = palette[row[x]];
+            if (!col) continue;
+            ctx.fillStyle = col;
+            ctx.fillRect(x * S, y * S, S, S);
+        }
+    }
     const t = new THREE.CanvasTexture(c);
     t.magFilter = THREE.NearestFilter;
     t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false;
     return t;
+}
+
+// --- HELPER: AXE TEXTURE ---
+function createAxeTexture() {
+    const P = {
+        w: '#7a4a1f', W: '#a9773f', d: '#4a2b10', // wooden handle
+        s: '#9aa4b0', S: '#c9d3de', g: '#5c6672', e: '#eef3f9' // steel head
+    };
+    const rows = [
+        '................',
+        '................',
+        '..........gsss..',
+        '.........gSSSSg.',
+        '........eSSSSSg.',
+        '.......eSSSSSg..',
+        '......eSSSSSg...',
+        '.....eSSSSg.....',
+        '.....eg.wW......',
+        '.......wW.......',
+        '......wW........',
+        '.....wW.........',
+        '....wW..........',
+        '...wW...........',
+        '..dwW...........',
+        '.dwW............'
+    ];
+    return makeToolTexture(rows, P);
 }
 
 function equipAxe() {
@@ -11275,33 +11284,31 @@ function equipAxe() {
 }
 
 function createPickaxeTexture() {
-    const c = document.createElement('canvas'); c.width = 64; c.height = 64;
-    const ctx = c.getContext('2d');
-
-    // Handle (Diagonal)
-    ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(10, 54); ctx.lineTo(54, 10); ctx.stroke();
-
-    // Pickaxe Head (Curved Arc)
-    ctx.strokeStyle = '#555'; // Dark Grey
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    // Arc across the top
-    ctx.moveTo(35, 5);
-    ctx.quadraticCurveTo(54, 10, 60, 25); // Right point
-    ctx.moveTo(35, 5);
-    ctx.quadraticCurveTo(25, 15, 20, 25); // Left point (shorter?)
-    // Actually let's draw a nice pick shape
-    ctx.moveTo(15, 25);
-    ctx.quadraticCurveTo(34, 0, 55, 15);
-    ctx.stroke();
-
-    const t = new THREE.CanvasTexture(c);
-    t.magFilter = THREE.NearestFilter;
-    t.minFilter = THREE.NearestFilter;
-    return t;
+    const P = {
+        w: '#7a4a1f', W: '#a9773f', d: '#4a2b10', // wooden handle
+        s: '#9aa4b0', S: '#c9d3de', g: '#5c6672', e: '#eef3f9' // steel head
+    };
+    // Handle runs up-right; the double-ended pick head sits across the top,
+    // perpendicular to the handle, tapering to sharp points at both ends.
+    const rows = [
+        '....e...........',
+        '.....gs.........',
+        '.....gSs........',
+        '......gSs.......',
+        '.......gSs......',
+        '........gSs.....',
+        '.........gSs....',
+        '.........wWgs...',
+        '........wW.gSs..',
+        '.......wW...gSs.',
+        '......wW.....gSe',
+        '.....wW........e',
+        '....wW..........',
+        '...wW...........',
+        '..dwW...........',
+        '.dwW............'
+    ];
+    return makeToolTexture(rows, P);
 }
 
 function equipPickaxe() {
@@ -11322,6 +11329,71 @@ function equipPickaxe() {
         player.add(pick);
     }
     pick.visible = true;
+}
+
+// --- HELPER: GUITAR TEXTURE ---
+function createGuitarTexture() {
+    const P = {
+        h: '#241a12', // headstock / tuning pegs
+        a: '#d9c48a', // peg highlight
+        n: '#3a2a19', // neck
+        N: '#5a4230', // neck highlight
+        s: '#e8e8e8', // string
+        b: '#7a4a22', // body
+        B: '#a9743c', // body highlight
+        d: '#4a2b12', // body shadow
+        k: '#160d06'  // sound hole
+    };
+    const rows = [
+        '......hhhh......',
+        '.....hhnnhh.....',
+        '.......sN.......',
+        '.......sN.......',
+        '.......sN.......',
+        '.......sN.......',
+        '.......sN.......',
+        '......bBBb......',
+        '....bBBBBBBb....',
+        '...bBBBkkBBBb...',
+        '...bBBBkkBBBb...',
+        '...bBBBBBBBBb...',
+        '...bBBBBBBBBb...',
+        '....bBBBBBBb....',
+        '.....bBBBBb.....',
+        '......dBBd......'
+    ];
+    return makeToolTexture(rows, P);
+}
+
+// --- HELPER: BOXING GLOVE TEXTURE ---
+function createGloveTexture() {
+    const P = {
+        k: '#3a0d0d', // outline
+        r: '#c62828', // glove red
+        R: '#ef5350', // highlight
+        d: '#8e1c1c', // shadow / thumb crease
+        c: '#f2f2f2', // cuff
+        g: '#c9c9c9'  // cuff shadow
+    };
+    const rows = [
+        '................',
+        '.....kkkkkk.....',
+        '....krrrrrrk....',
+        '..kkrrRrrrrrk...',
+        '..krrrRrrrrrrk..',
+        '.kkrrrrrrrrrrk..',
+        'kkdrrrrrrrrrrk..',
+        'kkddrrrrrrrrrk..',
+        '.kkdrrrrrrrrrk..',
+        '..kkkrrrrrrrk...',
+        '...kkkgccckkk...',
+        '......kcccck....',
+        '......kcccck....',
+        '......kcccck....',
+        '......kkkkkk....',
+        '................'
+    ];
+    return makeToolTexture(rows, P);
 }
 
 function performChop() {
@@ -13879,16 +13951,7 @@ function updateLocalVisuals() {
         let guitarMesh = player.getObjectByName('guitarMesh');
         if (isGuitarActive) {
             if (!guitarMesh) {
-                const c = document.createElement('canvas'); c.width = 64; c.height = 64;
-                const ctx = c.getContext('2d');
-                ctx.fillStyle = '#8B4513'; ctx.beginPath(); ctx.arc(32, 45, 12, 0, Math.PI * 2); ctx.fill();
-                ctx.beginPath(); ctx.arc(32, 35, 10, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = '#222'; ctx.fillRect(30, 10, 4, 30);
-                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(32, 40, 4, 0, Math.PI * 2); ctx.fill();
-
-                const tex = new THREE.CanvasTexture(c);
-                tex.magFilter = THREE.NearestFilter;
-                tex.minFilter = THREE.NearestFilter;
+                const tex = createGuitarTexture();
 
                 // --- FIX: AlphaTest added ---
                 const mat = new THREE.SpriteMaterial({
@@ -13949,15 +14012,7 @@ function updateLocalVisuals() {
         let gloveMesh = player.getObjectByName('gloveMesh');
         if (isGloveActive) {
             if (!gloveMesh) {
-                const c = document.createElement('canvas'); c.width = 64; c.height = 64;
-                const ctx = c.getContext('2d');
-                ctx.fillStyle = '#cc0000'; ctx.beginPath(); ctx.arc(32, 32, 20, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = '#990000'; ctx.beginPath(); ctx.arc(20, 40, 10, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = '#fff'; ctx.fillRect(35, 20, 10, 2); ctx.fillRect(35, 25, 10, 2); ctx.fillRect(35, 30, 10, 2);
-
-                const tex = new THREE.CanvasTexture(c);
-                tex.magFilter = THREE.NearestFilter;
-                tex.minFilter = THREE.NearestFilter;
+                const tex = createGloveTexture();
 
                 // --- FIX: AlphaTest added ---
                 const mat = new THREE.SpriteMaterial({
