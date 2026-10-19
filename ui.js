@@ -5100,29 +5100,6 @@ function updateDebugUI() {
     }
 }
 
-function updateModel3DUI() {
-    const btn = document.getElementById('btn-model3d-toggle');
-    if (btn) {
-        btn.innerText = saveState.model3D ? 'Models: 3D' : 'Models: 2D';
-    }
-}
-
-window.toggleModel3D = function () {
-    saveState.model3D = !saveState.model3D;
-    saveGame();
-    updateModel3DUI();
-
-    // Swap every character in the scene (local player, NPCs, remote players
-    // and the ghost) in place, keeping their cosmetic textures.
-    if (typeof scene !== 'undefined' && scene) {
-        const groups = new Set();
-        scene.traverse((o) => {
-            if (o.name === 'playerSprite' && o.parent) groups.add(o.parent);
-        });
-        groups.forEach(switchCharacterModel);
-    }
-    showToast(saveState.model3D ? 'Models: 3D' : 'Models: 2D');
-};
 // --- MODULAR CHARACTER DRAWING FUNCTIONS ---
 
 // Draw the base body and head (shared by all characters)
@@ -8208,49 +8185,32 @@ function createRodTexture(rodId) {
     return t;
 }
 
-// --- CHARACTER BODY (2D billboard / real 3D model) -----------------------
+// --- CHARACTER BODY (2D billboard) ---------------------------------------
 // The body is always named "playerSprite" so every existing lookup keeps
-// working.  In 2D mode it is a cosmetic-textured plane; in 3D mode it is a
-// real Character3D group built by character3d.js.  userData.cfg stores the
-// cosmetic config so the model can be rebuilt in either mode (incl. the
-// 2D<->3D toggle).
+// working.  It is a cosmetic-textured plane; userData.cfg stores the cosmetic
+// config so the body can be rebuilt (e.g. when cosmetics change).
 function makeCharacterBody(cfg) {
     cfg = cfg || {};
     const base = (cfg.color != null) ? cfg.color : '#ffffff';
     const belly = (cfg.belly != null && cfg.belly !== '') ? cfg.belly : base;
 
-    if (!(typeof saveState !== 'undefined' && saveState.model3D)) {
-        const useParts = !!(cfg.ears || cfg.eyes || cfg.nose || cfg.tail || cfg.misc);
-        const parts = useParts
-            ? { ears: cfg.ears || 'none', eyes: cfg.eyes || 'standard', nose: cfg.nose || 'cat', misc: cfg.misc || 'none', tail: cfg.tail || 'none' }
-            : (cfg.species || 'cat');
-        const pc = {
-            earsColor: cfg.earsColor || '', noseColor: cfg.noseColor || '',
-            miscColor: cfg.miscColor || '', tailColor: cfg.tailColor || ''
-        };
-        const tf = createSpeciesTexture(parts, base, belly, false, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
-        const tb = createSpeciesTexture(parts, base, belly, true, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
-        const m1 = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-        const m2 = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.9375), m1);
-        mesh.name = 'playerSprite';
-        mesh.position.y = 1.46875;
-        mesh.userData = { matFront: m1, matBack: m2, is3D: false, baseColor: base, cfg: cfg };
-        return mesh;
-    }
-
-    // Real 3D model. Its group origin sits at the feet, so it is placed at
-    // y = 1.46875 to line up with the 2D billboard exactly.
-    const g = (window.Character3D && Character3D.build)
-        ? Character3D.build(cfg)
-        : new THREE.Mesh(new THREE.BoxGeometry(2, 2.9375, 0.5), new THREE.MeshBasicMaterial({ color: new THREE.Color(base) }));
-    g.name = 'playerSprite';
-    g.position.y = 1.46875;
-    if (!g.userData) g.userData = {};
-    g.userData.is3D = true;
-    g.userData.baseColor = base;
-    g.userData.cfg = cfg;
-    return g;
+    const useParts = !!(cfg.ears || cfg.eyes || cfg.nose || cfg.tail || cfg.misc);
+    const parts = useParts
+        ? { ears: cfg.ears || 'none', eyes: cfg.eyes || 'standard', nose: cfg.nose || 'cat', misc: cfg.misc || 'none', tail: cfg.tail || 'none' }
+        : (cfg.species || 'cat');
+    const pc = {
+        earsColor: cfg.earsColor || '', noseColor: cfg.noseColor || '',
+        miscColor: cfg.miscColor || '', tailColor: cfg.tailColor || ''
+    };
+    const tf = createSpeciesTexture(parts, base, belly, false, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
+    const tb = createSpeciesTexture(parts, base, belly, true, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
+    const m1 = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+    const m2 = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.9375), m1);
+    mesh.name = 'playerSprite';
+    mesh.position.y = 1.46875;
+    mesh.userData = { matFront: m1, matBack: m2, is3D: false, baseColor: base, cfg: cfg };
+    return mesh;
 }
 
 // Tear down a body mesh/group and release its GPU resources.
@@ -8281,39 +8241,18 @@ function replaceCharacterBody(group, cfg) {
     return body;
 }
 
-// Rebuild a character's body in the current model mode, carrying its cosmetics
-// over (used by the Options 2D/3D toggle).
-function switchCharacterModel(group) {
-    const old = group && group.getObjectByName('playerSprite');
-    if (!old || !old.userData || !old.userData.cfg) return;
-    replaceCharacterBody(group, old.userData.cfg);
-}
-
-// Rod pose angles (outer rotation.x). The 2D billboard has the rod drawn
-// diagonally inside its plane, so -0.2 / 0.8 sit it up then cast it out flat.
-// The 3D rod is modelled straight along its handle, so it needs its own angles
-// to keep it pointing up-and-forward instead of diving into the ground.
+// Rod pose (outer rotation.x). The billboard has the rod drawn diagonally
+// inside its plane, so -0.2 / 0.8 sit it up then cast it out flat.
 const ROD_IDLE_2D = -0.2, ROD_CAST_2D = 0.8;
-const ROD_IDLE_3D = -0.8, ROD_CAST_3D = -0.4;
 
-// Resting/casting angle for a rod object, taking its 2D/3D style into account.
+// Resting/casting angle for the rod billboard.
 function rodAngleFor(rod, casting) {
-    const is3D = !!(rod && rod.userData && rod.userData.is3D);
-    if (is3D) return casting ? ROD_CAST_3D : ROD_IDLE_3D;
     return casting ? ROD_CAST_2D : ROD_IDLE_2D;
 }
 
-// A 3D or billboard fishing rod named "rod".
+// A billboard fishing rod named "rod".
 function makeRod(rodId) {
     rodId = rodId || 'bamboo';
-    if (saveState.model3D && window.Character3D && Character3D.buildRod) {
-        const g = Character3D.buildRod(rodId);
-        g.userData.is3D = true;
-        // Rod is modelled pointing forward (+Z); hang the handle off the hand.
-        g.position.set(0.58, 0.82, 0.14);
-        g.rotation.set(ROD_IDLE_3D, 0, 0);
-        return g;
-    }
     const rodTex = createRodTexture(rodId);
     const rodMat = new THREE.MeshBasicMaterial({ map: rodTex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
     const rodGeo = new THREE.PlaneGeometry(3.0, 3.0);
@@ -8325,10 +8264,10 @@ function makeRod(rodId) {
     return r;
 }
 
-// A held "trophy" fish.  Always a real 3D model when Character3D is available
-// (independent of the 2D/3D character toggle); a billboard sprite is only the
-// fallback.  Keeps the historic name 'heldFishSprite' so existing lookups keep
-// working; userData.is3D tells the two apart.
+// A held "trophy" fish.  Always a real 3D model when Character3D is available;
+// a billboard sprite is only the fallback.  Keeps the historic name
+// 'heldFishSprite' so existing lookups keep working; userData.is3D tells the
+// two apart.
 function makeHeldFish(fishName, color, size) {
     const s = size || 1.0;
     if (window.Character3D && Character3D.buildFish) {
@@ -8385,7 +8324,7 @@ function characterCfgFromData(data) {
 function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species = 'cat', titleId = 'none', rodId = 'bamboo', hairId = 'none', hairColor = '') {
     const g = new THREE.Group();
 
-    // Body (2D cosmetic billboard, or a real Character3D model in 3D mode)
+    // Body (2D cosmetic billboard)
     const cfg = {
         color: col, belly: '#ffffff', eye: eyeHex, species: species,
         hat: hatId, shirt: 'none', collar: 'none', pattern: 'none',
@@ -8418,7 +8357,7 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
     sp.renderOrder = 102;
     g.add(sp);
 
-    // --- ROD (billboard plane in 2D, real model in 3D) ---
+    // --- ROD (billboard plane) ---
     g.add(makeRod(rodId));
 
     return g;
@@ -8574,9 +8513,6 @@ function resetKeybinds() {
 function updateSpriteDirection(obj, targetCamPos) {
     const sprite = obj.getObjectByName("playerSprite");
     if (!sprite || !sprite.userData.matFront) return;
-    // The 3D box shows both faces at once through its 6-material array, so
-    // swapping a single material here would flatten it back into a billboard.
-    if (sprite.userData.is3D) return;
 
     // OPTIMIZATION: Use reused vectors
     const toCam = _optVec1.copy(targetCamPos).sub(obj.position);
@@ -11844,7 +11780,6 @@ window.toggleOptions = function () {
         updateMidiUI();
         updateTitleUI();
         updateDebugUI();
-        updateModel3DUI();
 
         const volSlider = document.getElementById('volume-slider');
         if (volSlider) volSlider.value = saveState.masterVolume;
@@ -12181,7 +12116,7 @@ function updateLocalVisuals() {
         const oldRod = player.getObjectByName('rod');
         if (oldRod) { disposeCharacterBody(oldRod); player.remove(oldRod); }
 
-        // 1. Showing a Fish?  (3D model regardless of saveState.model3D)
+        // 1. Showing a Fish?  (always the 3D model)
         if (localHeldFish && !isGuitarActive && !isGloveActive) {
             const fSprite = makeHeldFish(localHeldFish.name, localHeldFish.color || '#ffffff', localHeldFish.size);
             fSprite.visible = true;
