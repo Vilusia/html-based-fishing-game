@@ -1934,6 +1934,14 @@ function lobbyPlayerCount() {
     return 1 + Object.keys(clientConns || {}).length;
 }
 
+// The master keys P2P rows by this stable device id, so re-hosting the same
+// machine updates one row instead of leaving stale duplicates behind. The
+// ephemeral room/peer id is still sent separately for joins.
+function lobbyDirectoryId() {
+    const device = (typeof myDeviceID !== 'undefined' && myDeviceID) ? String(myDeviceID) : '';
+    return 'dev:' + (device || myPeerId || 'unknown');
+}
+
 async function publishLobby() {
     if (!isHost || !myPeerId || !masterEnabled()) return;
 
@@ -1945,7 +1953,8 @@ async function publishLobby() {
     try {
         await masterRequest('/register', {
             kind: 'p2p',
-            id: myPeerId,
+            id: lobbyDirectoryId(),
+            lobbyId: lobbyDirectoryId(),
             peerId: myPeerId,
             name: myLobbyName || defaultLobbyName(),
             host: saveState.displayName,
@@ -1982,7 +1991,8 @@ function unpublishLobby() {
     lobbyPublished = false;
     stopLobbyHeartbeat();
     if (!masterEnabled() || !myPeerId) return Promise.resolve();
-    return masterRequest('/unregister', { id: myPeerId, peerId: myPeerId }).catch(() => { });
+    const dirId = lobbyDirectoryId();
+    return masterRequest('/unregister', { id: dirId, lobbyId: dirId, peerId: myPeerId }).catch(() => { });
 }
 
 // Called from beforeunload: a beacon is the only request guaranteed to leave
@@ -1991,7 +2001,8 @@ function leaveLobbyDirectory() {
     stopLobbyHeartbeat();
     if (!lobbyPublished || !masterEnabled() || !myPeerId) return;
     lobbyPublished = false;
-    const payload = JSON.stringify({ id: myPeerId, peerId: myPeerId });
+    const dirId = lobbyDirectoryId();
+    const payload = JSON.stringify({ id: dirId, lobbyId: dirId, peerId: myPeerId });
     try {
         const blob = new Blob([payload], { type: 'text/plain;charset=UTF-8' });
         if (navigator.sendBeacon && navigator.sendBeacon(MASTER_SERVER_URL + '/unregister', blob)) return;
@@ -2129,7 +2140,8 @@ function renderServerList(container, servers) {
 
 function buildServerRow(s) {
     const isDedicated = s.kind === 'dedicated';
-    const isMine = !isDedicated && myPeerId && s.peerId === myPeerId;
+    const isMine = !isDedicated && isHost &&
+        (s.id === lobbyDirectoryId() || (myPeerId && s.peerId === myPeerId));
 
     const row = document.createElement('div');
     row.style.cssText = 'background:var(--p-face-2);border:2px solid var(--p-line);margin-bottom:6px;' +

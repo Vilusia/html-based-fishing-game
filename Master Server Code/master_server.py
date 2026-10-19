@@ -163,6 +163,21 @@ def clean_peer_id(value):
     return text
 
 
+def clean_lobby_id(value):
+    """A stable, device-derived directory key.
+
+    A P2P lobby keeps its *room* (the ephemeral PeerJS id) in `peerId`/`room`,
+    but is stored under this stable key so re-hosting the same machine updates
+    one row instead of littering the browser with stale duplicates.
+    """
+    text = clean_text(value, 96)
+    if not text:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,96}", text):
+        return ""
+    return text
+
+
 # ---------------------------------------------------------------------------
 # Directory
 # ---------------------------------------------------------------------------
@@ -477,13 +492,17 @@ class MasterHandler(BaseHTTPRequestHandler):
         if not peer_id:
             return self._send(400, {"error": "peerId required"})
 
+        # Prefer a stable device key so re-hosting replaces our old row. Fall
+        # back to the room id for older clients that don't send one.
+        lobby_id = clean_lobby_id(body.get("lobbyId"))
+
         host = clean_text(body.get("host") or body.get("hostName"), 16)
         name = clean_text(body.get("name"), 40)
         if not name:
             name = (host + "'s Lobby") if host else "Fishing Lobby"
 
         entry = {
-            "id": "p2p:" + peer_id,
+            "id": lobby_id or ("p2p:" + peer_id),
             "kind": "p2p",
             "peerId": peer_id,
             "name": name,
@@ -536,7 +555,7 @@ class MasterHandler(BaseHTTPRequestHandler):
         return self._send(200, {"status": "ok", "id": entry_id})
 
     def _handle_unregister(self, body):
-        entry_id = clean_text(body.get("id"), 160)
+        entry_id = clean_text(body.get("id") or body.get("lobbyId"), 160)
         peer_id = clean_peer_id(body.get("peerId"))
         if not entry_id and peer_id:
             entry_id = "p2p:" + peer_id
