@@ -435,7 +435,10 @@ const DEFAULT_SAVE_STATE = {
     currentPattern: 'none',
 
     // Tools
-    unlockedTools: ['hands', 'rod', 'glove'],
+    // NOTE: the PvP Glove is NOT free — it is only added here once the player
+    // actually buys it (see actionBuyTool / the Stylist shop), which also sets
+    // hasGlove. It used to default to unlocked, so the shop wrongly said "Owned".
+    unlockedTools: ['hands', 'rod'],
     activeToolIndex: 0,
     unlockedTitles: ['none', 'novice', 'gay', 'lesbian', 'bi', 'trans', 'pan', 'ace', 'aro', 'enby', 'queer', 'fluid', 'agender', 'demi', 'inter', 'mlm', 'wlw', 'bear', 'otter', 'butch', 'femme', 'ally'],
 
