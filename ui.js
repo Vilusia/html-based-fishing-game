@@ -3111,8 +3111,8 @@ function updateRemotePlayer(id, data) {
 
         const activeRod = p.mesh.getObjectByName("rod");
         if (activeRod) {
-            // SYNC CAST ANIMATION: Rotate X forward to 0.8
-            activeRod.rotation.x = 0.8;
+            // SYNC CAST ANIMATION: swing the rod out towards the water.
+            activeRod.rotation.x = rodAngleFor(activeRod, true);
         }
     } else {
         if (p.bobberMesh) { scene.remove(p.bobberMesh); scene.remove(p.lineMesh); p.bobberMesh = null; p.lineMesh = null; }
@@ -3120,7 +3120,7 @@ function updateRemotePlayer(id, data) {
         // RESET REMOTE ROD (Idle Position)
         const activeRod = p.mesh.getObjectByName("rod");
         if (activeRod) {
-            activeRod.rotation.x = -0.2;
+            activeRod.rotation.x = rodAngleFor(activeRod, false);
         }
     }
 }
@@ -8062,14 +8062,29 @@ function switchCharacterModel(group) {
     replaceCharacterBody(group, old.userData.cfg);
 }
 
+// Rod pose angles (outer rotation.x). The 2D billboard has the rod drawn
+// diagonally inside its plane, so -0.2 / 0.8 sit it up then cast it out flat.
+// The 3D rod is modelled straight along its handle, so it needs its own angles
+// to keep it pointing up-and-forward instead of diving into the ground.
+const ROD_IDLE_2D = -0.2, ROD_CAST_2D = 0.8;
+const ROD_IDLE_3D = -0.8, ROD_CAST_3D = -0.4;
+
+// Resting/casting angle for a rod object, taking its 2D/3D style into account.
+function rodAngleFor(rod, casting) {
+    const is3D = !!(rod && rod.userData && rod.userData.is3D);
+    if (is3D) return casting ? ROD_CAST_3D : ROD_IDLE_3D;
+    return casting ? ROD_CAST_2D : ROD_IDLE_2D;
+}
+
 // A 3D or billboard fishing rod named "rod".
 function makeRod(rodId) {
     rodId = rodId || 'bamboo';
     if (saveState.model3D && window.Character3D && Character3D.buildRod) {
         const g = Character3D.buildRod(rodId);
+        g.userData.is3D = true;
         // Rod is modelled pointing forward (+Z); hang the handle off the hand.
         g.position.set(0.58, 0.82, 0.14);
-        g.rotation.set(-0.2, 0, 0);
+        g.rotation.set(ROD_IDLE_3D, 0, 0);
         return g;
     }
     const rodTex = createRodTexture(rodId);
@@ -9019,9 +9034,9 @@ function releaseCast() {
 
     const rod = player.getObjectByName("rod");
     if (rod) {
-        // ANIMATION: Rotate X forward to point tip down towards water
-        // Base is -0.2. We rotate to +0.8
-        rod.rotation.x = 0.8;
+        // ANIMATION: swing the rod forward/out towards the water (angle depends
+        // on whether the equipped rod is a 2D billboard or a 3D model).
+        rod.rotation.x = rodAngleFor(rod, true);
     }
 
     setTimeout(() => { fishingState = 'waiting'; scheduleBite(); }, 500);
@@ -9322,8 +9337,8 @@ function stopFishing(success, msg) {
 
     const rod = player.getObjectByName("rod");
     if (rod) {
-        // RESET: Bring rod back to Up/Back position
-        rod.rotation.x = -0.2;
+        // RESET: bring the rod back to its up/back rest pose.
+        rod.rotation.x = rodAngleFor(rod, false);
     }
 
     // --- NEW: APPLY COOLDOWN REGARDLESS OF SUCCESS ---
@@ -11943,6 +11958,10 @@ function updateLocalVisuals() {
                 const rodId = saveState.currentRod || 'bamboo';
                 const r = makeRod(rodId);
                 r.userData.rodId = rodId;
+                // Keep the fishing pose if the model was swapped mid-cast.
+                if (fishingState !== 'idle' && fishingState !== 'charging') {
+                    r.rotation.x = rodAngleFor(r, true);
+                }
                 player.add(r);
             }
         }
