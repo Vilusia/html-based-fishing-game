@@ -2969,15 +2969,8 @@ function updateRemotePlayer(id, data) {
     // C. Held Fish Logic
     else if (data.heldFish) {
         if (!fishSprite || fishSprite.userData.fishName !== data.heldFish.name) {
-            if (fishSprite) p.mesh.remove(fishSprite);
-            const fTex = createFishTexture(data.heldFish.name, data.heldFish.color);
-            const fMat = new THREE.SpriteMaterial({ map: fTex, transparent: true, alphaTest: 0.5 });
-            fishSprite = new THREE.Sprite(fMat);
-            fishSprite.name = 'heldFishSprite';
-            fishSprite.userData = { fishName: data.heldFish.name };
-            fishSprite.position.set(0.6, 1.5, 0.5);
-            const s = data.heldFish.size || 1.0;
-            fishSprite.scale.set(1.5 * s, 1.5 * s, 1);
+            if (fishSprite) { disposeCharacterBody(fishSprite); p.mesh.remove(fishSprite); }
+            fishSprite = makeHeldFish(data.heldFish.name, data.heldFish.color, data.heldFish.size);
             p.mesh.add(fishSprite);
         }
         fishSprite.visible = true;
@@ -8332,6 +8325,33 @@ function makeRod(rodId) {
     return r;
 }
 
+// A held "trophy" fish.  Always a real 3D model when Character3D is available
+// (independent of the 2D/3D character toggle); a billboard sprite is only the
+// fallback.  Keeps the historic name 'heldFishSprite' so existing lookups keep
+// working; userData.is3D tells the two apart.
+function makeHeldFish(fishName, color, size) {
+    const s = size || 1.0;
+    if (window.Character3D && Character3D.buildFish) {
+        const g = Character3D.buildFish(fishName, color);
+        g.name = 'heldFishSprite';
+        g.userData.fishName = fishName;
+        g.userData.is3D = true;
+        g.position.set(0.6, 1.5, 0.5);
+        g.scale.setScalar(0.95 * s);
+        // Head along +X, rolled slightly so the flank faces the follow camera.
+        g.rotation.set(0.1, -0.35, 0.18);
+        return g;
+    }
+    const fTex = createFishTexture(fishName, color);
+    const fMat = new THREE.SpriteMaterial({ map: fTex, transparent: true, alphaTest: 0.5 });
+    const sp = new THREE.Sprite(fMat);
+    sp.name = 'heldFishSprite';
+    sp.userData = { fishName: fishName, is3D: false };
+    sp.position.set(0.6, 1.5, 0.5);
+    sp.scale.set(1.5 * s, 1.5 * s, 1);
+    return sp;
+}
+
 // Cosmetic config for the local player, straight from saveState.
 function characterCfgFromSave() {
     return {
@@ -12156,31 +12176,15 @@ function updateLocalVisuals() {
 
         // --- HELD ITEMS LOGIC ---
         const oldFish = player.getObjectByName('heldFishSprite');
-        if (oldFish) player.remove(oldFish);
+        if (oldFish) { disposeCharacterBody(oldFish); player.remove(oldFish); }
 
         const oldRod = player.getObjectByName('rod');
         if (oldRod) { disposeCharacterBody(oldRod); player.remove(oldRod); }
 
-        // 1. Showing a Fish?
+        // 1. Showing a Fish?  (3D model regardless of saveState.model3D)
         if (localHeldFish && !isGuitarActive && !isGloveActive) {
-            // FIX: Ensure color fallback and explicit visibility
-            const color = localHeldFish.color || '#ffffff';
-            const fTex = createFishTexture(localHeldFish.name, color);
-            const fMat = new THREE.SpriteMaterial({
-                map: fTex,
-                transparent: true,
-                alphaTest: 0.5
-            });
-
-            const fSprite = new THREE.Sprite(fMat);
-            fSprite.name = 'heldFishSprite';
-            fSprite.position.set(0.6, 1.5, 0.5);
-            fSprite.visible = true; // Explicity set visible
-            fSprite.renderOrder = 999; // Force on top
-
-            const size = localHeldFish.size || 1.0;
-            fSprite.scale.set(1.5 * size, 1.5 * size, 1);
-
+            const fSprite = makeHeldFish(localHeldFish.name, localHeldFish.color || '#ffffff', localHeldFish.size);
+            fSprite.visible = true;
             player.add(fSprite);
         }
         // 2. Holding Rod? (Check isHandsHidden and active tool here)
