@@ -2825,36 +2825,8 @@ function createRemotePlayer(id, data) {
         data.hairColor || ''
     );
 
-    // Determine if using new parts system or legacy species
-    let speciesOrParts;
-    if (data.ears) {
-        speciesOrParts = { ears: data.ears, eyes: data.eyes, nose: data.nose, misc: data.misc, tail: data.tail };
-    } else {
-        speciesOrParts = data.species || 'cat';
-    }
-
-    // Build partColors object from data
-    const partColors = {
-        earsColor: data.earsColor || '',
-        noseColor: data.noseColor || '',
-        miscColor: data.miscColor || '',
-        tailColor: data.tailColor || ''
-    };
-
-    // Apply specific textures (Shirt, Collar, Pattern, Parts)
-    const s = group.getObjectByName('playerSprite');
-    const texF = createSpeciesTexture(
-        speciesOrParts, data.color, data.belly, false,
-        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || ''
-    );
-    const texB = createSpeciesTexture(
-        speciesOrParts, data.color, data.belly, true,
-        data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || ''
-    );
-
-    s.userData.matFront.map = texF;
-    s.userData.matBack.map = texB;
-    if (!s.userData.is3D) { s.material = s.userData.matFront; s.material.needsUpdate = true; }
+    // Apply full cosmetics (shirt, collar, pattern, modular parts, ...).
+    replaceCharacterBody(group, characterCfgFromData(data));
 
     scene.add(group);
 
@@ -2928,26 +2900,7 @@ function updateRemotePlayer(id, data) {
         p.lastData.collar !== data.collar || p.lastData.pattern !== data.pattern || partsChanged || partColorsChanged) {
 
         // Determine if using new parts system or legacy species
-        let speciesOrParts;
-        if (data.ears) {
-            speciesOrParts = { ears: data.ears, eyes: data.eyes, nose: data.nose, misc: data.misc, tail: data.tail, hair: data.hair };
-        } else {
-            speciesOrParts = data.species || 'cat';
-        }
-
-        // Build partColors object from data
-        const partColors = {
-            earsColor: data.earsColor || '',
-            noseColor: data.noseColor || '',
-            miscColor: data.miscColor || '',
-            tailColor: data.tailColor || '',
-            hairColor: data.hairColor || ''
-        };
-
-        const s = p.mesh.getObjectByName('playerSprite');
-        const texF = createSpeciesTexture(speciesOrParts, data.color, data.belly, false, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || '');
-        const texB = createSpeciesTexture(speciesOrParts, data.color, data.belly, true, data.hat, data.shirt || 'none', data.collar || 'none', data.eye || '#000000', data.pattern || 'none', partColors, data.hair || 'none', data.hairColor || '');
-        setBodyTextures(s, texF, texB);
+        replaceCharacterBody(p.mesh, characterCfgFromData(data));
     }
 
     // 4. POSITION INTERPOLATION
@@ -3109,19 +3062,10 @@ function updateRemotePlayer(id, data) {
 
         // Ensure rod exists and skin is correct
         if (!rod || (data.rod && rod.userData.rodId !== data.rod)) {
-            if (rod) p.mesh.remove(rod);
+            if (rod) { disposeCharacterBody(rod); p.mesh.remove(rod); }
 
             const rodId = data.rod || 'bamboo';
-            const rodTex = createRodTexture(rodId);
-            const rodMat = new THREE.MeshBasicMaterial({ map: rodTex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-
-            const rodGeo = new THREE.PlaneGeometry(3.0, 3.0);
-            rodGeo.translate(1.5, 1.5, 0);
-
-            const newRod = new THREE.Mesh(rodGeo, rodMat);
-            newRod.position.set(0.6, 0.96, 0.1);
-            newRod.rotation.set(-0.2, -Math.PI / 2, 0);
-            newRod.name = "rod";
+            const newRod = makeRod(rodId);
             newRod.userData.rodId = rodId;
             p.mesh.add(newRod);
         } else {
@@ -8037,77 +7981,147 @@ function createRodTexture(rodId) {
     return t;
 }
 
-// --- CHARACTER BODY MESH (2D billboard / 3D box) -------------------------
-// Both modes keep the front/back cosmetic canvases in userData.matFront /
-// userData.matBack, so every cosmetic system keeps working when the model
-// mode is toggled. The mesh is always named "playerSprite" so all existing
-// lookups (local visuals, remote players, NPCs, ghost) find it either way.
-function makeCharacterBody(tf, tb, col) {
-    const base = (typeof col === 'number') ? col : (col || '#ffffff');
+// --- CHARACTER BODY (2D billboard / real 3D model) -----------------------
+// The body is always named "playerSprite" so every existing lookup keeps
+// working.  In 2D mode it is a cosmetic-textured plane; in 3D mode it is a
+// real Character3D group built by character3d.js.  userData.cfg stores the
+// cosmetic config so the model can be rebuilt in either mode (incl. the
+// 2D<->3D toggle).
+function makeCharacterBody(cfg) {
+    cfg = cfg || {};
+    const base = (cfg.color != null) ? cfg.color : '#ffffff';
+    const belly = (cfg.belly != null && cfg.belly !== '') ? cfg.belly : base;
 
     if (!(typeof saveState !== 'undefined' && saveState.model3D)) {
+        const useParts = !!(cfg.ears || cfg.eyes || cfg.nose || cfg.tail || cfg.misc);
+        const parts = useParts
+            ? { ears: cfg.ears || 'none', eyes: cfg.eyes || 'standard', nose: cfg.nose || 'cat', misc: cfg.misc || 'none', tail: cfg.tail || 'none' }
+            : (cfg.species || 'cat');
+        const pc = {
+            earsColor: cfg.earsColor || '', noseColor: cfg.noseColor || '',
+            miscColor: cfg.miscColor || '', tailColor: cfg.tailColor || ''
+        };
+        const tf = createSpeciesTexture(parts, base, belly, false, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
+        const tb = createSpeciesTexture(parts, base, belly, true, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
         const m1 = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
         const m2 = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
         const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.9375), m1);
         mesh.name = 'playerSprite';
         mesh.position.y = 1.46875;
-        mesh.userData = { matFront: m1, matBack: m2, is3D: false, baseColor: base };
+        mesh.userData = { matFront: m1, matBack: m2, is3D: false, baseColor: base, cfg: cfg };
         return mesh;
     }
 
-    const matF = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.2 });
-    const matB = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.2 });
-    const baseCol = new THREE.Color(base);
-    const matSide = new THREE.MeshBasicMaterial({ color: baseCol.clone().multiplyScalar(0.7) });
-    const geo = new THREE.BoxGeometry(2, 2.9375, 0.5);
-    // Box material slots: +X, -X, +Y, -Y, +Z (front), -Z (back).
-    const mesh = new THREE.Mesh(geo, [matSide, matSide, matSide, matSide, matF, matB]);
-    mesh.name = 'playerSprite';
-    mesh.position.y = 1.46875;
-    mesh.userData = { matFront: matF, matBack: matB, is3D: true, baseColor: base, sideMat: matSide };
-
-    // Solid core so transparent gaps in the sprite (between the ears, beside
-    // the head) show the body colour instead of the background.
-    const core = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 0.25), new THREE.MeshBasicMaterial({ color: baseCol }));
-    core.name = 'playerBody3D';
-    mesh.add(core);
-    return mesh;
+    // Real 3D model. Its group origin sits at the feet, so it is placed at
+    // y = 1.46875 to line up with the 2D billboard exactly.
+    const g = (window.Character3D && Character3D.build)
+        ? Character3D.build(cfg)
+        : new THREE.Mesh(new THREE.BoxGeometry(2, 2.9375, 0.5), new THREE.MeshBasicMaterial({ color: new THREE.Color(base) }));
+    g.name = 'playerSprite';
+    g.position.y = 1.46875;
+    if (!g.userData) g.userData = {};
+    g.userData.is3D = true;
+    g.userData.baseColor = base;
+    g.userData.cfg = cfg;
+    return g;
 }
 
-// Swap just the cosmetic front/back textures. The 3D box must keep its
-// 6-material array, so it never gets a single material assigned here.
-function setBodyTextures(mesh, tf, tb) {
-    if (!mesh || !mesh.userData || !mesh.userData.matFront) return;
-    mesh.userData.matFront.map = tf;
-    mesh.userData.matBack.map = tb;
-    mesh.userData.matFront.needsUpdate = true;
-    mesh.userData.matBack.needsUpdate = true;
-    if (!mesh.userData.is3D) mesh.material = mesh.userData.matFront;
+// Tear down a body mesh/group and release its GPU resources.
+function disposeCharacterBody(body) {
+    if (!body) return;
+    if (body.userData) {
+        if (body.userData.matFront && body.userData.matFront.map) disposeTexture(body.userData.matFront.map);
+        if (body.userData.matBack && body.userData.matBack.map) disposeTexture(body.userData.matBack.map);
+    }
+    body.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+        }
+    });
 }
 
-// Rebuild a character's body mesh in the current model mode, carrying over
-// its cosmetic textures and base colour (used by the 3D toggle).
+// Replace a character's body using the current model mode.
+function replaceCharacterBody(group, cfg) {
+    if (!group) return null;
+    const old = group.getObjectByName('playerSprite');
+    if (old) { disposeCharacterBody(old); group.remove(old); }
+    const body = makeCharacterBody(cfg);
+    body.position.y = 1.46875;
+    if (old) body.renderOrder = old.renderOrder;
+    group.add(body);
+    return body;
+}
+
+// Rebuild a character's body in the current model mode, carrying its cosmetics
+// over (used by the Options 2D/3D toggle).
 function switchCharacterModel(group) {
     const old = group && group.getObjectByName('playerSprite');
-    if (!old || !old.userData || !old.userData.matFront) return;
-    const tf = old.userData.matFront.map;
-    const tb = old.userData.matBack.map;
-    const y = old.position.y, ro = old.renderOrder;
-    group.remove(old);
-    const next = makeCharacterBody(tf, tb, old.userData.baseColor);
-    next.position.y = y;
-    next.renderOrder = ro;
-    group.add(next);
+    if (!old || !old.userData || !old.userData.cfg) return;
+    replaceCharacterBody(group, old.userData.cfg);
+}
+
+// A 3D or billboard fishing rod named "rod".
+function makeRod(rodId) {
+    rodId = rodId || 'bamboo';
+    if (saveState.model3D && window.Character3D && Character3D.buildRod) {
+        const g = Character3D.buildRod(rodId);
+        g.position.set(0.62, 1.32, 0.3);
+        g.rotation.set(-0.2, 0, 0.12);
+        return g;
+    }
+    const rodTex = createRodTexture(rodId);
+    const rodMat = new THREE.MeshBasicMaterial({ map: rodTex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+    const rodGeo = new THREE.PlaneGeometry(3.0, 3.0);
+    rodGeo.translate(1.5, 1.5, 0);
+    const r = new THREE.Mesh(rodGeo, rodMat);
+    r.position.set(0.6, 0.96, 0.1);
+    r.rotation.set(-0.2, -Math.PI / 2, 0);
+    r.name = 'rod';
+    return r;
+}
+
+// Cosmetic config for the local player, straight from saveState.
+function characterCfgFromSave() {
+    return {
+        color: saveState.catColor, belly: saveState.bellyColor, eye: saveState.eyeColor,
+        species: saveState.species,
+        ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose,
+        misc: saveState.currentMisc, tail: saveState.currentTail,
+        earsColor: saveState.earsColor || '', noseColor: saveState.noseColor || '',
+        miscColor: saveState.miscColor || '', tailColor: saveState.tailColor || '',
+        hat: saveState.currentHat, shirt: saveState.currentShirt, collar: saveState.currentCollar,
+        pattern: saveState.currentPattern, hair: saveState.currentHair, hairColor: saveState.hairColor || ''
+    };
+}
+
+// Cosmetics for a networked player.
+function characterCfgFromData(data) {
+    data = data || {};
+    return {
+        color: data.color || 0xcccccc,
+        belly: data.belly,
+        eye: data.eye || '#000000',
+        species: data.species || 'cat',
+        ears: data.ears, eyes: data.eyes, nose: data.nose, misc: data.misc, tail: data.tail,
+        earsColor: data.earsColor || '', noseColor: data.noseColor || '',
+        miscColor: data.miscColor || '', tailColor: data.tailColor || '',
+        hat: data.hat || 'none', shirt: data.shirt || 'none', collar: data.collar || 'none',
+        pattern: data.pattern || 'none', hair: data.hair || 'none', hairColor: data.hairColor || ''
+    };
 }
 
 function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species = 'cat', titleId = 'none', rodId = 'bamboo', hairId = 'none', hairColor = '') {
     const g = new THREE.Group();
 
-    // Sprite Layers
-    const tf = createSpeciesTexture(species, col, '#ffffff', false, hatId, 'none', 'none', eyeHex, 'none', null, hairId, hairColor);
-    const tb = createSpeciesTexture(species, col, '#ffffff', true, hatId, 'none', 'none', eyeHex, 'none', null, hairId, hairColor);
-    const bodyMesh = makeCharacterBody(tf, tb, col);
-    g.add(bodyMesh);
+    // Body (2D cosmetic billboard, or a real Character3D model in 3D mode)
+    const cfg = {
+        color: col, belly: '#ffffff', eye: eyeHex, species: species,
+        hat: hatId, shirt: 'none', collar: 'none', pattern: 'none',
+        hair: hairId, hairColor: hairColor || ''
+    };
+    g.add(makeCharacterBody(cfg));
 
     // Name & Title
     const ntMat = new THREE.SpriteMaterial({ map: createNameTagTexture(name), depthWrite: false, depthTest: false });
@@ -8134,30 +8148,8 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
     sp.renderOrder = 102;
     g.add(sp);
 
-    // --- ROD LOGIC (FORWARD FACING) ---
-    const rodTex = createRodTexture();
-    const rodMat = new THREE.MeshBasicMaterial({ map: rodTex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-
-    // Geometry 3x3
-    const rodGeo = new THREE.PlaneGeometry(3.0, 3.0);
-
-    // 1. Shift Pivot to Bottom-Left Corner (The Handle)
-    rodGeo.translate(1.5, 1.5, 0);
-
-    const r = new THREE.Mesh(rodGeo, rodMat);
-
-    // 2. Position at Right Hand
-    // x=0.6 (Right shoulder), y=0.8 (Hand height), z=0.1 (Slightly forward)
-    r.position.set(0.6, 0.96, 0.1);
-
-    // 3. Rotation
-    // Y = -90 degrees (-1.57 rad): Points the flat plane forward (Z-axis).
-    // The "Diagonal" texture now points Forward and Up.
-    // We tilt X slightly (-0.2) to angle it outward.
-    r.rotation.set(-0.2, -Math.PI / 2, 0);
-
-    r.name = "rod";
-    g.add(r);
+    // --- ROD (billboard plane in 2D, real model in 3D) ---
+    g.add(makeRod(rodId));
 
     return g;
 }
@@ -9521,14 +9513,13 @@ function showToast(t) { const d = document.createElement('div'); d.className = '
 function spawnGhostMesh(x, z) {
     if (ghostMesh) scene.remove(ghostMesh);
 
-    // Create base mesh and override textures for a ghostly appearance.
+    // Create base mesh and override cosmetics for a ghostly appearance.
     ghostMesh = createPlayerMesh('#000000', ' ', 'none', '#FFFFFF', 'cat');
-
-    const texF = createSpeciesTexture('cat', '#000000', '#000000', false, 'none', 'none', 'none', '#FFFFFF');
-    const texB = createSpeciesTexture('cat', '#000000', '#000000', true, 'none', 'none', 'none', '#FFFFFF');
-
-    const s = ghostMesh.getObjectByName('playerSprite');
-    setBodyTextures(s, texF, texB);
+    replaceCharacterBody(ghostMesh, {
+        color: '#000000', belly: '#000000', eye: '#FFFFFF', species: 'cat',
+        hat: 'none', shirt: 'none', collar: 'none', pattern: 'none',
+        hair: 'none', hairColor: ''
+    });
 
     // Get terrain height for proper Y positioning
     const terrainY = (typeof getTerrainHeight === 'function') ? getTerrainHeight(x, z) : 0;
@@ -10169,8 +10160,10 @@ function animate() {
         if (p.bobberMesh && p.lineMesh) {
             const rod = p.mesh.getObjectByName("rod");
             if (rod) {
-                const tip = new THREE.Vector3(3.0, 3.0, 0);
-                tip.applyMatrix4(rod.matrixWorld);
+                const tipObj = rod.getObjectByName('rodTip');
+                const tip = tipObj
+                    ? new THREE.Vector3().setFromMatrixPosition(tipObj.matrixWorld)
+                    : new THREE.Vector3(3.0, 3.0, 0).applyMatrix4(rod.matrixWorld);
                 const pArr = p.lineMesh.geometry.attributes.position.array;
                 pArr[0] = tip.x; pArr[1] = tip.y; pArr[2] = tip.z;
                 pArr[3] = p.bobberMesh.position.x; pArr[4] = p.bobberMesh.position.y; pArr[5] = p.bobberMesh.position.z;
@@ -10205,8 +10198,10 @@ function animate() {
         if (fishingState !== 'idle' && fishingState !== 'charging') {
             fishingLine.visible = true;
             const rod = player.getObjectByName("rod");
-            const tip = new THREE.Vector3(3.0, 3.0, 0);
-            tip.applyMatrix4(rod.matrixWorld);
+            const tipObj = rod && rod.getObjectByName('rodTip');
+            const tip = tipObj
+                ? new THREE.Vector3().setFromMatrixPosition(tipObj.matrixWorld)
+                : new THREE.Vector3(3.0, 3.0, 0).applyMatrix4(rod.matrixWorld);
             const p = fishingLine.geometry.attributes.position.array;
             p[0] = tip.x; p[1] = tip.y; p[2] = tip.z;
             p[3] = bobber.position.x; p[4] = bobber.position.y; p[5] = bobber.position.z;
@@ -11882,43 +11877,8 @@ function updateMusicUI() {
 
 function updateLocalVisuals() {
     if (player) {
-        const s = player.getObjectByName('playerSprite');
-        if (!s || !s.userData.matFront) return;
-
-        if (s.userData.matFront.map) disposeTexture(s.userData.matFront.map);
-        if (s.userData.matBack.map) disposeTexture(s.userData.matBack.map);
-
-        // Create parts object from current saveState
-        const parts = {
-            ears: saveState.currentEars,
-            eyes: saveState.currentEyes,
-            nose: saveState.currentNose,
-            misc: saveState.currentMisc,
-            tail: saveState.currentTail
-        };
-
-        // Build part colors object
-        const partColors = {
-            earsColor: saveState.earsColor || '',
-            noseColor: saveState.noseColor || '',
-            miscColor: saveState.miscColor || '',
-            tailColor: saveState.tailColor || ''
-        };
-
-        // Generate textures based on current save state with modular parts
-        const texF = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, false, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors, saveState.currentHair, saveState.hairColor);
-        const texB = createSpeciesTexture(parts, saveState.catColor, saveState.bellyColor, true, saveState.currentHat, saveState.currentShirt, saveState.currentCollar, saveState.eyeColor, saveState.currentPattern, partColors, saveState.currentHair, saveState.hairColor);
-
-        setBodyTextures(s, texF, texB);
-
-        // Keep the 3D box's side/core colour in sync if the base colour changed.
-        if (s.userData.is3D) {
-            const bc = new THREE.Color(saveState.catColor || '#ffffff');
-            if (s.userData.sideMat) s.userData.sideMat.color.copy(bc.clone().multiplyScalar(0.7));
-            const core = s.getObjectByName('playerBody3D');
-            if (core && core.material) core.material.color.copy(bc);
-            s.userData.baseColor = saveState.catColor;
-        }
+        // Rebuild the body (billboard plane, or a real 3D model) from saveState.
+        replaceCharacterBody(player, characterCfgFromSave());
 
         // Title Update
         const oldT = player.getObjectByName('titleSprite');
@@ -11949,7 +11909,7 @@ function updateLocalVisuals() {
         if (oldFish) player.remove(oldFish);
 
         const oldRod = player.getObjectByName('rod');
-        if (oldRod) player.remove(oldRod);
+        if (oldRod) { disposeCharacterBody(oldRod); player.remove(oldRod); }
 
         // 1. Showing a Fish?
         if (localHeldFish && !isGuitarActive && !isGloveActive) {
@@ -11978,18 +11938,10 @@ function updateLocalVisuals() {
         else {
             const isAxeOrPickActive = (saveState.activeToolIndex === 2 || saveState.activeToolIndex === 5);
             if (!isGuitarActive && !isGloveActive && !isHandsHidden && !isAxeOrPickActive) {
-                // Create Rod with current skin
+                // Create Rod with current skin (billboard plane in 2D, model in 3D)
                 const rodId = saveState.currentRod || 'bamboo';
-                const rodTex = createRodTexture(rodId);
-                const rodMat = new THREE.MeshBasicMaterial({ map: rodTex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-
-                const rodGeo = new THREE.PlaneGeometry(3.0, 3.0);
-                rodGeo.translate(1.5, 1.5, 0);
-
-                const r = new THREE.Mesh(rodGeo, rodMat);
-                r.position.set(0.6, 0.96, 0.1);
-                r.rotation.set(-0.2, -Math.PI / 2, 0);
-                r.name = "rod";
+                const r = makeRod(rodId);
+                r.userData.rodId = rodId;
                 player.add(r);
             }
         }
