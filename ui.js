@@ -12083,6 +12083,10 @@ function loadSave() {
             // Sync Legacy Flags (Fix for Hotbar not showing unlocked items)
             if (d.hasGuitar) { saveState.hasGuitar = true; if (!saveState.unlockedTools.includes('guitar')) saveState.unlockedTools.push('guitar'); }
             if (d.hasGlove) { saveState.hasGlove = true; if (!saveState.unlockedTools.includes('glove')) saveState.unlockedTools.push('glove'); }
+            // The Rowboat is bought once and stored as a flag. Pre-fix saves only
+            // recorded it in unlockedTools, so derive the flag from there too.
+            if (d.hasBoat) saveState.hasBoat = true;
+            else if (Array.isArray(saveState.unlockedTools) && saveState.unlockedTools.includes('boat')) saveState.hasBoat = true;
 
             // Repair old saves: the Glove used to be unlocked by default, which
             // made the shop show it as "Owned" (and the equip silently fail) for
@@ -12168,6 +12172,7 @@ function loadSave() {
             if (d.baitInventory) saveState.baitInventory = d.baitInventory;
             if (d.hasGlove !== undefined) saveState.hasGlove = d.hasGlove;
             if (d.hasGuitar !== undefined) saveState.hasGuitar = d.hasGuitar;
+            if (d.hasBoat !== undefined) saveState.hasBoat = !!d.hasBoat;
             if (d.autoReelLevel !== undefined) saveState.autoReelLevel = d.autoReelLevel;
             if (d.clickPowerLevel !== undefined) saveState.clickPowerLevel = d.clickPowerLevel;
 
