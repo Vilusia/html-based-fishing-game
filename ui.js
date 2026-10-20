@@ -3,6 +3,13 @@ const UICache = { mEl: null, logHeader: null, lEl: null };
 let isHandsHidden = false; // Global state for empty hands mode
 let pickableFlowers = []; // Trackable, pickable flower meshes
 
+// --- SKY ---
+// The stars / sun / moon are centred on the camera and sized past the world so
+// the sky looks the same everywhere, including out in the open ocean. Must stay
+// inside the camera's far plane (see the PerspectiveCamera near line 4000).
+const STAR_RADIUS = 1600;  // star dome shell radius (camera-relative)
+const SKY_ORBIT_RADIUS = 900; // sun/moon orbit radius (camera-relative)
+
 // --- SKILL SYSTEM HELPERS ---
 function addSkillXP(skillName, xpAmount) {
     if (typeof ensureSkills === 'function') ensureSkills();
@@ -3929,16 +3936,26 @@ function updateDayNightCycle(dt) {
     scene.fog.color = _optColor1;
 
     // Move Sun/Moon
+    // The orbit is centred on the camera's ground position so the sun/moon rise
+    // and set the same way no matter how far the player sails from the origin.
     const angle = ((worldTime - 6) / 24) * Math.PI * 2;
-    const radius = 500; // Large radius to keep sun/moon far from terrain
+    const radius = (typeof SKY_ORBIT_RADIUS === 'number') ? SKY_ORBIT_RADIUS : 900;
+    const skyAnchorX = camera ? camera.position.x : 0;
+    const skyAnchorZ = camera ? camera.position.z : 0;
 
     if (sunMesh) {
-        sunMesh.position.x = Math.cos(angle) * radius;
+        sunMesh.position.x = skyAnchorX + Math.cos(angle) * radius;
         sunMesh.position.y = Math.sin(angle) * radius;
+        sunMesh.position.z = skyAnchorZ;
     }
     if (moonMesh) {
-        moonMesh.position.x = Math.cos(angle + Math.PI) * radius;
+        moonMesh.position.x = skyAnchorX + Math.cos(angle + Math.PI) * radius;
         moonMesh.position.y = Math.sin(angle + Math.PI) * radius;
+        moonMesh.position.z = skyAnchorZ;
+    }
+    // Keep the star dome centred on the camera each frame.
+    if (window.starSystem) {
+        window.starSystem.position.set(skyAnchorX, 0, skyAnchorZ);
     }
 
     // Update Light
@@ -4104,21 +4121,26 @@ function setupThreeJS() {
     moonMesh.scale.set(80, 80, 1); // Large moon for far orbit
     scene.add(moonMesh);
 
-    // Stars System (visible at night)
+    // Stars System (visible at night).
+    // The dome is a shell centred on the *camera* (see the sky update in the
+    // day/night tick), so it surrounds the player everywhere in the world —
+    // including out in the open ocean. STAR_RADIUS sits inside the camera's far
+    // plane so the stars never clip.
     const starCount = 500;
     const starGeom = new THREE.BufferGeometry();
     const starPositions = [];
     for (let i = 0; i < starCount; i++) {
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.random() * Math.PI * 0.4 + 0.1; // Upper hemisphere only
-        const r = 150 + Math.random() * 50;
+        const r = STAR_RADIUS + Math.random() * 120;
         starPositions.push(Math.sin(phi) * Math.cos(theta) * r);
         starPositions.push(Math.cos(phi) * r);
         starPositions.push(Math.sin(phi) * Math.sin(theta) * r);
     }
     starGeom.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
-    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8, transparent: true, opacity: 0, fog: false });
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.4, transparent: true, opacity: 0, fog: false });
     window.starSystem = new THREE.Points(starGeom, starMat);
+    window.starSystem.frustumCulled = false; // dome moves with the camera
     scene.add(window.starSystem);
 
     // Clouds System (visible during day)
