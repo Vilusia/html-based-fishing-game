@@ -47,6 +47,47 @@ function sailingReach() {
     return 24 + Math.min(lvl, 99) * 0.6; // extra units past the shore at 99
 }
 
+// --- WATER SURFACE QUERY ---
+// Returns the y of a water surface at (x, z), or null if the spot is dry land.
+// Used by the movement loop so boats ride the top and swimmers float, instead
+// of both sinking to the sea bed. Covers the home lake/ponds, the open ocean,
+// generated ocean islands' shallows, and custom-level sea water.
+function waterSurfaceAt(x, z) {
+    if (isInVoid || isInLavaWorld) return null;
+
+    // Custom level: the authored sea covers everything below its sea level,
+    // including the ocean apron (where generated islands may rise above it).
+    if (window.CUSTOM_LEVEL && window.Level) {
+        const lvl = window.CUSTOM_LEVEL;
+        const h = getTerrainHeight(x, z); // already blends apron islands
+        if (h < lvl.seaLevel - 0.001) return lvl.seaLevel;
+        return null;
+    }
+
+    const dist = Math.sqrt(x * x + z * z);
+
+    // Home lake (surface at y = 0.1, but a boat rides slightly proud at 0.6).
+    if (dist < LAKE_RADIUS) return 0.6;
+
+    // Light pond (-60, -30) r=10 and dark pond (60, 50) r=14 (y = 0.12).
+    if (window.pondCollider) {
+        const dp = Math.sqrt((x - window.pondCollider.x) ** 2 + (z - window.pondCollider.z) ** 2);
+        if (dp < window.pondCollider.radius) return 0.6;
+    }
+    if (window.darkPondCollider) {
+        const ddp = Math.sqrt((x - window.darkPondCollider.x) ** 2 + (z - window.darkPondCollider.z) ** 2);
+        if (ddp < window.darkPondCollider.radius) return 0.6;
+    }
+
+    // Open ocean (and the shallows around generated islands): anywhere the sea
+    // bed sits below the ocean surface is water. No radius gate — the home
+    // island's beach slope drops below sea level well before its edge.
+    const bed = getTerrainHeight(x, z);
+    if (bed < OCEAN_LEVEL - 0.001) return OCEAN_LEVEL;
+
+    return null;
+}
+
 // Get a random resource based on skill level (higher level = chance for better resources)
 function getResourceForLevel(skillLevel, resourceTypes) {
     // Filter resources player can access based on level
@@ -1993,9 +2034,22 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
 
     // --- CUSTOM LEVEL MODE ---
     // A level built in editor.html fully replaces the procedural island, so the
-    // whole playing surface comes straight from the level's height grid.
+    // whole playing surface comes straight from the level's height grid. Past
+    // the authored map edge the generated ocean islands take over.
     if (window.CUSTOM_LEVEL && window.Level) {
-        return window.Level.sampleHeight(window.CUSTOM_LEVEL, x, z);
+        const lvl = window.CUSTOM_LEVEL;
+        if (window.Level.inBounds(lvl, x, z)) {
+            return window.Level.sampleHeight(lvl, x, z);
+        }
+        if (window.customOcean && window.Ocean && typeof window.Ocean.islandHeight === 'function') {
+            let h = lvl.oceanFloor;
+            for (const isl of window.customOcean.islands) {
+                const ih = window.Ocean.islandHeight(isl, x, z);
+                if (ih > h) h = ih;
+            }
+            return h;
+        }
+        return window.Level.sampleHeight(lvl, x, z);
     }
 
     // --- -1. DOCK (Absolute Priority) ---
@@ -2079,14 +2133,25 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
     const EDGE_FALLOFF = 12;   // Must match value in terrain generation
     const distFromCenter = Math.sqrt(x * x + z * z);
 
+    // --- OPEN OCEAN ---
+    // Past the beach the ground drops to the sea bed, but generated islands
+    // rise back up out of it. Ocean.heightAt() returns the sea-bed height plus
+    // any nearby island's dome, so the whole sailable ocean is one surface.
+    const OCEAN_FLOOR_H = (typeof OCEAN_FLOOR === "number") ? OCEAN_FLOOR : -9;
+
     if (distFromCenter > ISLAND_RADIUS) {
-        // Beyond island - below water level
-        return -4;
+        if (window.Ocean && typeof window.Ocean.heightAt === "function") {
+            return window.Ocean.heightAt(x, z);
+        }
+        return OCEAN_FLOOR_H;
     } else if (distFromCenter > ISLAND_RADIUS - EDGE_FALLOFF) {
-        // In the falloff zone - smooth transition below water
+        // In the falloff zone - smooth transition to the ocean floor.
         const falloffProgress = (distFromCenter - (ISLAND_RADIUS - EDGE_FALLOFF)) / EDGE_FALLOFF;
         const smoothFactor = (1 - Math.cos(falloffProgress * Math.PI)) / 2;
-        return h * (1 - smoothFactor) + (-4) * smoothFactor;
+        const edgeTarget = (window.Ocean && typeof window.Ocean.heightAt === "function")
+            ? window.Ocean.heightAt(x, z)
+            : OCEAN_FLOOR_H;
+        return h * (1 - smoothFactor) + edgeTarget * smoothFactor;
     }
 
     return h;
@@ -2240,6 +2305,48 @@ function spawnCustomLevelFlowers(level) {
         planted.push({ x: x, z: z });
     }
     return planted.length;
+}
+
+// Scatter pickable flowers across one generated ocean island's dry land. Called
+// by ocean.js (guarded) so sailing out is rewarded with a bit of gatherable
+// floristry, matching the home island. `rand` is the island's own seeded RNG so
+// the scatter is deterministic across clients.
+function spawnOceanIslandFlowers(isl, rand) {
+    if (!isl || typeof rand !== 'function' || !window.Ocean) return 0;
+    const sea = (typeof OCEAN_LEVEL === 'number') ? OCEAN_LEVEL : -3;
+    const floristryXP = (saveState.skills && saveState.skills.floristry) ? saveState.skills.floristry.xp : 0;
+    const floristryLevel = getLevelFromXP(floristryXP);
+
+    const target = Math.max(2, Math.round(isl.radius * 0.25));
+    let planted = 0;
+    for (let n = 0; n < target * 8 && planted < target; n++) {
+        const a = rand() * Math.PI * 2;
+        const d = rand() * isl.radius * 0.8;
+        const x = isl.x + Math.cos(a) * d;
+        const z = isl.z + Math.sin(a) * d;
+
+        const h = window.Ocean.islandHeight(isl, x, z);
+        if (h < sea + 0.6) continue; // dry land only
+
+        const flowerType = getResourceForLevel(floristryLevel, FLOWER_TYPES);
+        const flower = createFlowerMesh(flowerType.color);
+        flower.position.set(x, h, z);
+        flower.rotation.y = rand() * Math.PI * 2;
+        flower.rotation.x = (rand() - 0.5) * 0.3;
+        flower.rotation.z = (rand() - 0.5) * 0.3;
+        const scale = 0.8 + rand() * 0.5;
+        flower.scale.set(scale, scale, scale);
+        flower.userData.isFlower = true;
+        flower.userData.isPicked = false;
+        flower.userData.typeId = flowerType.id;
+        flower.userData.originalScale = scale;
+
+        scene.add(flower);
+        treeMeshes.push(flower);
+        pickableFlowers.push(flower);
+        planted++;
+    }
+    return planted;
 }
 
 function generateWorld(seedStr) {
@@ -2441,6 +2548,15 @@ function generateWorld(seedStr) {
         treeMeshes.push(flower);
         pickableFlowers.push(flower);
     }
+
+    // Re-register the generated ocean-island trees + colliders that the reset
+    // above just cleared, so solid trees out at sea survive a world re-roll.
+    if (window.oceanWorld) {
+        (window.oceanWorld.trees || []).forEach(t => {
+            if (!treeMeshes.includes(t)) treeMeshes.push(t);
+        });
+        (window.oceanWorld.colliders || []).forEach(c => treeColliders.push(c));
+    }
 }
 
 
@@ -2496,8 +2612,10 @@ function handleDataFromClient(clientId, data) {
             if (!data.payload || !data.payload.pos) return;
             if (isNaN(data.payload.pos.x) || isNaN(data.payload.pos.y) || isNaN(data.payload.pos.z)) return;
 
-            // Boundary Check
-            const isIsland = Math.abs(data.payload.pos.x) < ISLAND_RADIUS + 50 && Math.abs(data.payload.pos.z) < ISLAND_RADIUS + 50;
+            // Boundary Check — the world now includes the open ocean up to
+            // WORLD_RADIUS (plus the custom-level apron), so accept those too.
+            const oceanLimit = (typeof WORLD_RADIUS === 'number' ? WORLD_RADIUS : 1000) + 60;
+            const isIsland = Math.abs(data.payload.pos.x) < oceanLimit && Math.abs(data.payload.pos.z) < oceanLimit;
             const isVoid = Math.abs(data.payload.pos.x - 10000) < 500 && Math.abs(data.payload.pos.z - 10000) < 500;
             // Allow Lava world coordinates too
             const isLava = Math.abs(data.payload.pos.x + 20000) < 500;
@@ -3909,9 +4027,11 @@ function setupThreeJS() {
     scene = new THREE.Scene();
     // Warm/Cozy Initial Background
     scene.background = new THREE.Color(0x9FD9FF);
-    scene.fog = new THREE.Fog(0x9FD9FF, 20, 100);
+    // Fog fades distant islands in gently rather than hiding them, so the open
+    // ocean still reads as vast without the horizon popping into view.
+    scene.fog = new THREE.Fog(0x9FD9FF, 60, 520);
 
-    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 3000);
 
     // KEEP antialias: false for pixel art style
     renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -4041,7 +4161,52 @@ function setupThreeJS() {
         window.darkPondCollider = null;
         window.dockCollider = null;
         window.customWorld = WorldGen.buildCustomWorld(scene, window.CUSTOM_LEVEL);
+        // Build the authored props / flowers first; generateWorld() resets the
+        // shared tree + collider arrays, so the generated ocean islands (below)
+        // must be added *after* it or their trees would be wiped.
         generateWorld("custom-level");
+        // Generated islands in the ocean beyond the authored map, so sailing
+        // off the edge of a custom level still leads somewhere.
+        if (window.Ocean && typeof window.Ocean.layoutAround === 'function') {
+            const around = window.Ocean.layoutAround(window.CUSTOM_LEVEL.size, window.CUSTOM_LEVEL.seaLevel);
+            window.customOcean = around;
+            const g = new THREE.Group();
+            g.name = "customOceanIslands";
+            window.customOceanTrees = [];
+            around.islands.forEach(isl => {
+                const mesh = window.Ocean.buildIslandMesh(isl);
+                g.add(mesh);
+                const rand = (function () {
+                    let s = isl.seed >>> 0;
+                    return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+                })();
+                if (window.WorldGen.createDetailedTree) {
+                    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6D4C41, roughness: 1.0 });
+                    const leafTex = WorldGen.createLeafTexture();
+                    const n = Math.round(isl.radius * 0.3);
+                    for (let i = 0; i < n; i++) {
+                        const a = rand() * Math.PI * 2;
+                        const d = rand() * isl.radius * 0.7;
+                        const x = isl.x + Math.cos(a) * d;
+                        const z = isl.z + Math.sin(a) * d;
+                        const h = window.Ocean.islandHeight(isl, x, z);
+                        if (h < (window.CUSTOM_LEVEL.seaLevel || 0) + 0.6) continue;
+                        const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, color: 0x88CC88, roughness: 0.8, flatShading: true });
+                        leafMat.color.setHSL(0.35 + (rand() - 0.5) * 0.2, 0.6, 0.4);
+                        const t = WorldGen.createDetailedTree(leafMat, trunkMat);
+                        const s = 0.7 + rand() * 0.4;
+                        t.position.set(x, h, z);
+                        t.rotation.y = rand() * Math.PI * 2;
+                        t.scale.set(s, s, s);
+                        g.add(t);
+                        window.customOceanTrees.push(t);
+                        treeColliders.push({ x: x, z: z, radius: 1.5 });
+                    }
+                }
+                if (typeof spawnOceanIslandFlowers === 'function') spawnOceanIslandFlowers(isl, rand);
+            });
+            scene.add(g);
+        }
         createNPCs();
         createLocalPlayer();
         createRainSystem();
@@ -4134,9 +4299,12 @@ function setupThreeJS() {
     const oceanTex = createNoiseTexture(256, 256, '#1a4a6e', '#0d3347', 0.02, 42);
     oceanTex.wrapS = THREE.RepeatWrapping;
     oceanTex.wrapT = THREE.RepeatWrapping;
-    oceanTex.repeat.set(20, 20);
+    // Repeat scales with the plane so the texture doesn't stretch over the
+    // much larger open ocean.
+    const oceanSize = (typeof WORLD_RADIUS === 'number' ? WORLD_RADIUS : 1000) * 2;
+    oceanTex.repeat.set(Math.max(20, oceanSize / 30), Math.max(20, oceanSize / 30));
 
-    const oceanGeo = new THREE.PlaneGeometry(600, 600);
+    const oceanGeo = new THREE.PlaneGeometry(oceanSize, oceanSize);
     const oceanMat = new THREE.MeshStandardMaterial({
         map: oceanTex,
         color: 0x6699cc,
@@ -4147,7 +4315,7 @@ function setupThreeJS() {
     });
     const ocean = new THREE.Mesh(oceanGeo, oceanMat);
     ocean.rotation.x = -Math.PI / 2;
-    ocean.position.y = -3; // Below the island
+    ocean.position.y = (typeof OCEAN_LEVEL === 'number' ? OCEAN_LEVEL : -3); // Ocean surface
     scene.add(ocean);
 
     // --- SMALL POND (Near Cabin) ---
@@ -4225,6 +4393,21 @@ function setupThreeJS() {
     staticColliders.push({ minX: 4.5, maxX: 5.5, minZ: 100, maxZ: 165 });
 
     generateWorld("lobby-world");
+
+    // --- GENERATED OCEAN ISLANDS ---
+    // A deterministic archipelago the player can sail out to. Built *after*
+    // generateWorld so the pickable flowers ocean.js plants survive its reset of
+    // the shared tree/flower arrays. Colliders merge in so trees are solid too.
+    if (window.Ocean && typeof window.Ocean.build === 'function') {
+        const built = window.Ocean.build(scene, { decorate: true });
+        window.oceanIslands = built.islands;
+        // Keep a handle on the generated trees + colliders so generateWorld can
+        // re-register them if the procedural island is re-rolled (join/leave).
+        window.oceanWorld = { trees: built.trees || [], colliders: built.colliders || [] };
+        if (built.trees) built.trees.forEach(t => treeMeshes.push(t));
+        if (built.colliders) built.colliders.forEach(c => treeColliders.push(c));
+    }
+
     createCabin();
 
     createNPCs(); createLocalPlayer();
@@ -9888,7 +10071,27 @@ function stopFishing(success, msg) {
             else if (rarity === 'Rare') fishingXPGain = 60;
             else if (rarity === 'Epic') fishingXPGain = 120;
             else if (rarity === 'Legendary') fishingXPGain = 250;
+
+            // --- DEEP OCEAN BONUS ---
+            // The further from the home island a fish is caught, the richer the
+            // haul. This is what makes sailing out worthwhile: more XP, a
+            // Sailing-XP kicker, and a markedly higher sale price.
+            if (caughtZone === 'ocean' && !(window.CUSTOM_LEVEL && window.Level)) {
+                const homeDist = Math.sqrt(player.position.x ** 2 + player.position.z ** 2);
+                const traveled = Math.max(0, homeDist - ISLAND_RADIUS);
+                const worldSpan = Math.max(1, (typeof WORLD_RADIUS === 'number' ? WORLD_RADIUS : 1000) - ISLAND_RADIUS);
+                const t = Math.min(1, traveled / worldSpan); // 0 near shore .. 1 far out
+                fishingXPGain = Math.round(fishingXPGain * (1 + t * 0.8));
+                const base = Number(minigame.targetFish.price || minigame.targetFish.value || 0);
+                if (base > 0) minigame.targetFish.price = Math.round(base * (1 + t * 0.6));
+            }
+
             addSkillXP('fishing', fishingXPGain);
+
+            // Sailing XP: rewards fishing from open water on the boat.
+            if (isSailing) {
+                addSkillXP('sailing', caughtZone === 'ocean' ? 12 : 6);
+            }
 
             saveGame();
 
@@ -10286,13 +10489,20 @@ function animate() {
         // Main World & Lava World both use Y=0 as the ground level
         let floorY = getTerrainHeight(player.position.x, player.position.z);
         if (isInVoid) floorY = 2000;
-        // While sailing the boat rides the surface: on water, hold the player at
-        // water level instead of sinking to the lakebed; on land, use the ground.
-        if (isSailing && !isInVoid && !isInLavaWorld) {
-            const overWater = (window.CUSTOM_LEVEL && window.Level)
-                ? window.Level.isWater(window.CUSTOM_LEVEL, player.position.x, player.position.z)
-                : (Math.sqrt(player.position.x ** 2 + player.position.z ** 2) < LAKE_RADIUS - 1);
-            if (overWater) floorY = Math.max(floorY, 0.6);
+        // Water surface: a boat always rides the top, and an on-foot player in
+        // deep water treads water at the surface (slow swim) rather than sinking
+        // to the sea bed. Shallow water is still walked normally.
+        if (!isInVoid && !isInLavaWorld) {
+            const surface = waterSurfaceAt(player.position.x, player.position.z);
+            if (surface !== null) {
+                if (isSailing) {
+                    floorY = Math.max(floorY, surface);
+                } else {
+                    // On foot: only float when the water is deep enough to swim.
+                    const bed = getTerrainHeight(player.position.x, player.position.z);
+                    if (surface - bed > SHALLOW_DEPTH) floorY = surface;
+                }
+            }
         }
 
         // 2. KNOCKBACK (PvP)
@@ -10319,18 +10529,25 @@ function animate() {
                         testPos.z > b.minZ - 0.5 && testPos.z < b.maxZ + 0.5) hitWall = true;
                 }
                 if (window.CUSTOM_LEVEL && window.Level) {
-                    // Custom levels: block walking into water or off the map.
-                    if (!isSailing && (window.Level.isWater(window.CUSTOM_LEVEL, testPos.x, testPos.z) ||
-                        !window.Level.inBounds(window.CUSTOM_LEVEL, testPos.x, testPos.z))) hitWall = true;
-                } else if (!isSailing && testPos.length() < LAKE_RADIUS + 0.5) hitWall = true;
+                    // Inside the authored map, water blocks on foot; the ocean
+                    // apron outside it is open. A rowboat ignores both.
+                    if (!isSailing &&
+                        window.Level.inBounds(window.CUSTOM_LEVEL, testPos.x, testPos.z) &&
+                        window.Level.isWater(window.CUSTOM_LEVEL, testPos.x, testPos.z)) hitWall = true;
+                } else {
+                    // Home island water only blocks inside the island; the open
+                    // ocean is swimmable, so knocking someone off the island is fine.
+                    const homeIsland = testPos.length() < ISLAND_RADIUS + 2;
+                    if (!isSailing && homeIsland && testPos.length() < LAKE_RADIUS + 0.5) hitWall = true;
 
-                // Pond collision
-                if (window.pondCollider && !isSailing) {
-                    const distPond = Math.sqrt(
-                        Math.pow(testPos.x - window.pondCollider.x, 2) +
-                        Math.pow(testPos.z - window.pondCollider.z, 2)
-                    );
-                    if (distPond < window.pondCollider.radius + 0.5) hitWall = true;
+                    // Pond collision
+                    if (window.pondCollider && !isSailing && homeIsland) {
+                        const distPond = Math.sqrt(
+                            Math.pow(testPos.x - window.pondCollider.x, 2) +
+                            Math.pow(testPos.z - window.pondCollider.z, 2)
+                        );
+                        if (distPond < window.pondCollider.radius + 0.5) hitWall = true;
+                    }
                 }
 
                 // River collision
@@ -10371,8 +10588,16 @@ function animate() {
 
         const sprite = player.getObjectByName("playerSprite");
         if (v.length() > 0) {
-            // A rowboat glides a little faster than walking.
-            v.normalize().multiplyScalar(PLAYER_SPEED * (isSailing ? 1.35 : 1) * dt);
+            // A rowboat glides faster than walking; deep water slows a swimmer.
+            let speedMult = isSailing ? 1.35 : 1;
+            if (!isSailing && !isInVoid && !isInLavaWorld) {
+                const surf = waterSurfaceAt(player.position.x, player.position.z);
+                if (surf !== null) {
+                    const bed = getTerrainHeight(player.position.x, player.position.z);
+                    if (surf - bed > SHALLOW_DEPTH) speedMult *= SWIM_SPEED_MULT;
+                }
+            }
+            v.normalize().multiplyScalar(PLAYER_SPEED * speedMult * dt);
             // OPTIMIZATION: Reuse vector
             const np = _optVec1.copy(player.position).add(v);
             let col = false;
@@ -10408,19 +10633,28 @@ function animate() {
                         np.z > b.minZ - 0.5 && np.z < b.maxZ + 0.5) col = true;
                 }
                 // Water Collision (Lake, Pond, Dark Pond). A rowboat ignores all
-                // of it, so the player can cross open water while sailing.
+                // of it, and the open ocean is walkable (as a slow swim), so only
+                // the home island's own water still blocks an on-foot player.
                 if (!isSailing) {
                     if (window.CUSTOM_LEVEL && window.Level) {
-                        if (window.Level.isWater(window.CUSTOM_LEVEL, np.x, np.z) ||
-                            !window.Level.inBounds(window.CUSTOM_LEVEL, np.x, np.z)) col = true;
-                    } else if (np.length() < LAKE_RADIUS + 0.5) col = true; // Main Lake
+                        // Inside the authored map, water blocks on foot as before;
+                        // outside it (the ocean apron) is open water to swim/sail.
+                        if (window.Level.inBounds(window.CUSTOM_LEVEL, np.x, np.z) &&
+                            window.Level.isWater(window.CUSTOM_LEVEL, np.x, np.z)) col = true;
+                    } else {
+                        const npDist = np.length();
+                        const homeIsland = npDist < ISLAND_RADIUS + 2;
+                        if (homeIsland) {
+                            if (npDist < LAKE_RADIUS + 0.5) col = true; // Main Lake
 
-                    if (window.pondCollider) {
-                        if (np.distanceTo(_optVec3.set(window.pondCollider.x, 0, window.pondCollider.z)) < window.pondCollider.radius + 0.5) col = true;
-                    }
+                            if (window.pondCollider) {
+                                if (np.distanceTo(_optVec3.set(window.pondCollider.x, 0, window.pondCollider.z)) < window.pondCollider.radius + 0.5) col = true;
+                            }
 
-                    if (window.darkPondCollider) {
-                        if (np.distanceTo(_optVec3.set(window.darkPondCollider.x, 0, window.darkPondCollider.z)) < window.darkPondCollider.radius + 0.5) col = true;
+                            if (window.darkPondCollider) {
+                                if (np.distanceTo(_optVec3.set(window.darkPondCollider.x, 0, window.darkPondCollider.z)) < window.darkPondCollider.radius + 0.5) col = true;
+                            }
+                        }
                     }
                 }
 
@@ -10495,17 +10729,23 @@ function animate() {
         }
         else if (!isInVoid) {
             if (window.CUSTOM_LEVEL && window.Level) {
-                // Custom levels: keep the player inside the level bounds.
-                const lim = window.CUSTOM_LEVEL.size / 2 - 1;
+                // Custom levels: the authored map is the "home island"; past its
+                // edge is ocean with generated islands, bounded by a wide apron.
+                const half = window.CUSTOM_LEVEL.size / 2;
+                const apron = (window.customOcean && window.customOcean.outer)
+                    ? window.customOcean.outer
+                    : half + 560;
+                const lim = Math.max(half - 1, apron - 2);
                 player.position.x = Math.max(-lim, Math.min(lim, player.position.x));
                 player.position.z = Math.max(-lim, Math.min(lim, player.position.z));
             } else {
-                // Main Island Boundaries
+                // Main Island + Open Ocean Boundaries
                 // Exception: Allow walking past edge if on the dock (Z > 85, X close to 0)
                 const onDock = (player.position.z > 85 && player.position.z < 170 && Math.abs(player.position.x) < 6);
-                if (!onDock && player.position.length() > ISLAND_RADIUS - 1) player.position.setLength(ISLAND_RADIUS - 1);
-                // The boat may sit on the lake; the walk clamp that normally keeps
-                // the player ashore is relaxed while sailing.
+                const worldLimit = (typeof WORLD_RADIUS === 'number' ? WORLD_RADIUS : 1000) - 2;
+                if (!onDock && player.position.length() > worldLimit) player.position.setLength(worldLimit);
+                // The boat may sit on any water. On foot the ocean is now open
+                // too (you swim); only the home island's lake still blocks entry.
                 if (isSailing) {
                     if (player.position.length() < LAKE_RADIUS - 6) player.position.setLength(LAKE_RADIUS - 6);
                 } else if (player.position.length() < LAKE_RADIUS + 0.5) {
@@ -14680,11 +14920,19 @@ window.exitVoid = function () {
 
 // True when the player is close enough to the main lake to launch a boat.
 function nearLaunchableWater(x, z) {
+    // You can launch anywhere there's water: the home lake/ponds, any point in
+    // the open ocean, or a custom level's sea (inside or out).
     if (window.CUSTOM_LEVEL && window.Level) {
-        return window.Level.isWater(window.CUSTOM_LEVEL, x, z);
+        if (window.Level.isWater(window.CUSTOM_LEVEL, x, z)) return true;
+        // Outside the authored map is ocean too.
+        return !window.Level.inBounds(window.CUSTOM_LEVEL, x, z);
     }
     const d = Math.sqrt(x * x + z * z);
-    return d < LAKE_RADIUS + 8;
+    if (d < LAKE_RADIUS + 8) return true;                 // home lake shore
+    if (d > ISLAND_RADIUS - 8) {                           // open ocean
+        return getTerrainHeight(x, z) < OCEAN_LEVEL + 0.5;
+    }
+    return false;
 }
 
 window.toggleSailing = function () {
@@ -14695,10 +14943,8 @@ window.toggleSailing = function () {
     }
 
     if (isSailing) {
-        // Step ashore: only allowed once the current spot is on land.
-        const onWater = (window.CUSTOM_LEVEL && window.Level)
-            ? window.Level.isWater(window.CUSTOM_LEVEL, player.position.x, player.position.z)
-            : (Math.sqrt(player.position.x ** 2 + player.position.z ** 2) < LAKE_RADIUS + 0.5);
+        // Step ashore: only allowed once the current spot is dry land.
+        const onWater = waterSurfaceAt(player.position.x, player.position.z) !== null;
         if (onWater) { showToast('Row closer to shore before stepping out.'); return; }
         isSailing = false;
         playerVelocity.y = 0;
@@ -14708,7 +14954,7 @@ window.toggleSailing = function () {
     }
 
     if (!nearLaunchableWater(player.position.x, player.position.z)) {
-        showToast('Stand by the lake to launch your boat.');
+        showToast('Stand by the water to launch your boat.');
         return;
     }
 

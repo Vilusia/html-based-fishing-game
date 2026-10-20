@@ -542,6 +542,20 @@ const GRAVITY = 20;
 const JUMP_FORCE = 10;
 let lastCatchTime = 0;
 
+// --- OPEN OCEAN ---
+// The island sits in a large (but finite) ocean that players can sail out
+// into. WORLD_RADIUS is the hard wall at the edge of the water; OCEAN_LEVEL is
+// the surface height (kept in step with the ocean plane mesh in ui.js). Beyond
+// the island the water gets deep, so on foot you swim slowly rather than walk.
+const WORLD_RADIUS = 1000;      // hard boundary -> world spans 2000 x 2000
+const OCEAN_LEVEL = -3;         // ocean surface height (ocean plane mesh y)
+const OCEAN_FLOOR = -9;         // deep sea bed height far from land
+const SHALLOW_DEPTH = 2.2;      // water this shallow still counts as walkable
+const SWIM_SPEED_MULT = 0.45;   // on-foot speed in deep water
+// Generated islands live in this ring around the home island.
+const OCEAN_ISLAND_MIN_GAP = 70; // clear water between the home island and them
+const OCEAN_ISLAND_MARGIN = 90;  // keep islands off the hard wall
+
 // --- OPTIMIZATION: REUSABLE VECTORS ---
 // Pre-allocate vectors to avoid GC in the render loop
 const _optVec1 = new THREE.Vector3();

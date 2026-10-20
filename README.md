@@ -201,7 +201,38 @@ cooked twice, so the loop is catch → cook → sell.
 
 Buy the **Rowboat** from the Merchant (`hasBoat`) and press the `sail` keybind
 (`KeyR`) near water to launch. While sailing the boat ignores water collision,
-rides the lake surface, and moves 35% faster; step ashore from land only.
+rides the water surface, and moves 35% faster; step ashore from land only.
+
+#### The open ocean
+
+The home island sits in a large but **finite** ocean: `WORLD_RADIUS` (`fish.js`)
+is the hard wall, giving a 2000×2000 world. Past the beach the ground drops to
+the sea bed (`OCEAN_FLOOR`) and rises again at the generated islands.
+
+- **On foot** you can now walk/swim out into the ocean (the old edge block is
+  gone). Deep water (`surface - bed > SHALLOW_DEPTH`) slows you to
+  `SWIM_SPEED_MULT` and you tread the surface instead of sinking to the bed.
+- **Sailing** crosses the whole ocean, so the boat is the fast way out.
+
+`ocean.js` (`window.Ocean`) is the generator. It lays out a deterministic
+archipelago of ~26 islands between `ISLAND_RADIUS + OCEAN_ISLAND_MIN_GAP` and
+`WORLD_RADIUS - OCEAN_ISLAND_MARGIN`, seeded from a fixed string, so every
+client in a session sees the **same** islands with no networking. Each island
+is a radial dome with a beach, scattered trees/rocks (with colliders), pickable
+flowers, and some carry a prop or cave mouth.
+
+- `Ocean.heightAt(x, z)` — pure-maths height query blended into
+  `getTerrainHeight` outside the home island.
+- `Ocean.build(scene)` — the matching meshes, built once after `generateWorld`
+  (so its flowers survive that function's array reset).
+- **Custom levels** (`window.CUSTOM_LEVEL`) get their own apron: `ocean.js`
+  places ~18 islands in a ring `size/2 + 80` … `size/2 + 560` around the map
+  (`Ocean.layoutAround`), and the walk clamp is widened to that apron. Inside
+  the authored map water still blocks on foot; outside it is open.
+
+Fishing out in the open ocean pays a **deep-ocean bonus**: the further from the
+home island the cast lands, the more Fishing XP and sale value (up to +80% XP
+and +60% value at the far edge), plus Sailing XP when fishing from the boat.
 
 
 ---
