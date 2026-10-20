@@ -5510,29 +5510,38 @@ function drawBody(ctx, col, bellyCol, back) {
     ctx.fillStyle = headGrad;
     ctx.fill();
 
-    if (!back) {
-        ctx.save();
-        rrect(ctx, HX, HY, HW, HH, 7);
-        ctx.clip();
-        // Soft highlight on the upper-left of the head.
-        const hl = ctx.createRadialGradient(27, 15, 1, 27, 15, 17);
-        hl.addColorStop(0, 'rgba(255,255,255,0.30)');
-        hl.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = hl;
-        ctx.fillRect(HX, HY, HW, HH);
-        // Side shading.
-        const hside = ctx.createLinearGradient(HX, 0, HX + HW, 0);
-        hside.addColorStop(0, 'rgba(0,0,0,0.12)');
-        hside.addColorStop(0.3, 'rgba(0,0,0,0)');
-        hside.addColorStop(0.7, 'rgba(0,0,0,0)');
-        hside.addColorStop(1, 'rgba(0,0,0,0.12)');
-        ctx.fillStyle = hside;
-        ctx.fillRect(HX, HY, HW, HH);
-        // Chin / neck shadow where the head meets the torso.
-        ctx.fillStyle = 'rgba(0,0,0,0.16)';
-        ctx.fillRect(HX, 33, HW, 3);
-        ctx.restore();
-    }
+    // Head highlight + side shading now live in applyHeadLighting(), which
+    // runs once after the ears are drawn so both the head and the ears get
+    // identical lighting and the head/ear join disappears.
+}
+
+// Applies the head's soft highlight and side shading across the whole sprite.
+// Uses `source-atop` so it only tints pixels that are already painted (body,
+// ears, hair); transparent areas stay transparent. Call after all the parts
+// are drawn.
+function applyHeadLighting(ctx) {
+    const HX = 14, HY = 8, HW = 36, HH = 28;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-atop';
+    // Soft highlight on the upper-left of the head.
+    const hl = ctx.createRadialGradient(27, 15, 1, 27, 15, 17);
+    hl.addColorStop(0, 'rgba(255,255,255,0.30)');
+    hl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hl;
+    ctx.fillRect(0, -30, 64, 105);
+    // Side shading, matched to the head's width so the edges of the head and
+    // any ear that sits beside it darken by the same amount.
+    const hside = ctx.createLinearGradient(HX, 0, HX + HW, 0);
+    hside.addColorStop(0, 'rgba(0,0,0,0.12)');
+    hside.addColorStop(0.3, 'rgba(0,0,0,0)');
+    hside.addColorStop(0.7, 'rgba(0,0,0,0)');
+    hside.addColorStop(1, 'rgba(0,0,0,0.12)');
+    ctx.fillStyle = hside;
+    ctx.fillRect(0, -30, 64, 105);
+    // Chin / neck shadow where the head meets the torso.
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    ctx.fillRect(HX, 33, HW, 3);
+    ctx.restore();
 }
 
 // Helper for shading
@@ -5548,11 +5557,21 @@ function shadeColor(color, percent) {
 // flat `col` here left a visible seam along the head/ear join, so the ear
 // base uses that same crown highlight.
 function drawEars(ctx, earId, col, bellyCol, back) {
-    const crownLit = shadeColor(col, 0.26); // must match drawBody's `light`
-    const earGrad = ctx.createLinearGradient(0, -8, 0, 16);
-    earGrad.addColorStop(0, crownLit);
-    earGrad.addColorStop(0.55, col);
-    earGrad.addColorStop(1, col);
+    // Match the head EXACTLY. drawBody() paints the head with a vertical
+    // gradient over y = HY(8) .. HY+HH(36):
+    //   8    -> light              (shadeColor(col, 0.26))
+    //   20.6 -> col
+    //   36   -> shadeColor(col, -0.12)
+    // The ears are drawn on top of the body and share the same coordinate
+    // space, so the only way the join disappears is to sample the *same*
+    // gradient at the *same* y. Points above the crown (y < 8) clamp to the
+    // first stop, which is exactly what we want for pointy ears.
+    const light = shadeColor(col, 0.26);
+    const dark = shadeColor(col, -0.12);
+    const earGrad = ctx.createLinearGradient(0, 8, 0, 36);
+    earGrad.addColorStop(0, light);
+    earGrad.addColorStop(0.45, col);
+    earGrad.addColorStop(1, dark);
     ctx.fillStyle = earGrad;
     const shadow = shadeColor(col, -0.2);
     const highlight = shadeColor(col, 0.2);
@@ -7217,6 +7236,14 @@ function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColor
     drawTail(ctx, parts.tail, tailCol, bellyCol, back);
     drawMisc(ctx, parts.misc, miscCol, bellyCol, back);
     drawEars(ctx, parts.ears, earsCol, bellyCol, back);
+
+    // Unified head lighting. The ears are drawn on top of the head, so without
+    // this they miss the head's highlight/side-shade and leave a seam at the
+    // join. Re-applying the exact same lighting over the whole sprite (clipped
+    // to whatever pixels are already painted) makes same-coloured ears blend
+    // seamlessly into the head. Skipped for the back view, which drawBody
+    // leaves unlit.
+    if (!back) applyHeadLighting(ctx);
 
     if (!back) {
         drawEyes(ctx, parts.eyes, eyeCol);
