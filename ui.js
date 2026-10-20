@@ -11549,6 +11549,9 @@ function updateCookingMinigameUI() {
 
 function startCookingMinigame(items) {
     if (cookingMini.active || items.length === 0) return;
+    // Close cooking UI so minigame is visible
+    const cookUi = document.getElementById('cooking-ui');
+    if (cookUi) cookUi.style.display = 'none';
     cookingMini.active = true;
     cookingMini.items = items.slice();
     cookingMini.results = [];
