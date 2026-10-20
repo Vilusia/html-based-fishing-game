@@ -692,6 +692,8 @@ const CLICK_POWER_PRICES = [0, 3000, 15000, 75000, 400000, 2000000];
 let chargeStart = 0, castMarker, lastCastPos = new THREE.Vector3();
 const MAX_CHARGE_TIME = 1500, MAX_CAST_DISTANCE = 18, MIN_CAST_DISTANCE = 3;
 let lastFootstepTime = 0;
+let lastOarTime = 0;      // throttle for the rowing stroke sound while sailing
+let sailDrySince = 0;     // timestamp the player in a boat first stood on dry land
 
 let minigame = { active: false, progress: 15, targetFish: null, drainRate: 0 };
 let cameraRotationX = 0, cameraRotationY = 0;

@@ -119,7 +119,7 @@ const Sound = {
             nodes = { output: gain };
         }
 
-        else if (['jump', 'cast', 'splash', 'meow', 'chat', 'reel'].includes(soundName)) {
+        else if (['jump', 'cast', 'splash', 'meow', 'chat', 'reel', 'sail'].includes(soundName)) {
             if (soundName === 'jump') {
                 const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
                 osc.frequency.setValueAtTime(200, now); osc.frequency.linearRampToValueAtTime(600, now + 0.2);
@@ -156,6 +156,19 @@ const Sound = {
                 const osc = audioCtx.createOscillator(); osc.type = 'square'; const gain = audioCtx.createGain();
                 osc.frequency.setValueAtTime(800, now); gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
                 osc.connect(gain); osc.start(); osc.stop(now + 0.05); nodes = { output: gain };
+            }
+            else if (soundName === 'sail') {
+                // A single oar stroke: a soft splash with a short watery tail.
+                const { noise, gain } = createNoiseGain(0.4);
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(1100, now);
+                filter.frequency.exponentialRampToValueAtTime(250, now + 0.35);
+                gain.gain.setValueAtTime(0.14, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                noise.connect(filter);
+                noise.start();
+                nodes = { output: filter };
             }
         }
 
@@ -213,6 +226,56 @@ const Sound = {
             osc.start(t);
             osc.stop(t + 0.35);
         });
+    }
+};
+
+// --- CONTINUOUS SAIL AUDIO ---
+// A soft looping water sound while the local player is rowing. Created lazily
+// on first use, ramped in/out so boarding and stepping ashore never click.
+const SailAudio = {
+    noise: null, filter: null, gain: null, active: false,
+
+    ensure: () => {
+        if (SailAudio.gain) return;
+        // Brown-ish noise reads as moving water better than white noise.
+        const len = audioCtx.sampleRate * 2;
+        const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+        const d = buf.getChannelData(0);
+        let last = 0;
+        for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            last = (last + 0.02 * w) / 1.02;
+            d[i] = last * 3.5;
+        }
+        SailAudio.noise = audioCtx.createBufferSource();
+        SailAudio.noise.buffer = buf;
+        SailAudio.noise.loop = true;
+        SailAudio.filter = audioCtx.createBiquadFilter();
+        SailAudio.filter.type = 'lowpass';
+        SailAudio.filter.frequency.value = 500;
+        SailAudio.gain = audioCtx.createGain();
+        SailAudio.gain.gain.value = 0;
+        SailAudio.noise.connect(SailAudio.filter);
+        SailAudio.filter.connect(SailAudio.gain);
+        SailAudio.gain.connect(sfxGain);
+        SailAudio.noise.start();
+    },
+
+    /** Turn the rowing loop on/off. Safe to call every frame. */
+    setActive: (on) => {
+        if (on) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            SailAudio.ensure();
+            if (SailAudio.active) return;
+            SailAudio.active = true;
+            SailAudio.noise.playbackRate.value = 0.9 + Math.random() * 0.2;
+            SailAudio.gain.gain.cancelScheduledValues(audioCtx.currentTime);
+            SailAudio.gain.gain.setTargetAtTime(0.06, audioCtx.currentTime, 0.4);
+        } else if (SailAudio.active) {
+            SailAudio.active = false;
+            SailAudio.gain.gain.cancelScheduledValues(audioCtx.currentTime);
+            SailAudio.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.25);
+        }
     }
 };
 

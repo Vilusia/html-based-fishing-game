@@ -2975,6 +2975,9 @@ function sendUpdate() {
     myData.hair = saveState.currentHair;
     myData.hairColor = saveState.hairColor;
     myData.bobberType = saveState.currentBobber;
+    // Sailing state: lets every peer show the rowboat and stop this player's
+    // walking animation while the boat is out.
+    myData.sailing = isSailing;
 
     myData.bobberType = saveState.currentBobber;
 
@@ -3119,6 +3122,13 @@ function updateRemotePlayer(id, data) {
         // Determine if using new parts system or legacy species
         replaceCharacterBody(p.mesh, characterCfgFromData(data));
     }
+
+    // 3.5 SAILING BOAT SYNC — show the rowboat while this player sails.
+    // attachSailBoat() names the mesh 'sailBoat' and starts hidden, so peers
+    // only ever see it while data.sailing is true.
+    let remoteBoat = p.mesh.getObjectByName('sailBoat');
+    if (!remoteBoat) remoteBoat = attachSailBoat(p.mesh);
+    if (remoteBoat) remoteBoat.visible = data.sailing === true;
 
     // 4. POSITION INTERPOLATION
     p.lastData = data;
@@ -10960,21 +10970,38 @@ function animate() {
             }
             if (fishingState !== 'idle' && fishingState !== 'charging') stopFishing(false, "Moved!");
 
-            // Animation
-            const time = Date.now() * 0.012;
-            if (sprite) {
-                sprite.position.y = 1.46875 + Math.abs(Math.sin(time)) * 0.3;
-                sprite.rotation.z = Math.sin(time) * 0.15;
-            }
-            if (audioCtx.currentTime - lastFootstepTime > 0.35) {
-                broadcastSound('footstep');
-                lastFootstepTime = audioCtx.currentTime;
+            // Animation — the player sits in the rowboat while sailing, so the
+            // walking bob and footsteps are suppressed; the water loop takes over.
+            if (isSailing) {
+                if (sprite) {
+                    sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.46875, 10 * dt);
+                    sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
+                }
+                // Rowing stroke heard by everyone nearby.
+                if (audioCtx.currentTime - lastOarTime > 1.1) {
+                    lastOarTime = audioCtx.currentTime;
+                    broadcastSound('sail');
+                }
+                SailAudio.setActive(true);
+            } else {
+                const time = Date.now() * 0.012;
+                if (sprite) {
+                    sprite.position.y = 1.46875 + Math.abs(Math.sin(time)) * 0.3;
+                    sprite.rotation.z = Math.sin(time) * 0.15;
+                }
+                if (audioCtx.currentTime - lastFootstepTime > 0.35) {
+                    broadcastSound('footstep');
+                    lastFootstepTime = audioCtx.currentTime;
+                }
+                SailAudio.setActive(false);
             }
         } else {
             if (sprite) {
                 sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.46875, 10 * dt);
                 sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
             }
+            // Not moving: the rowing loop drops out (also covers idling in the boat).
+            SailAudio.setActive(false);
         }
 
         // 4. GRAVITY
@@ -11036,6 +11063,27 @@ function animate() {
                     player.position.setLength(LAKE_RADIUS + 0.5);
                 }
             }
+        }
+
+        // --- AUTO-DISMOUNT ---
+        // Walking onto dry land removes the boat (peers pick the change up
+        // through myData.sailing). A short grace period so launching from the
+        // beach — where you are still standing on sand — doesn't instantly
+        // kick you out before you reach the water.
+        if (isSailing && !isInVoid && !isInLavaWorld) {
+            const afloat = waterSurfaceAt(player.position.x, player.position.z) !== null;
+            if (!afloat) {
+                if (!sailDrySince) sailDrySince = Date.now();
+                else if (Date.now() - sailDrySince > 800) {
+                    sailDrySince = 0;
+                    window.toggleSailing(); // dry-land path: steps ashore + hides the boat
+                    showToast('Stepped ashore.');
+                }
+            } else {
+                sailDrySince = 0;
+            }
+        } else {
+            sailDrySince = 0;
         }
 
         if (isFirstPerson) {
@@ -11254,9 +11302,10 @@ function animate() {
         p.mesh.position.lerp(p.targetPos, 6 * dt);
         p.mesh.rotation.y = THREE.MathUtils.lerp(p.mesh.rotation.y, p.targetRot, 6 * dt);
         const s = p.mesh.getObjectByName("playerSprite");
+        const remoteSailing = p.lastData && p.lastData.sailing;
         if (s) {
             updateSpriteDirection(p.mesh, camera.position);
-            if (isMoving) {
+            if (isMoving && !remoteSailing) {
                 const time = Date.now() * 0.012;
                 s.position.y = 1.46875 + Math.abs(Math.sin(time)) * 0.3;
                 s.rotation.z = Math.sin(time) * 0.15;
@@ -15397,7 +15446,7 @@ window.toggleSailing = function () {
     setSailBoatVisible(true);
     stopFishing(false, 'Boarded the boat.');
     playerVelocity.y = 0;
-    broadcastSound('catch');
+    broadcastSound('sail');
     showToast('Boarded the rowboat. Sail out to the open water!');
 
     // Sailing XP for the first launch each session-shaped action.
