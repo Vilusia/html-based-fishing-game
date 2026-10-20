@@ -9950,7 +9950,23 @@ function createBobber(targetPos) {
 
     // Determine water level based on location (ocean is at Y=-3, ponds/lake at Y=0)
     const dist = Math.sqrt(targetPos.x * targetPos.x + targetPos.z * targetPos.z);
-    if (dist > ISLAND_RADIUS - 5 || targetPos.z > 100) {
+    // Check for ocean island ponds
+    let isIslandPond = false;
+    if (window.Ocean) {
+        try {
+            const lay = window.Ocean.layout();
+            if (lay && lay.ponds) {
+                for (let i = 0; i < lay.ponds.length; i++) {
+                    const p = lay.ponds[i];
+                    const dp = Math.sqrt(Math.pow(targetPos.x - p.x, 2) + Math.pow(targetPos.z - p.z, 2));
+                    if (dp < p.radius) { isIslandPond = true; break; }
+                }
+            }
+        } catch(e){}
+    }
+    if (isIslandPond) {
+        window.bobberTargetY = 0.05;
+    } else if (dist > ISLAND_RADIUS - 5 || targetPos.z > 100) {
         // Ocean (beyond island or on dock)
         window.bobberTargetY = -2.9;
     } else {
