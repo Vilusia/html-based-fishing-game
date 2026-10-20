@@ -3435,6 +3435,7 @@ function safeEmbedImage(text) {
 // another reason to move search behind the master server later if it grows.
 // ===========================================================================
 const GIF_API_KEY = 'aM8lJdWLEnPC1CHzdP8gkv0SnMBArJfP'; // GIPHY API key
+
 const GIF_CLIENT_KEY = 'html_fishing';    // identifies this integration to GIPHY
 const GIF_LIMIT = 24;                     // results per search (API max 50)
 const GIF_TIMEOUT_MS = 8000;
@@ -7993,212 +7994,544 @@ function drawPattern(ctx, patternId, col, back) {
     }
 }
 
-// VISUAL UPGRADE: Detailed Hair with Shading \u0026 Highlights
+// ---------------------------------------------------------------------------
+// HAIR
+//
+// Authored against ONE shared head model so nothing drifts off the skull,
+// buries the eyes, or damages the ears:
+//
+//     head box   x 14..50, y 8..36   (rounded, corner r=7)
+//     crown top  y = 8
+//     eyes       x 16..48, y 15..30  <- always kept clear
+//     nose       x 24..40, y 24..34  <- always kept clear
+//
+// Two rules make that hold for EVERY species, including the ones with huge
+// ears (dog's floppy ears reach x≈10/54, koala ≈5/59, monkey ≈5/59):
+//
+//   1. The crown cap is drawn through withHeadClip(), which clips it to the
+//      head silhouette itself. Hair can therefore never land on an ear, no
+//      matter how wide or tall that ear is.
+//   2. Anything that deliberately sticks out (spikes, tails, long skirting,
+//      afro puff) is drawn in a second, UNclipped pass that is confined to
+//      y > SKIRT (below the ear line) or to a band above the ears' roots.
+//
+// The face is additionally protected by keeping the hairline at FACE = 15.
+// ---------------------------------------------------------------------------
 function drawHair(ctx, hairId, col, back) {
     if (!hairId || hairId === 'none') return;
-    const hair = HAIR_TYPES.find(h => h.id === hairId);
-    if (!hair) return;
+    if (!HAIR_TYPES.find(h => h.id === hairId)) return;
 
-    // Base Color
-    ctx.fillStyle = col || '#ffffff';
+    const base = col || '#ffffff';
+    const lite = shadeColor(base, 0.30);
+    const mid = shadeColor(base, 0.12);
+    const dark = shadeColor(base, -0.24);
 
-    // Highlight Color (Lighten base)
-    const highlight = shadeColor(col || '#ffffff', 0.3);
-    const shadow = shadeColor(col || '#ffffff', -0.2);
+    // Shared landmarks.
+    const TOP = 8;                       // crown
+    const FACE = 15;                     // hairline: never below this on the face
+    const XL = 14, XR = 50;              // head box sides
+    // The drawn face box (eyes AND nose). drawSpecies paints the face before
+    // the hair, and only the eyes are re-stamped afterwards - the nose is not.
+    // So no hair may reach into this box or it buries a species' nose. Measured
+    // across every species: noses span x 22..41.5 and reach as high as y 18
+    // (koala), so hair is kept above NOSE_TOP or outboard of 22 / 41.5.
+    const NOSE_TOP = 18;
+    const NOSE_L = 22, NOSE_R = 41.5;
+    // Lowest y a crown/base fill may extend to while still clearing every nose.
+    const CROWN_MAX = NOSE_TOP;
+    // The lowest point any ear reaches. Above this line the ears occupy the
+    // space beside the head, so hair must stay inside the skull; below it the
+    // sides are clear and hair may hang out freely.
+    const EAR_BOTTOM = 28;
+    const SKIRT = EAR_BOTTOM;            // ear-safe threshold for side volumes
+    const PAD = 3;                       // outward room for side volumes
 
+    // =======================================================================
+    // helpers
+    // =======================================================================
+    // Head silhouette used as the hair clip. It is the head's rounded box with
+    // the upper corners trimmed back, because that is exactly where every ear
+    // attaches: cat/fox/wolf triangles, dog/fox floppy lobes, koala/mouse/
+    // monkey circles and cow horns all grow out of x≈14 / x≈50 at y≈6..12.
+    // Trimming to x 20..44 above y=12 and opening to the full width by y=14
+    // keeps the crown covered while guaranteeing no style can graze an ear.
+    const headPath = () => {
+        const IN = 6;      // corner trim (x 14+6 = 20 .. 50-6 = 44 at the top)
+        const y0 = TOP;    // crown
+        const yOpen = TOP + 6;
+        ctx.beginPath();
+        ctx.moveTo(XL + IN, y0);
+        ctx.lineTo(XR - IN, y0);
+        ctx.quadraticCurveTo(XR, y0, XR, yOpen);
+        ctx.lineTo(XR, TOP + 28 - 7);
+        ctx.quadraticCurveTo(XR, TOP + 28, XR - 7, TOP + 28);
+        ctx.lineTo(XL + 7, TOP + 28);
+        ctx.quadraticCurveTo(XL, TOP + 28, XL, TOP + 28 - 7);
+        ctx.lineTo(XL, yOpen);
+        ctx.quadraticCurveTo(XL, y0, XL + IN, y0);
+        ctx.closePath();
+    };
+    // Excludes a rectangle from the current clip: a huge rect minus the hole,
+    // via the even-odd rule (points inside ONLY the hole have an even count).
+    const clipOut = (x, y, w, h) => {
+        ctx.beginPath();
+        ctx.rect(-200, -200, 900, 900);
+        ctx.rect(x, y, w, h);
+        ctx.clip('evenodd');
+    };
+    const withHeadClip = (fn) => {
+        ctx.save();
+        // The head, MINUS the drawn face box. drawSpecies paints the eyes and
+        // nose before the hair and only the eyes get re-stamped afterwards, so
+        // hair that reaches the nose would erase it (worst on the koala, whose
+        // nose starts at y 18, and the mouse, whose nose spans x 22..41.5).
+        headPath();
+        ctx.clip();
+        clipOut(NOSE_L, NOSE_TOP, NOSE_R - NOSE_L, 64 - NOSE_TOP);
+        fn();
+        ctx.restore();
+    };
+    // Paint only OUTSIDE the head silhouette, and only in ear-safe bands.
+    //
+    // The ears are the constraint: they grow out of the head's top corners and
+    // (for dog/fox/koala/monkey/elephant) hang down beside the head all the way
+    // to y ≈ 22..34. So anything drawn beside the head above EAR_BOTTOM lands on
+    // an ear. Hair therefore only leaves the skull here:
+    //
+    //   * the strip directly ABOVE the crown (x inside the head, y < above) —
+    //     spikes, mohawk crest, puffs, buns
+    //   * everything BELOW EAR_BOTTOM — tails, long skirting, braids
+    //
+    // Implemented as one even-odd path so the clip is exactly
+    // "bands minus head" regardless of clip() intersection semantics.
+    const outsideHead = (fn, below = EAR_BOTTOM, above = TOP) => {
+        ctx.save();
+        ctx.beginPath();
+        // Outer: above-the-crown strip (kept within the head's x-range so it
+        // can't reach an ear) plus the open region below the ears.
+        ctx.rect(XL, -60, XR - XL, above + 60);
+        ctx.rect(-20, below, 104, 160 - below);
+        // Inner: the hair-safe head, subtracted via the even-odd rule.
+        headPath();
+        ctx.clip('evenodd');
+        // Second, independent pass: punch out the drawn face box so nothing
+        // here can bury a nose that drawSpecies painted before the hair.
+        clipOut(NOSE_L, NOSE_TOP, NOSE_R - NOSE_L, 64 - NOSE_TOP);
+        fn();
+        ctx.restore();
+    };
+    // A cap of hair over the crown, reaching down the sides to `depth`.
+    // Always fills with the base hair colour (never inherits a stray style).
+    // The sides are inset to EAR_X so the cap's square corners stay 1px inside
+    // the points where the ears attach (x = 14 / 50) and never clip an ear tip.
+    const EAR_X = 1;
+    const cap = (depth, inset = 0, fillCol = base) => {
+        ctx.beginPath();
+        const x0 = XL + EAR_X + inset, x1 = XR - EAR_X - inset;
+        ctx.moveTo(x0, depth);
+        ctx.lineTo(x0, TOP + 5);
+        ctx.quadraticCurveTo(x0, TOP - 1, x0 + 5, TOP - 1);
+        ctx.lineTo(x1 - 5, TOP - 1);
+        ctx.quadraticCurveTo(x1, TOP - 1, x1, TOP + 5);
+        ctx.lineTo(x1, depth);
+        ctx.closePath();
+        ctx.fillStyle = fillCol;
+        ctx.fill();
+    };
+    // Soft sheen that follows the crown curve.
+    const sheen = (y = TOP + 3, x0 = 21, x1 = 43, h = 3) => {
+        ctx.fillStyle = lite;
+        ctx.beginPath();
+        ctx.moveTo(x0, y + h);
+        ctx.quadraticCurveTo(32, y - h, x1, y + h);
+        ctx.lineTo(x1, y);
+        ctx.quadraticCurveTo(32, y - 2 * h, x0, y);
+        ctx.closePath();
+        ctx.fill();
+    };
+    // A hanging strand/panel beside the face (drawn through the head clip when
+    // it hugs the head, or outside it when it hangs past the jaw).
+    const panel = (x, y, w, h, flare = 0, fillCol = base) => {
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x - flare, y + h * 0.5, x, y + h);
+        ctx.lineTo(x + w, y + h);
+        ctx.quadraticCurveTo(x + w + flare, y + h * 0.5, x + w, y);
+        ctx.closePath();
+        ctx.fillStyle = fillCol;
+        ctx.fill();
+    };
+    // Long hair falls in a curtain. It hugs the head's sides all the way down
+    // to EAR_BOTTOM (where the ears stop) and only then flares outward, so the
+    // flare can never land on a floppy ear.
+    const curtain = (bottom, flare = 4, fillCol = base) => {
+        const fy = Math.min(bottom, EAR_BOTTOM + 2);
+        ctx.beginPath();
+        ctx.moveTo(XL - flare, bottom);
+        ctx.lineTo(XL - flare, fy);
+        ctx.quadraticCurveTo(XL - flare + 1, EAR_BOTTOM, XL - 1, EAR_BOTTOM);
+        ctx.lineTo(XL + 1.5, TOP + 4);
+        ctx.quadraticCurveTo(XL + 1.5, TOP - 1, XL + 6, TOP - 1);
+        ctx.lineTo(XR - 6, TOP - 1);
+        ctx.quadraticCurveTo(XR - 1.5, TOP - 1, XR - 1.5, TOP + 4);
+        ctx.lineTo(XR + 1, EAR_BOTTOM);
+        ctx.quadraticCurveTo(XR + flare - 1, EAR_BOTTOM, XR + flare, fy);
+        ctx.lineTo(XR + flare, bottom);
+        ctx.quadraticCurveTo(32, bottom + 4, XL - flare, bottom);
+        ctx.closePath();
+        ctx.fillStyle = fillCol;
+        ctx.fill();
+    };
+
+    // =======================================================================
     if (back) {
-        // --- BACK VIEW (Shading & Highlights) ---
-        if (hair.id === 'messy') {
-            ctx.beginPath(); ctx.moveTo(18, 14); ctx.lineTo(46, 14); ctx.lineTo(50, 24); ctx.lineTo(42, 32); ctx.lineTo(22, 32); ctx.lineTo(14, 24); ctx.fill();
-            ctx.fillStyle = shadow; ctx.fillRect(20, 28, 4, 4); ctx.fillRect(40, 28, 4, 4);
-        } else if (hair.id === 'bob') {
-            ctx.fillRect(16, 10, 32, 24);
-            ctx.fillStyle = highlight; ctx.fillRect(16, 12, 32, 4);
-            ctx.fillStyle = shadow; ctx.fillRect(16, 32, 32, 2);
-        } else if (hair.id === 'long') {
-            ctx.fillRect(16, 10, 32, 38);
-            ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 4);
-            ctx.fillStyle = shadow; ctx.fillRect(16, 42, 32, 6);
-        } else if (hair.id === 'spiky') {
-            ctx.beginPath(); ctx.moveTo(14, 20); ctx.lineTo(18, 8); ctx.lineTo(24, 20); ctx.lineTo(32, 6); ctx.lineTo(40, 20); ctx.lineTo(46, 8); ctx.lineTo(50, 20); ctx.lineTo(48, 26); ctx.lineTo(16, 26); ctx.fill();
-            ctx.fillStyle = highlight; ctx.fillRect(20, 18, 4, 4); ctx.fillRect(40, 18, 4, 4);
-        } else if (hair.id === 'ponytail') {
-            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI * 2); ctx.fill();
-            ctx.fillRect(28, 20, 8, 26);
-            ctx.fillStyle = shadow; ctx.fillRect(29, 44, 6, 2);
-            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(28, 28, 8, 2); // Scrunchie
-        } else if (hair.id === 'pigtails' || hair.id === 'twintails') {
-            ctx.fillRect(11, 16, 7, 26); ctx.fillRect(46, 16, 7, 26);
-            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI, true); ctx.fill();
-            ctx.fillStyle = shadow; ctx.fillRect(11, 40, 7, 2); ctx.fillRect(46, 40, 7, 2);
-        } else if (hair.id === 'afro') {
-            ctx.beginPath(); ctx.arc(32, 12, 20, 0, Math.PI * 2); ctx.fill();
-            ctx.strokeStyle = shadow; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.arc(25, 12, 3, 0, Math.PI * 2); ctx.stroke();
-            ctx.beginPath(); ctx.arc(39, 12, 3, 0, Math.PI * 2); ctx.stroke();
-        } else if (hair.id === 'dreads') {
-            ctx.fillRect(16, 10, 32, 14);
-            for (let dx = 16; dx <= 44; dx += 4) {
-                ctx.fillStyle = (dx % 8 === 0) ? shadow : col;
-                ctx.fillRect(dx, 20, 3, 22);
-                ctx.fillStyle = '#d4af37'; ctx.fillRect(dx, 36, 3, 1.5); // Golden dread rings
-            }
-        } else if (hair.id === 'braid') {
-            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI * 2); ctx.fill();
-            for (let by = 22; by < 46; by += 4) {
-                ctx.fillStyle = (by % 8 === 0) ? highlight : col;
-                ctx.fillRect(29, by, 6, 3.5);
-            }
-            ctx.fillStyle = shadow; ctx.fillRect(30.5, 46, 3, 4); // Tail tip
-        } else if (hair.id === 'curly') {
-            ctx.beginPath(); ctx.arc(32, 14, 18, 0, Math.PI * 2); ctx.fill();
-            for (let cy = 12; cy <= 32; cy += 6) {
-                ctx.fillStyle = shadow;
-                ctx.fillRect(14, cy, 5, 4); ctx.fillRect(45, cy, 5, 4);
-            }
-        } else if (hair.id === 'emo' || hair.id === 'sidepart') {
-            ctx.fillRect(16, 10, 32, 24);
-            ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 4);
-            ctx.fillStyle = shadow; ctx.fillRect(14, 22, 6, 14);
-        } else if (hair.id === 'pompadour') {
-            ctx.fillRect(16, 12, 32, 20);
-            ctx.fillStyle = highlight; ctx.fillRect(22, 4, 20, 8);
-        } else if (hair.id === 'shaggy') {
-            ctx.fillRect(16, 10, 32, 28);
-            ctx.fillStyle = shadow;
-            ctx.fillRect(14, 30, 6, 8); ctx.fillRect(24, 34, 6, 6); ctx.fillRect(34, 34, 6, 6); ctx.fillRect(44, 30, 6, 8);
-        } else if (hair.id === 'topknot' || hair.id === 'bun') {
-            ctx.beginPath(); ctx.arc(32, 16, 14, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(32, 6, 7, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = shadow; ctx.beginPath(); ctx.arc(32, 6, 3.5, 0, Math.PI * 2); ctx.fill();
-        } else {
-            // General clean fallback for wavy, bangs, mohawk, buzzed, undercut, mullet, pixie, slicked
-            ctx.fillStyle = col || '#ffffff';
-            if (hair.id === 'wavy') {
-                ctx.beginPath(); ctx.moveTo(16, 12); ctx.quadraticCurveTo(8, 24, 16, 38); ctx.lineTo(48, 38); ctx.quadraticCurveTo(56, 24, 48, 12); ctx.fill();
-                ctx.fillStyle = highlight; ctx.fillRect(20, 14, 24, 4);
-            } else if (hair.id === 'bangs') {
-                ctx.fillRect(16, 10, 32, 26);
-                ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 4);
-            } else if (hair.id === 'mohawk') {
-                ctx.fillRect(27, 4, 10, 30);
-                ctx.fillStyle = highlight; ctx.fillRect(29, 6, 6, 26);
-            } else if (hair.id === 'buzzed') {
-                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.arc(32, 18, 14, Math.PI, 0); ctx.fill();
-            } else if (hair.id === 'undercut') {
-                ctx.fillRect(20, 8, 24, 14);
-                ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(16, 18, 32, 10);
-            } else if (hair.id === 'mullet') {
-                ctx.fillRect(20, 10, 24, 14);
-                ctx.fillRect(16, 20, 32, 24);
-                ctx.fillStyle = shadow; ctx.fillRect(16, 40, 32, 4);
-            } else if (hair.id === 'pixie' || hair.id === 'slicked') {
-                ctx.fillRect(16, 10, 32, 18);
-                ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 3.5);
-            }
+        // ---- BACK VIEW ----------------------------------------------------
+        ctx.fillStyle = base;
+
+        // Rear curtain for styles that fall past the shoulders. Drawn first so
+        // the crown cap (drawn clipped, below) sits on top of it.
+        const curtained = ['long', 'wavy', 'shaggy', 'mullet', 'dreads', 'curly', 'bob'];
+        if (curtained.includes(hairId)) {
+            const bottom = (hairId === 'bob') ? EAR_BOTTOM + 14
+                         : (hairId === 'curly') ? EAR_BOTTOM + 22
+                         : EAR_BOTTOM + 30;
+            outsideHead(() => {
+                curtain(bottom, (hairId === 'curly') ? 6 : 3);
+                if (hairId === 'curly') {
+                    ctx.fillStyle = dark;
+                    for (let cy = EAR_BOTTOM + 3; cy < bottom - 3; cy += 7) {
+                        ctx.beginPath(); ctx.arc(XL - 4, cy, 3.2, 0, Math.PI * 2); ctx.fill();
+                        ctx.beginPath(); ctx.arc(XR + 4, cy, 3.2, 0, Math.PI * 2); ctx.fill();
+                    }
+                } else {
+                    ctx.fillStyle = dark;
+                    ctx.fillRect(XL - 2, bottom - 4, 28, 3);
+                }
+            });
         }
-    } else {
-        // --- FRONT VIEW (Shading, Parting & Volumetric Layers) ---
-        if (hair.id === 'messy') {
-            ctx.beginPath(); ctx.moveTo(18, 14); ctx.lineTo(24, 18); ctx.lineTo(32, 12); ctx.lineTo(40, 18); ctx.lineTo(46, 14); ctx.lineTo(50, 22); ctx.lineTo(48, 26); ctx.lineTo(16, 26); ctx.lineTo(14, 22); ctx.fill();
-            ctx.fillStyle = highlight; ctx.fillRect(22, 16, 4, 4); ctx.fillRect(38, 16, 4, 4);
-        } else if (hair.id === 'bob') {
-            ctx.fillRect(16, 10, 32, 26);
-            ctx.clearRect(24, 26, 16, 10);
-            ctx.fillStyle = highlight; ctx.fillRect(16, 12, 32, 4);
-            ctx.fillStyle = shadow; ctx.fillRect(16, 32, 8, 4); ctx.fillRect(40, 32, 8, 4);
-        } else if (hair.id === 'long') {
-            ctx.fillRect(16, 10, 32, 38);
-            ctx.clearRect(22, 26, 20, 22);
-            ctx.fillStyle = highlight; ctx.fillRect(16, 12, 32, 4);
-            ctx.fillStyle = shadow; ctx.fillRect(16, 42, 6, 6); ctx.fillRect(42, 42, 6, 6);
-        } else if (hair.id === 'spiky') {
-            ctx.beginPath(); ctx.moveTo(14, 20); ctx.lineTo(18, 8); ctx.lineTo(24, 20); ctx.lineTo(32, 6); ctx.lineTo(40, 20); ctx.lineTo(46, 8); ctx.lineTo(50, 20); ctx.lineTo(50, 24); ctx.lineTo(14, 24); ctx.fill();
-            ctx.fillStyle = highlight; ctx.fillRect(22, 12, 6, 6); ctx.fillRect(36, 12, 6, 6);
-        } else if (hair.id === 'bangs') {
-            ctx.fillRect(16, 10, 32, 15);
-            ctx.fillRect(14, 14, 5, 20);
-            ctx.fillRect(45, 14, 5, 20);
-            ctx.fillStyle = highlight; ctx.fillRect(18, 12, 28, 4);
-            ctx.fillStyle = shadow; ctx.fillRect(18, 24, 28, 1.5);
-        } else if (hair.id === 'ponytail') {
-            ctx.fillStyle = col;
-            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
-            ctx.fillRect(14, 16, 4, 12); ctx.fillRect(46, 16, 4, 12);
-            ctx.fillStyle = highlight; ctx.fillRect(20, 12, 24, 3);
-        } else if (hair.id === 'pigtails' || hair.id === 'twintails') {
-            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
-            ctx.fillRect(11, 16, 6, 26); ctx.fillRect(47, 16, 6, 26);
-            ctx.fillStyle = highlight; ctx.fillRect(20, 12, 24, 3);
-            ctx.fillStyle = shadow; ctx.fillRect(11, 38, 6, 4); ctx.fillRect(47, 38, 6, 4);
-        } else if (hair.id === 'afro') {
-            ctx.beginPath(); ctx.arc(32, 12, 20, 1, 2 * Math.PI + 2); ctx.fill();
-            ctx.strokeStyle = highlight; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(32, 12, 16, 3.5, 6); ctx.stroke();
-        } else if (hair.id === 'dreads') {
-            ctx.fillRect(16, 10, 32, 10);
-            for (let dx = 14; dx <= 46; dx += 4) {
-                if (dx > 22 && dx < 38) continue; // Face clearing
-                ctx.fillStyle = (dx % 8 === 0) ? shadow : col;
-                ctx.fillRect(dx, 16, 3.5, 22);
-                ctx.fillStyle = '#d4af37'; ctx.fillRect(dx, 32, 3.5, 1.5);
-            }
-        } else if (hair.id === 'braid') {
-            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
-            ctx.fillRect(14, 16, 5, 14); // Front bangs
-            for (let by = 26; by < 46; by += 4) {
-                ctx.fillStyle = (by % 8 === 0) ? highlight : col;
-                ctx.fillRect(44, by, 6, 3.5); // Side braid draped over shoulder
-            }
-        } else if (hair.id === 'curly') {
-            ctx.beginPath(); ctx.arc(32, 14, 18, 1, 2 * Math.PI + 2); ctx.fill();
-            ctx.clearRect(24, 26, 16, 10);
-            ctx.fillStyle = highlight; ctx.beginPath(); ctx.arc(26, 14, 4, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(38, 14, 4, 0, Math.PI * 2); ctx.fill();
-        } else if (hair.id === 'emo') {
-            // Swept diagonal bangs over one eye
-            ctx.beginPath();
-            ctx.moveTo(14, 12); ctx.lineTo(50, 12); ctx.lineTo(46, 20); ctx.lineTo(20, 32); ctx.lineTo(14, 28); ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = highlight; ctx.fillRect(22, 14, 20, 3);
-        } else if (hair.id === 'sidepart' || hair.id === 'slicked') {
-            ctx.fillRect(16, 10, 32, 12);
-            ctx.fillStyle = highlight; ctx.fillRect(18, 11, 26, 3);
-            ctx.fillStyle = shadow; ctx.fillRect(26, 10, 2, 8); // Part line
-        } else if (hair.id === 'pompadour') {
-            ctx.fillRect(18, 0, 28, 14); // High swept front
-            ctx.fillStyle = highlight; ctx.fillRect(20, 2, 24, 4);
-            ctx.fillStyle = shadow; ctx.fillRect(14, 14, 4, 10); ctx.fillRect(46, 14, 4, 10);
-        } else if (hair.id === 'shaggy') {
-            ctx.fillRect(16, 10, 32, 18);
-            ctx.fillStyle = shadow;
-            ctx.fillRect(14, 24, 6, 10); ctx.fillRect(44, 24, 6, 10);
-            ctx.fillRect(22, 22, 5, 6); ctx.fillRect(37, 22, 5, 6);
-        } else if (hair.id === 'topknot' || hair.id === 'bun') {
-            ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
-            ctx.beginPath(); ctx.arc(32, 5, 6.5, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = highlight; ctx.beginPath(); ctx.arc(32, 4, 2.5, 0, Math.PI * 2); ctx.fill();
-        } else {
-            // Fallback front for wavy, mohawk, buzzed, undercut, mullet, pixie
-            if (hair.id === 'mohawk') {
-                ctx.fillRect(27, 3, 10, 16);
-                ctx.fillStyle = highlight; ctx.fillRect(29, 4, 6, 14);
-            } else if (hair.id === 'buzzed') {
-                ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(16, 10, 32, 8);
-            } else if (hair.id === 'undercut') {
-                ctx.fillStyle = col; ctx.beginPath(); ctx.arc(32, 16, 14, Math.PI, 0); ctx.fill();
-                ctx.fillStyle = highlight; ctx.fillRect(20, 12, 24, 3);
-            } else if (hair.id === 'wavy') {
-                ctx.beginPath(); ctx.moveTo(16, 12); ctx.quadraticCurveTo(8, 24, 16, 38); ctx.lineTo(21, 38); ctx.lineTo(21, 22); ctx.lineTo(43, 22); ctx.lineTo(43, 38); ctx.lineTo(48, 38); ctx.quadraticCurveTo(56, 24, 48, 12); ctx.fill();
-                ctx.fillStyle = highlight; ctx.fillRect(20, 13, 24, 3.5);
-            } else if (hair.id === 'mullet') {
-                ctx.fillRect(18, 10, 28, 12);
-                ctx.fillStyle = shadow; ctx.fillRect(14, 22, 5, 18); ctx.fillRect(45, 22, 5, 18);
-            } else if (hair.id === 'pixie') {
-                ctx.fillRect(16, 10, 32, 14);
-                ctx.fillStyle = highlight; ctx.fillRect(18, 12, 20, 3);
-            }
+
+        // Tails and buns stick up above the head and out at the sides.
+        // (mohawk is not here: it has its own dedicated pass below.)
+        if (hairId === 'ponytail' || hairId === 'braid' || hairId === 'twintails' ||
+            hairId === 'pigtails' || hairId === 'bun' || hairId === 'topknot' ||
+            hairId === 'spiky' || hairId === 'afro' ||
+            hairId === 'curly') {
+            outsideHead(() => {
+                if (hairId === 'ponytail' || hairId === 'braid') {
+                    const seg = (hairId === 'braid') ? 4 : 6;
+                    for (let y = EAR_BOTTOM - 4; y < 46; y += seg) {
+                        ctx.fillStyle = (y % (seg * 2) === 0) ? mid : base;
+                        if (hairId === 'braid') {
+                            ctx.beginPath(); ctx.ellipse(32, y + 2, 4.2, 3, 0, 0, Math.PI * 2); ctx.fill();
+                        } else {
+                            ctx.fillRect(28, y, 8, seg);
+                        }
+                    }
+                    ctx.fillStyle = dark;
+                    ctx.fillRect(28, 46, (hairId === 'braid') ? 6 : 8, 3);
+                } else if (hairId === 'twintails' || hairId === 'pigtails') {
+                    for (const sx of [3, 49]) {
+                        ctx.fillStyle = base;
+                        ctx.beginPath(); ctx.ellipse(sx + 5, EAR_BOTTOM + 6, 6.5, 15, 0, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = dark;
+                        ctx.beginPath(); ctx.ellipse(sx + 5, EAR_BOTTOM + 19, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+                    }
+                } else if (hairId === 'bun' || hairId === 'topknot') {
+                    ctx.fillStyle = base;
+                    ctx.beginPath(); ctx.arc(32, 3, 7, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = dark;
+                    ctx.beginPath(); ctx.arc(32, 3, 3.5, 0, Math.PI * 2); ctx.fill();
+                } else if (hairId === 'spiky') {
+                    ctx.beginPath();
+                    ctx.moveTo(18, 4); ctx.lineTo(24, -6); ctx.lineTo(29, 4);
+                    ctx.lineTo(32, -9); ctx.lineTo(35, 4); ctx.lineTo(40, -6);
+                    ctx.lineTo(46, 4); ctx.closePath(); ctx.fill();
+                } else {
+                    // afro / curly puff
+                    ctx.beginPath(); ctx.ellipse(32, 2, 21, 11, 0, 0, Math.PI * 2); ctx.fill();
+                }
+            }, SKIRT, TOP - 4);
         }
+
+        // Crown cap, safely clipped to the skull.
+        withHeadClip(() => {
+            if (hairId === 'mohawk') return; // drawn by the dedicated pass below
+            ctx.fillStyle = base;
+            cap((hairId === 'buzzed') ? 17 : 22);
+            if (hairId !== 'buzzed') sheen();
+        });    }
+    // =======================================================================
+    else {
+        // ---- FRONT VIEW ---------------------------------------------------
+
+        // 1. Rear curtain behind the head (shows around the silhouette).
+        if (['long', 'wavy', 'curly'].includes(hairId)) {
+            ctx.fillStyle = base;
+            outsideHead(() => {
+                curtain((hairId === 'curly') ? SKIRT + 18 : SKIRT + 30,
+                        (hairId === 'curly') ? 7 : 4);
+            });
+        }
+
+        // 2. Overhangs that rise above / hang outside the head.
+        ctx.fillStyle = base;
+        outsideHead(() => {
+            const spike = () => {
+                ctx.beginPath();
+                ctx.moveTo(16, 6); ctx.lineTo(20, -4); ctx.lineTo(25, 6);
+                ctx.lineTo(32, -7); ctx.lineTo(39, 6); ctx.lineTo(44, -4);
+                ctx.lineTo(48, 6); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.fillRect(24, -2, 4, 5); ctx.fillRect(37, -2, 4, 5);
+                ctx.fillStyle = base;
+            };
+            if (hairId === 'spiky') {
+                spike();
+            } else if (hairId === 'pompadour') {
+                ctx.beginPath();
+                ctx.moveTo(17, 6); ctx.quadraticCurveTo(19, -8, 32, -8);
+                ctx.quadraticCurveTo(45, -8, 47, 6); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = lite; ctx.fillRect(23, -6, 18, 4); ctx.fillStyle = base;
+            } else if (hairId === 'bun' || hairId === 'topknot') {
+                ctx.beginPath(); ctx.arc(32, 1, 7, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.beginPath(); ctx.arc(30, -0.5, 2.4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = base;
+            } else if (hairId === 'afro' || hairId === 'curly') {
+                ctx.beginPath(); ctx.ellipse(32, 2, (hairId === 'afro') ? 21 : 22, 11, 0, 0, Math.PI * 2); ctx.fill();
+            } else if (hairId === 'twintails' || hairId === 'pigtails') {
+                for (const sx of [3, 49]) {
+                    ctx.fillStyle = base;
+                    ctx.beginPath(); ctx.ellipse(sx + 5, EAR_BOTTOM + 6, 6.5, 15, 0, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = mid;
+                    ctx.beginPath(); ctx.ellipse(sx + 5, EAR_BOTTOM + 19, 5.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.fillStyle = base;
+            } else if (hairId === 'braid') {
+                for (let by = EAR_BOTTOM + 1; by < EAR_BOTTOM + 20; by += 4) {
+                    ctx.fillStyle = (by % 8 === 0) ? lite : base;
+                    ctx.beginPath(); ctx.ellipse(51, by, 3.4, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.fillStyle = base;
+            } else if (hairId === 'dreads') {
+                // Dreads hang in the gutter beside the head, so they start at
+                // the ear line and run down the jaw.
+                for (const dx of [10, 51]) {
+                    for (let dy = EAR_BOTTOM - 3; dy < EAR_BOTTOM + 18; dy += 5.5) {
+                        ctx.fillStyle = ((Math.round(dy) % 11) < 5.5) ? dark : base;
+                        ctx.fillRect(dx, dy, 3.4, 4.5);
+                        ctx.fillStyle = '#d4af37';
+                        ctx.fillRect(dx, dy + 3.4, 3.4, 1.2);
+                    }
+                }
+                ctx.fillStyle = base;
+            } else if (hairId === 'mullet' || hairId === 'shaggy') {
+                const w = (hairId === 'mullet') ? 8 : 6;
+                ctx.fillStyle = base;
+                panel(XL - w - 1, EAR_BOTTOM - 2, w, 26, 2);
+                panel(XR + 1, EAR_BOTTOM - 2, w, 26, 2);
+                ctx.fillStyle = mid;
+                ctx.fillRect(XL - w - 1, EAR_BOTTOM + 21, w, 3);
+                ctx.fillRect(XR + 1, EAR_BOTTOM + 21, w, 3);
+                ctx.fillStyle = base;
+            }
+        }, EAR_BOTTOM, TOP - 2);
+
+        // 3. The crown cap and everything that hugs the head: clipped, so it
+        //    lands on the skull and nowhere else.
+        ctx.fillStyle = base;
+        withHeadClip(() => {
+            ctx.fillStyle = base;
+            if (hairId === 'mohawk') return; // drawn by the dedicated pass below
+
+            if (hairId === 'buzzed') {
+                ctx.globalAlpha = 0.42; cap(17, 1); ctx.globalAlpha = 1;
+
+            } else if (hairId === 'pixie') {
+                cap(16);
+                panel(XL + 1, TOP + 5, 6, 9, 1);
+                panel(XR - 7, TOP + 5, 6, 9, 1);
+                sheen();
+
+            } else if (hairId === 'undercut') {
+                cap(14, 1);
+                ctx.globalAlpha = 0.35; ctx.fillRect(XL + 2, 17, 30, 6); ctx.globalAlpha = 1;
+                sheen();
+
+            } else if (hairId === 'slicked') {
+                cap(16);
+                ctx.fillStyle = dark; ctx.fillRect(31, TOP - 1, 2, 9);
+                sheen(TOP + 2, 22, 42, 2);
+                ctx.fillStyle = base;
+
+            } else if (hairId === 'sidepart') {
+                cap(17);
+                ctx.fillStyle = dark; ctx.fillRect(26, TOP - 1, 2, 10);
+                ctx.fillStyle = mid; ctx.fillRect(28, TOP - 1, 18, 5);
+                sheen(TOP + 3, 30, 44, 2);
+                ctx.fillStyle = base;
+
+            } else if (hairId === 'bangs') {
+                cap(FACE);
+                ctx.fillStyle = mid; ctx.fillRect(XL + 3, FACE - 3, 26, 3);
+                ctx.fillStyle = base;
+                panel(XL + 2, FACE, 4.5, 14);
+                panel(XR - 6.5, FACE, 4.5, 14);
+                sheen();
+
+            } else if (hairId === 'emo') {
+                ctx.beginPath();
+                ctx.moveTo(XL + 1.5, FACE + 1); ctx.lineTo(XL + 1.5, TOP + 4);
+                ctx.quadraticCurveTo(XL + 1.5, TOP - 1, XL + 7, TOP - 1);
+                ctx.lineTo(XR - 7, TOP - 1);
+                ctx.quadraticCurveTo(XR - 1.5, TOP - 1, XR - 1.5, TOP + 4);
+                ctx.lineTo(XR - 1.5, FACE + 1);
+                ctx.lineTo(33, FACE + 4);
+                ctx.closePath(); ctx.fill();
+                panel(XL + 1.5, FACE, 4.5, 16);
+                sheen(TOP + 3, 26, 44, 2);
+
+            } else if (hairId === 'bob') {
+                // Same rule as long/wavy: panels hug the sprite edge so they
+                // clear the x 20..43.5 eye band.
+                ctx.beginPath();
+                ctx.moveTo(XL + 1.5, 30);
+                ctx.lineTo(XL + 1.5, TOP + 4);
+                ctx.quadraticCurveTo(XL + 1.5, TOP - 1, XL + 7, TOP - 1);
+                ctx.lineTo(XR - 7, TOP - 1);
+                ctx.quadraticCurveTo(XR - 1.5, TOP - 1, XR - 1.5, TOP + 4);
+                ctx.lineTo(XR - 1.5, 30);
+                ctx.lineTo(NOSE_R, 30);
+                ctx.lineTo(NOSE_R, FACE);
+                ctx.lineTo(NOSE_L, FACE);
+                ctx.lineTo(NOSE_L, 30);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = mid;
+                ctx.fillRect(XL + 1.5, 28, 4.5, 3);
+                ctx.fillRect(NOSE_R, 28, 4.5, 3);
+                ctx.fillStyle = base;
+                sheen();
+
+            } else if (hairId === 'long' || hairId === 'wavy') {
+                // Crown bob plus side panels that drape down BESIDE the face.
+                // The eyes span x 20..43.5 on every species, so the panels are
+                // kept entirely outboard of that band (left ends at x 20, right
+                // starts at x 43.5) and never cross the cheek.
+                const pinch = (hairId === 'wavy') ? 3 : 1.5;
+                ctx.beginPath();
+                ctx.moveTo(XL + pinch, 36);
+                ctx.lineTo(XL + pinch, TOP + 4);
+                ctx.quadraticCurveTo(XL + pinch, TOP - 1, XL + 7, TOP - 1);
+                ctx.lineTo(XR - 7, TOP - 1);
+                ctx.quadraticCurveTo(XR - pinch, TOP - 1, XR - pinch, TOP + 4);
+                ctx.lineTo(XR - pinch, 36);
+                // inner edges sit exactly at the drawn face box's outer bounds
+                ctx.lineTo(NOSE_R, 36);
+                ctx.lineTo(NOSE_R, FACE);
+                ctx.lineTo(NOSE_L, FACE);
+                ctx.lineTo(NOSE_L, 36);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = mid;
+                ctx.fillRect(XL + pinch, 33, (hairId === 'wavy') ? 4 : 5.5, 3);
+                ctx.fillRect(NOSE_R, 33, (hairId === 'wavy') ? 4 : 5.5, 3);
+                ctx.fillStyle = base;
+                sheen();
+
+            } else if (hairId === 'curly' || hairId === 'afro') {
+                // Crown puff, clipped so it cannot reach the ears.
+                ctx.beginPath(); ctx.ellipse(32, 8, 22, 16, 0, 0, Math.PI * 2); ctx.fill();
+                if (hairId === 'curly') {
+                    ctx.fillStyle = dark;
+                    for (const [cx, cy] of [[16, 16], [48, 16], [20, 4], [44, 4]]) {
+                        ctx.beginPath(); ctx.arc(cx, cy, 3.2, 0, Math.PI * 2); ctx.fill();
+                    }
+                    ctx.fillStyle = lite;
+                    for (const [cx, cy] of [[26, 3], [38, 3]]) {
+                        ctx.beginPath(); ctx.arc(cx, cy, 2.6, 0, Math.PI * 2); ctx.fill();
+                    }
+                } else {
+                    ctx.strokeStyle = lite; ctx.lineWidth = 1.4;
+                    ctx.beginPath(); ctx.arc(32, 10, 16, 3.4, 6.1); ctx.stroke();
+                }
+                ctx.fillStyle = base;
+
+            } else if (hairId === 'ponytail' || hairId === 'braid' ||
+                       hairId === 'twintails' || hairId === 'pigtails') {
+                cap(18);
+                ctx.fillStyle = dark; ctx.fillRect(34, TOP + 1, 7, 6);
+                ctx.fillStyle = base;
+                sheen();
+
+            } else if (hairId === 'bun' || hairId === 'topknot') {
+                cap(18);
+                sheen();
+
+            } else if (hairId === 'dreads') {
+                cap(14);
+                ctx.fillStyle = dark; ctx.fillRect(XL + 2, SKIRT, 30, 3);
+                ctx.fillStyle = base;
+                sheen();
+
+            } else if (hairId === 'mullet') {
+                cap(13, 1);
+                sheen(TOP + 2, 22, 42, 2);
+
+            } else if (hairId === 'messy' || hairId === 'shaggy') {
+                ctx.beginPath();
+                ctx.moveTo(XL + 1, FACE + 3); ctx.lineTo(19, 4); ctx.lineTo(26, 13);
+                ctx.lineTo(32, 3); ctx.lineTo(38, 13); ctx.lineTo(45, 4);
+                ctx.lineTo(XR - 1, FACE + 3);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = mid;
+                ctx.fillRect(20, FACE, 5, 3); ctx.fillRect(39, FACE, 5, 3);
+                ctx.fillStyle = base;
+                sheen(11, 24, 40, 2);
+
+            } else if (hairId === 'spiky') {
+                ctx.beginPath();
+                ctx.moveTo(XL + 1, FACE + 2); ctx.lineTo(19, 4); ctx.lineTo(24, 14);
+                ctx.lineTo(32, 2); ctx.lineTo(40, 14); ctx.lineTo(45, 4);
+                ctx.lineTo(XR - 1, FACE + 2);
+                ctx.closePath(); ctx.fill();
+                sheen(12, 22, 42, 3);
+
+            } else if (hairId === 'pompadour') {
+                cap(16, 1);
+                sheen(TOP + 2, 22, 42, 3);
+
+            } else {
+                // Unknown id: safe, well-fitting default.
+                cap(FACE);
+                sheen();
+            }
+        });
+    }
+
+    // =======================================================================
+    // MOHAWK — dedicated pass, drawn after everything else.
+    //
+    // A solid box centred on the head (x 26..39). It rises clearly above the
+    // crown (like a proper crest) and hugs the skull down the middle — short
+    // in front (stops above the nose line) and long down the back. Generic
+    // band passes treat the head as off-limits, so the crest is drawn here
+    // where the only constraints that matter are:
+    //   * x 26..39 never touches an ear (ears live at x≈14 / x≈50),
+    //   * the front body stops at y 17, above NOSE_TOP (18) and the eye box.
+    if (hairId === 'mohawk') {
+        const CX = 26, CW = 13, HDR_TOP = 0;
+        ctx.save();
+        // Crest above the crown (unclipped).
+        ctx.fillStyle = base;
+        ctx.fillRect(CX, HDR_TOP, CW, TOP - HDR_TOP + 1);
+        ctx.fillStyle = lite;
+        ctx.fillRect(CX + 3, HDR_TOP + 1, 7, TOP - HDR_TOP - 1);
+        // Body on the skull, clipped so it follows the head silhouette.
+        headPath(); ctx.clip();
+        ctx.fillStyle = base;
+        ctx.fillRect(CX, TOP, CW, back ? 26 : 9);
+        ctx.fillStyle = lite;
+        ctx.fillRect(CX + 3, TOP + 1, 7, back ? 21 : 7);
+        ctx.restore();
     }
 }
 
