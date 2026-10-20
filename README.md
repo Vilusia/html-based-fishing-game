@@ -1,9 +1,8 @@
 # HTML Fishing
 
-A browser-based multiplayer fishing game. The game is **peer-to-peer by
-default** — players host their own lobbies directly — with an optional master
-server that acts purely as a *directory* so lobbies can be found without sharing
-room codes.
+A browser-based multiplayer fishing game. The game is **peer-to-peer** — players
+host their own lobbies directly — with a master server that acts purely as a
+*directory* so lobbies can be found without sharing room codes.
 
 This document covers how the pieces fit together, how to run each part, and the
 save-file format. For gameplay, just open the game.
@@ -67,7 +66,7 @@ then shows the lobby screen and starts the render loop.
 
 ## Multiplayer
 
-### P2P (default)
+### P2P
 
 When a player clicks **Make Lobby**, they become the host. Other players join
 either by room code or by picking the lobby out of the server browser.
@@ -130,21 +129,6 @@ window.MASTER_SERVER_URL = window.MASTER_SERVER_URL || (
 > HTTPS, browsers block these requests as mixed content. Serve the game over
 > HTTP, or put the master behind TLS.
 
-### Dedicated server (optional)
-
-`Dedicated Server Code/server.js` is a Node.js authoritative server for players
-who want cheat-resistant lobbies. It keeps its own copies of the fish and
-resource tables and heartbeats to the master server the same way a P2P host
-does. Set `MASTER_URL` in the environment to point it at a different directory:
-
-```powershell
-$env:MASTER_URL = "http://localhost:8081"
-node "Dedicated Server Code/server.js"
-```
-
-> The duplicated fish/resource tables can drift from `fish.js` over time — treat
-> `fish.js` as the source of truth when updating content.
-
 ---
 
 ## Progression systems (`progression.js`)
@@ -180,7 +164,7 @@ and advancing the index.
 
 | Hook | Called from |
 | --- | --- |
-| `notifyFishCaught(fish, firstTime)` | both catch paths (P2P and dedicated) |
+| `notifyFishCaught(fish, firstTime)` | the catch path in `ui.js` |
 | `notifyResourceGathered(kind, amount)` | chopping, mining, picking flowers |
 | `notifyPropPlaced()` | `placeProp()` |
 | `progressionTrackMoney()` | `saveGame()` — watches the money delta for the "earn gold" bounty |

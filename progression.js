@@ -129,7 +129,7 @@ const ACHIEVEMENTS = [
 // ---------------------------------------------------------------------------
 // Bounties
 // ---------------------------------------------------------------------------
-// Deterministic per-day, so P2P and dedicated servers hand out the same set.
+// Deterministic per-day, so every player sees the same set.
 
 const BOUNTY_POOL = [
     { id: 'catch', label: 'Catch {n} fish', goal: [10, 15, 20, 25], event: 'catch' },
@@ -185,8 +185,9 @@ function buildBountiesForDay(day) {
 }
 
 function bountyRewardFor(bounty) {
-    // Roughly scales with effort; always a round-ish number.
-    const base = { catch: 60, catch_tier: 250, catch_legendary: 800, mine: 25, chop: 25, pick_flowers: 30, earn: 0, discover: 400 };
+    // Roughly scales with effort; always a round-ish number. Keys must match the
+    // `event` on the BOUNTY_POOL entry, or the bounty silently uses the default.
+    const base = { catch: 60, catch_tier: 250, catch_legendary: 800, mine: 25, chop: 25, flower: 30, earn: 0.5, discover: 400 };
     const per = base[bounty.event] !== undefined ? base[bounty.event] : 50;
     return Math.round(bounty.goal * per);
 }

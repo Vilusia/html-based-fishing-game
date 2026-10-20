@@ -615,6 +615,27 @@ let fishingZone = 'lake';
 // Set by releaseCast() when a custom level supplies a fishing zone; null means
 // "use the normal island's position-based pond rules".
 let fishingZoneCategory = null;
+// Canonical zone name for the LAST completed catch. Recorded onto each caught
+// fish so progression (zone achievement, pond/lava/void quests) can see where a
+// fish came from. `fishingZone` uses the pool's internal names ('pond'), while
+// this resolves the specific zone ('lightpond' / 'darkpond').
+let lastCatchZone = null;
+
+// Resolves the cast's pool name into the canonical zone used by progression.
+// Must be called while the player is still standing at the cast spot, because
+// the pond split is positional.
+function resolveCatchZone() {
+    if (fishingZone === 'pond') {
+        if (fishingZoneCategory === 'lightpond' || fishingZoneCategory === 'darkpond') {
+            return fishingZoneCategory;
+        }
+        const distToDarkPond = Math.sqrt(
+            Math.pow(player.position.x - 60, 2) + Math.pow(player.position.z - 50, 2)
+        );
+        return distToDarkPond < 30 ? 'darkpond' : 'lightpond';
+    }
+    return fishingZone;
+}
 
 let isRaining = false;
 let rainSystem = null;

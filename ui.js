@@ -310,12 +310,6 @@ window.actionSellFish = function () {
     if (saveState.inventory.length === 0) { showToast("No fish to sell!"); return; }
 
     // Server Authority Check
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({ type: 'sellFish' }));
-        // Close UI or wait? Let's close it to avoid confusion or just refresh
-        document.getElementById('merchant-ui').style.display = 'none';
-        return;
-    }
 
     let totalVal = 0;
     saveState.inventory.forEach(f => totalVal += Math.max(0, Number(f && f.price) || Number(f && f.value) || 10));
@@ -356,11 +350,6 @@ window.actionSellWood = function () {
     if (count <= 0) { showToast("No wood!"); return; }
 
     // Server Authority Check
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({ type: 'sellWood' }));
-        document.getElementById('merchant-ui').style.display = 'none';
-        return;
-    }
 
     saveState.woodInventory = {};
     saveState.wood = 0;
@@ -394,11 +383,6 @@ window.actionSellOre = function () {
     if (count <= 0) { showToast("No ore!"); return; }
 
     // Server Authority Check
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({ type: 'sellOre' }));
-        document.getElementById('merchant-ui').style.display = 'none';
-        return;
-    }
 
     saveState.oreInventory = {};
     saveState.stone = 0;
@@ -428,11 +412,6 @@ window.actionSellFlowers = function () {
     if (count <= 0) { showToast("No flowers!"); return; }
 
     // Server Authority Check
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({ type: 'sellFlowers' }));
-        document.getElementById('merchant-ui').style.display = 'none';
-        return;
-    }
 
     saveState.flowerInventory = {};
     saveState.money += total;
@@ -444,6 +423,22 @@ window.actionSellFlowers = function () {
 };
 
 // --- FLOWER COLLECTION SYSTEM ---
+// Returns true if a nearby, unpicked flower was collected. Shared by the
+// desktop "interact" key and the mobile action button so both behave alike.
+function tryPickNearbyFlower() {
+    for (let i = 0; i < pickableFlowers.length; i++) {
+        const flower = pickableFlowers[i];
+        if (flower && !flower.userData.isPicked && flower.visible) {
+            const dist = player.position.distanceTo(flower.position);
+            if (dist < 2) {
+                pickFlower(i);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 window.pickFlower = function (i) {
     const flower = pickableFlowers[i];
     if (!flower || flower.userData.isPicked) return;
@@ -466,9 +461,6 @@ window.pickFlower = function (i) {
     saveGame();
 
     // SERVER SYNC
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({ type: 'collect_flower', id: typeId }));
-    }
 
     // Feedback
     Sound.flip(); // Use existing sound (flip or click)
@@ -534,6 +526,12 @@ window.actionBuyTool = function (toolId) {
     saveGame();
     Sound.sell();
     showToast(`Purchased ${tool.name}!`);
+
+    // Refresh whichever shop UI is open (Merchant, or the Stylist "misc" tab).
+    const shopOverlay = document.getElementById('shop-overlay');
+    if (shopOverlay && shopOverlay.style.display === 'flex' && typeof renderShop === 'function') {
+        renderShop();
+    }
     updateMerchantUI(document.getElementById('merchant-ui'));
 };
 
@@ -848,7 +846,6 @@ function handleCall(call) {
 }
 
 function voiceWatchdog() {
-    if (!isConnectedToDedicated) return;
 
     // 1. WAKE UP AUDIO ENGINE (Fixes silent audio after time)
     if (audioCtx && audioCtx.state === 'suspended') {
@@ -1004,19 +1001,12 @@ window.onload = function () {
     try {
         const params = new URLSearchParams(location.search);
         const autoRoom = params.get('room');
-        const autoServer = params.get('dedicated');
         if (autoRoom) {
             document.getElementById('room-id-input').value = autoRoom;
             document.getElementById('lobby-status').innerText = "Rejoining room " + autoRoom + "...";
             setTimeout(() => joinGame(), 400);
-        } else if (autoServer) {
-            document.getElementById('lobby-status').innerText = "Reconnecting to the server...";
-            setTimeout(() => connectToDedicatedServer(autoServer), 400);
         }
     } catch (err) { /* ignore */ }
-
-    refreshServerCount();
-    setInterval(refreshServerCount, 10000);
 
     // --- CRITICAL FIX: REMOVED THE 3-SECOND SETNAME INTERVAL ---
     // This interval was causing the "leaving/rejoining" loop.
@@ -1225,9 +1215,6 @@ function joinGame() {
         peer.on('open', (id) => {
             console.log("My Peer ID is: " + id);
             myPeerId = id;
-            if (dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-                dedicatedSocket.send(JSON.stringify({ type: 'setName', name: saveState.displayName, peerId: myPeerId }));
-            }
             connectToHost();
         });
 
@@ -1326,454 +1313,6 @@ function dropActiveLevel(rejoinQuery) {
     return true;
 }
 
-// --- Dedicated Server (WebSocket) client integration ---
-// Put this near other networking (after joinGame / hostGame functions)
-
-const DEDICATED_WS_URL = 'wss://invention-attachments-earl-matrix.trycloudflare.com';
-
-let dedicatedSocket = null;
-let dedicatedUrl = null;
-let dedicatedId = null;
-let isConnectedToDedicated = false;
-let isAdminOnDedicated = false;
-
-async function sha256HexBrowser(str) {
-    const buf = new TextEncoder().encode(str);
-    const hash = await crypto.subtle.digest('SHA-256', buf);
-    const hex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-    return hex;
-}
-
-
-function connectToDedicatedServer(customUrl = null) {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-
-    hostConn = null;
-    // 1. Reset Sockets
-    if (dedicatedSocket) { dedicatedSocket.close(); dedicatedSocket = null; }
-    isConnectedToDedicated = false;
-
-    // 2. Initialize PeerJS (Required for Voice Chat)
-    if (!peer || peer.destroyed) {
-        peer = new Peer();
-        peer.on('open', (id) => {
-            myPeerId = id;
-            // If the socket connects *after* PeerJS is ready, we send the ID then.
-            // If socket is already open, send it now.
-            if (dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-                dedicatedSocket.send(JSON.stringify({
-                    type: 'setName',
-                    name: saveState.displayName,
-                    peerId: myPeerId,
-                    saveState: saveState
-                }));
-            }
-        });
-        peer.on('call', (call) => {
-            if (localStream) call.answer(localStream); else call.answer();
-            handleCall(call);
-        });
-    }
-
-    // 3. Determine Connection URL
-    let url;
-
-    // Logic: Check if customUrl is a valid string (passed from Server Browser)
-    // If it's an event object (from a button click) or null, use the default.
-    if (customUrl && typeof customUrl === 'string') {
-        url = customUrl;
-    } else {
-        // Fallback to default official server
-        url = (window.DEDICATED_SERVER_URL || DEDICATED_WS_URL);
-    }
-
-    dedicatedUrl = url;
-
-    document.getElementById('lobby-status').innerText = "Connecting...";
-
-    // 4. Create the WebSocket connection
-    dedicatedSocket = new WebSocket(url);
-
-    // --- CONNECTION OPEN HANDLER ---
-    dedicatedSocket.addEventListener('open', () => {
-        isConnectedToDedicated = true;
-        document.getElementById('lobby-status').innerText = "Connected!";
-
-        // Send Name AND Voice ID immediately
-        const payload = {
-            type: 'setName',
-            name: saveState.displayName || 'Fisher',
-            peerId: myPeerId,
-            saveState: saveState
-        };
-        dedicatedSocket.send(JSON.stringify(payload));
-
-        // Publish our custom level so everyone on this server plays it. Skipped
-        // when we've already got this exact level (it came from the server).
-        if (window.CUSTOM_LEVEL && window.Level) {
-            const hash = levelFingerprint(window.CUSTOM_LEVEL);
-            if (sessionStorage.getItem(LEVEL_HASH_KEY) !== hash) {
-                try {
-                    dedicatedSocket.send(JSON.stringify({ type: 'setLevel', level: window.Level.serialize(window.CUSTOM_LEVEL) }));
-                } catch (err) { console.warn('Could not publish level', err); }
-                try { sessionStorage.setItem(LEVEL_HASH_KEY, hash); } catch (err) { }
-            }
-        }
-        // Then ask which level is in force. WebSocket messages keep their order,
-        // so the reply already accounts for the push above.
-        dedicatedSocket.send(JSON.stringify({ type: 'levelSync' }));
-
-        // UI Setup
-        currentRoomId = 'official-server';
-        document.getElementById('room-info-ui').style.display = 'block';
-
-        // Update UI Text based on connection type
-        const label = (customUrl && typeof customUrl === 'string') ? 'Community' : 'Official';
-        document.getElementById('room-id-text').innerText = label;
-
-        document.getElementById('lobby-screen').style.display = 'none';
-        isHost = false;
-
-        // Note: generateWorld() and startGame() moved to welcome handler
-        showToast("Connected to Server!");
-    });
-
-    // --- MESSAGE HANDLER ---
-    dedicatedSocket.addEventListener('message', (ev) => {
-        // Drop absurd frames before parsing: a hostile server could otherwise
-        // push hundreds of MB through the parser. The largest legitimate
-        // message is a welcome carrying a 3MB custom level.
-        if (typeof ev.data === 'string' && ev.data.length > 8 * 1024 * 1024) return;
-        let msg;
-        try { msg = JSON.parse(ev.data); } catch (e) { return; }
-
-        // 1. Initial Handshake / Admin Info
-        // 1. Initial Handshake / Admin Info
-        if (msg.type === 'welcome') {
-            dedicatedId = msg.id;
-            if (msg.adminSalt) window.lastAdminSalt = msg.adminSalt;
-            if (typeof msg.worldTime === 'number') worldTime = msg.worldTime;
-
-            if (msg.activeProps && Array.isArray(msg.activeProps)) {
-                // Clear existing remote props to avoid duplicates
-                Object.keys(props).forEach(pid => {
-                    // Optional: Don't delete your own if you want to keep them local, 
-                    // but usually safe to wipe and resync.
-                    removePropFromWorld(pid);
-                });
-
-                msg.activeProps.slice(0, 1000).forEach(p => spawnPropMesh(p));
-            }
-
-            // --- FIX: SYNC RAIN IMMEDIATELY ---
-            if (typeof msg.isRaining === 'boolean') {
-                isRaining = msg.isRaining;
-                updateWeatherVisuals();
-                if (isRaining) showToast("It is currently raining.");
-            }
-            // ----------------------------------
-
-            // FIX: Spawn existing players from server (prevents race condition)
-            if (msg.playerList) {
-                Object.entries(msg.playerList).forEach(([pid, playerMeta]) => {
-                    if (pid !== dedicatedId && !otherPlayers[pid]) {
-                        createRemotePlayer(pid, playerMeta);
-                    }
-                });
-            }
-
-            // Custom level held by the server. acceptHostLevel() only navigates
-            // when it isn't already the level we're playing.
-            if (msg.level) {
-                acceptHostLevel(msg.level, '&dedicated=' + encodeURIComponent(dedicatedUrl || ''));
-            }
-
-            // Start game AFTER worldTime is set
-            generateWorld('official');
-            generateWorld('official');
-            startGame();
-        }
-
-        // --- NEW: Handle New Player Joins ---
-        else if (msg.type === 'playerJoined') {
-            if (msg.id !== dedicatedId && !otherPlayers[msg.id]) {
-                createRemotePlayer(msg.id, msg.meta);
-                showToast(`${msg.meta.name} joined!`);
-            }
-        }
-
-        // 2. Player Movement & Visual Updates
-        else if (msg.type === 'update') {
-            const pid = msg.id;
-            if (!pid || pid === dedicatedId) return; // Don't update self
-
-            // FIX: Only update existing players (they should be created by welcome/playerList/playerJoined)
-            if (otherPlayers[pid]) {
-                updateRemotePlayer(pid, msg.payload);
-                otherPlayers[pid].lastSeen = Date.now();
-            }
-        }
-
-        // 3. Player List Sync (Voice/Mute Status)
-        else if (msg.type === 'playerList') {
-            const players = Object.values(msg.list || {});
-            players.forEach(p => {
-                // 1. Create Player if missing (Critical Fix)
-                if (p.id !== dedicatedId && !otherPlayers[p.id]) {
-                    createRemotePlayer(p.id, p);
-                }
-
-                // Voice Chat Logic
-                if (p.id !== dedicatedId && p.peerId) {
-                    if (otherPlayers[p.id]) {
-                        // --- FIX: Save the PeerID for the Watchdog ---
-                        // --- FIX: Save the PeerID for the Watchdog ---
-                        otherPlayers[p.id].savedPeerId = p.peerId;
-                        // ---------------------------------------------
-
-                        // Connect audio if not already connected
-                        if (!otherPlayers[p.id].voiceId) {
-                            connectToPeerAudio(p.peerId);
-                            otherPlayers[p.id].voiceId = p.peerId;
-                        }
-
-                        // Sync Mute Flags
-                        if (!otherPlayers[p.id].lastData) otherPlayers[p.id].lastData = {};
-                        otherPlayers[p.id].lastData.isVoiceMuted = p.isVoiceMuted;
-                        otherPlayers[p.id].lastData.isChatMuted = p.isChatMuted;
-                        otherPlayers[p.id].lastData.isMidiMuted = p.isMidiMuted;
-
-                        // Immediate Audio Hardware Mute
-                        const audioId = otherPlayers[p.id].voiceId;
-                        if (audioId) {
-                            const el = document.getElementById('audio-' + audioId);
-                            if (el && p.isVoiceMuted) el.muted = true;
-                        }
-                    }
-                }
-
-                // Name Tag Update (in case they changed name)
-                if (otherPlayers[p.id] && p.name) {
-                    const playerEntity = otherPlayers[p.id];
-                    if (playerEntity.lastData.name !== p.name) {
-                        playerEntity.lastData.name = p.name;
-                        const oldNameTag = playerEntity.mesh.getObjectByName('nameTag');
-                        if (oldNameTag) {
-                            const newTex = createNameTagTexture(p.name);
-                            if (oldNameTag.material.map) oldNameTag.material.map.dispose();
-                            oldNameTag.material.map = newTex;
-                            oldNameTag.material.needsUpdate = true;
-                        }
-                    }
-                }
-            });
-        }
-
-        // 4. Chat Messages
-        else if (msg.type === 'chat') {
-            displayChatMessage(msg.name, msg.text, msg.id);
-        }
-
-        // 5. Sound Effects (3D Audio)
-        else if (msg.type === 'sound') {
-            if (msg.name === 'guitar') {
-                // Local Mute Check
-                if (typeof localMutedMidi !== 'undefined' && localMutedMidi.includes(msg.id)) return;
-
-                // Server Admin Mute Check
-                if (otherPlayers[msg.id] && otherPlayers[msg.id].lastData.isMidiMuted) return;
-            }
-            Sound.playSpatial(msg.name, msg.pos, msg.var);
-        }
-
-        // 6. Moderation
-        else if (msg.type === 'purge_chat') {
-            purgeUserMessages(msg.targetId);
-        }
-
-        // 7. Animations (Punching)
-        else if (msg.type === 'anim' && msg.anim === 'punch') {
-            if (otherPlayers[msg.id]) {
-                animatePunch(otherPlayers[msg.id].mesh);
-                Sound.playSpatial('punch', otherPlayers[msg.id].mesh.position);
-            }
-        }
-        else if (msg.type === 'punch_hit') {
-            handleHit(msg);
-        }
-
-        // 8. World Events
-        else if (msg.type === 'spawnPortal') spawnPortal(msg.x, msg.z, true);
-        else if (msg.type === 'forceGhost') spawnGhostMesh(msg.x, msg.z);
-
-        // 9. Level currently in force on the server (answer to levelSync)
-        else if (msg.type === 'worldLevel') {
-            const query = '&dedicated=' + encodeURIComponent(dedicatedUrl || '');
-            if (msg.level) acceptHostLevel(msg.level, query);
-            else dropActiveLevel(query);
-        }
-
-        // 10. Environment (Weather/Time)
-        else if (msg.type === 'environment_sync') {
-            // Store target time for smooth interpolation in updateDayNightCycle
-            if (typeof msg.time === 'number') {
-                window._serverTargetTime = msg.time;
-            }
-            const prevRain = isRaining;
-            isRaining = msg.isRaining;
-            if (prevRain !== isRaining) {
-                updateWeatherVisuals();
-                if (isRaining) showToast("It started raining!");
-                else showToast("The rain has stopped.");
-            }
-        }
-
-        // 11. System / Disconnects
-        else if (msg.type === 'playerLeft') {
-            removePlayer(msg.id);
-            updateHostPanel();
-            showToast("A fisher has left.");
-        }
-        else if (msg.type === 'system') {
-            displayChatMessage('System', msg.text, 'system');
-        }
-
-        // --- ADMIN STATUS HANDLERS ---
-        else if (msg.type === 'admin_ok') {
-            isHost = true; // Enable admin features client-side
-            const btn = document.getElementById('btn-admin-login');
-            if (btn) {
-                btn.style.display = 'inline-block';
-                btn.innerText = "ADMIN MENU";
-                btn.classList.remove('btn-danger'); // Make it look normal/active
-                btn.classList.add('btn-primary');
-            }
-            showToast("Admin Privileges Granted");
-            updateHostPanel(); // Refresh list to show admin controls
-        }
-        else if (msg.type === 'admin_fail') {
-            isHost = false;
-            const btn = document.getElementById('btn-admin-login');
-            if (btn) btn.style.display = 'none';
-            showToast("Admin Privileges Revoked");
-        }
-
-        // --- NEW: Environment Sync (Time/Weather) ---
-        else if (msg.type === 'environment_sync') {
-            if (typeof msg.time === 'number') {
-                // Anti-Jitter: Only hard sync if drift is significant (> 1 minute game time)
-                // 1 Game Hour = 25 real seconds.
-                // 0.02 Game Hours = 0.5 real seconds.
-                if (Math.abs(worldTime - msg.time) > 0.05) {
-                    worldTime = msg.time;
-                }
-            }
-            if (typeof msg.isRaining === 'boolean') {
-                if (isRaining !== msg.isRaining) {
-                    isRaining = msg.isRaining;
-                }
-            }
-        }
-
-        // --- NEW: Fish Caught Confirmation ---
-        else if (msg.type === 'fishCaughtConfirmed') {
-            const fish = sanitizeFish(msg.fish);
-            if (!fish) return;
-
-            // Update Local State (Visuals Only)
-            saveState.inventory.push(fish);
-
-            // Update journal with tier (fallback to 'normal' if undefined)
-            const tierId = fish.tierId || 'normal';
-            const wasNewSpecies = !saveState.journal[fish.name];
-            updateJournal(fish, tierId);
-            saveGame();
-
-            if (typeof notifyFishCaught === 'function') {
-                notifyFishCaught(fish, wasNewSpecies);
-            }
-
-            // Show UI with tier and size info
-            const tierStr = tierId !== 'normal' ? ` (${fish.tierName || 'Special'})` : '';
-            const sizeStr = fish.sizeLabel ? ` [${fish.sizeLabel}]` : '';
-            showToast(`Caught ${fish.name}${tierStr}${sizeStr}!`);
-
-            // Play Sound
-            Sound.playSpatial('catch');
-
-            // --- FIX: SHOW FISH VISUALLY ON DEDICATED SERVERS ---
-            localHeldFish = {
-                name: fish.name,
-                color: fish.color,
-                size: fish.size
-            };
-
-            if (fishHoldTimer) clearTimeout(fishHoldTimer);
-            fishHoldTimer = setTimeout(() => {
-                localHeldFish = null;
-                updateLocalVisuals();
-            }, 6000);
-
-            updateLocalVisuals();
-            // ----------------------------------------------------
-
-            // Trigger Minigame Success Visuals
-            if (minigame.active) {
-                minigame.active = false;
-                document.getElementById('minigame-ui').style.display = 'none';
-                // Reset camera or player state if needed
-                fishingState = 'idle';
-                player.position.y = 1.5; // Reset position if needed
-            }
-        }
-
-        // --- NEW: State Update (Money/Inventory) ---
-        else if (msg.type === 'stateUpdate') {
-            // The server is trusted for values but not for types: coerce
-            // everything before it reaches the save, otherwise a hostile
-            // server can persist strings that later render as HTML (XSS via
-            // the Merchant panel) or break the inventory code.
-            const finNum = (v, lo, hi) => {
-                const n = Number(v);
-                return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null;
-            };
-            const countMap = (v) => {
-                if (!v || typeof v !== 'object') return null;
-                const out = {};
-                Object.keys(v).slice(0, 64).forEach(k => {
-                    const n = Number(v[k]);
-                    if (Number.isFinite(n)) out[k] = Math.min(1e9, Math.max(0, n));
-                });
-                return out;
-            };
-            if (msg.money !== undefined) { const n = finNum(msg.money, 0, 1e12); if (n !== null) saveState.money = n; }
-            if (Array.isArray(msg.inventory)) {
-                saveState.inventory = msg.inventory.map(sanitizeFish).filter(Boolean).slice(0, 2000);
-            }
-            if (msg.woodInventory !== undefined) { const m = countMap(msg.woodInventory); if (m) saveState.woodInventory = m; }
-            if (msg.oreInventory !== undefined) { const m = countMap(msg.oreInventory); if (m) saveState.oreInventory = m; }
-            if (msg.wood !== undefined) { const n = finNum(msg.wood, 0, 1e9); if (n !== null) saveState.wood = n; }
-            if (msg.stone !== undefined) { const n = finNum(msg.stone, 0, 1e9); if (n !== null) saveState.stone = n; }
-
-            saveGame();
-            updateUI(); // Refresh inventory display
-
-            if (msg.soldCount && msg.soldValue) {
-                const itemType = msg.soldType || 'fish';
-                showToast(`Sold ${msg.soldCount} ${itemType} for $${msg.soldValue}!`);
-                Sound.playSpatial('sell');
-            }
-        }
-    });
-
-    // --- CONNECTION CLOSE HANDLER ---
-    dedicatedSocket.addEventListener('close', () => {
-        isConnectedToDedicated = false;
-        dedicatedSocket = null;
-        alert("Disconnected from Server.");
-        location.reload();
-    });
-}
 
 // ---------------------------------------------------------------------------
 // MASTER SERVER (public lobby directory)
@@ -2161,8 +1700,7 @@ function renderServerList(container, servers) {
 }
 
 function buildServerRow(s) {
-    const isDedicated = s.kind === 'dedicated';
-    const isMine = !isDedicated && isHost &&
+    const isMine = isHost &&
         (s.id === lobbyDirectoryId() || (myPeerId && s.peerId === myPeerId));
 
     const row = document.createElement('div');
@@ -2176,7 +1714,7 @@ function buildServerRow(s) {
     title.style.cssText = 'font-weight:bold;overflow:hidden;text-overflow:ellipsis;';
 
     const tag = document.createElement('span');
-    tag.textContent = isDedicated ? 'DEDICATED' : (isMine ? 'YOUR LOBBY' : 'PLAYER');
+    tag.textContent = isMine ? 'YOUR LOBBY' : 'PLAYER';
     tag.style.cssText = 'font-size:12px;padding:1px 6px;border:1px solid var(--p-line);' +
         'color:var(--p-text-dim);margin-right:6px;vertical-align:middle;';
     title.appendChild(tag);
@@ -2192,7 +1730,7 @@ function buildServerRow(s) {
     const maxPlayers = Math.max(0, Math.min(999, parseInt(s.maxPlayers, 10) || 0));
     const bits = [maxPlayers > players ? `${players}/${maxPlayers} Players` : (players === 1 ? '1 Player' : players + ' Players')];
     if (s.host) bits.push('by ' + String(s.host).slice(0, 16));
-    if (!isDedicated && (s.room || s.peerId)) bits.push('code ' + String(s.room || s.peerId).slice(0, 24));
+    if (s.room || s.peerId) bits.push('code ' + String(s.room || s.peerId).slice(0, 24));
     if (parseInt(s.age, 10) >= 60) bits.push('up ' + Math.floor(s.age / 60) + 'm');
     meta.textContent = bits.join(' · ');
 
@@ -2238,92 +1776,13 @@ function joinBrowsedServer(s) {
     saveGame();
 
     // Player-hosted lobbies are peer-to-peer: the PeerJS id IS the join target.
-    if (s.kind !== 'dedicated') {
-        const target = String(s.peerId || s.room || '').trim();
-        if (!target) return;
-        showToast('Joining "' + String(s.name || 'lobby').slice(0, 30) + '"...');
-        document.getElementById('room-id-input').value = target;
-        closeServerBrowser();
-        joinGame();
-        return;
-    }
-
-    // Dedicated server: same WebSocket path as the official server.
-    const isSecure = window.location.protocol === 'https:';
-    const protocol = isSecure ? 'wss' : 'ws';
-    let targetPort = s.port;
-    if (/[a-zA-Z]/.test(String(s.ip || '')) && isSecure) {
-        targetPort = 443;
-    }
-    const wsUrl = `${protocol}://${s.ip}:${targetPort}`;
-    console.log('Connecting to:', wsUrl);
+    const target = String(s.peerId || s.room || '').trim();
+    if (!target) return;
+    showToast('Joining "' + String(s.name || 'lobby').slice(0, 30) + '"...');
+    document.getElementById('room-id-input').value = target;
     closeServerBrowser();
-    connectToDedicatedServer(wsUrl);
+    joinGame();
 }
-
-// Run after DOM ready to wire up the Official Server button
-(function wireOfficialButton() {
-    const tryWire = () => {
-        const btn = document.getElementById('btn-official-join');
-        if (!btn) return setTimeout(tryWire, 200);
-
-        btn.onclick = () => {
-            // --- FIX START: Save the name from the input box first! ---
-            saveGame();
-            // --- FIX END ---
-
-            connectToDedicatedServer();
-        };
-    };
-    tryWire();
-})();
-
-// Helper to send admin login to dedicated server (obfuscated): produce sha256(password + salt) and send
-async function dedicatedAdminLogin(password) {
-    if (!dedicatedSocket || dedicatedSocket.readyState !== WebSocket.OPEN) {
-        alert("Connect to Official Server first.");
-        return false;
-    }
-    // ask server for salt by relying on the server to send 'welcome' with adminSalt (we store it)
-    // NOTE: server already sends adminSalt in 'welcome'. We'll cache if provided.
-    // Implementation: wait briefly for last received welcome to have provided adminSalt:
-    // For reliability, we'll request salt via a dummy message - server included salt in welcome so this should work normally.
-    // We'll assume server provided 'adminSalt' in the 'welcome' message and the client stored it in lastAdminSalt.
-    if (!window.lastAdminSalt) {
-        alert("Server hasn't provided salt yet. Try reconnecting.");
-        return false;
-    }
-    const hash = await sha256HexBrowser(password + window.lastAdminSalt);
-    dedicatedSocket.send(JSON.stringify({ type: 'admin_login', hash }));
-    // server responds with admin_ok or admin_fail — listen for admin_ok to set isAdminOnDedicated
-    return new Promise((resolve) => {
-        const onMsg = (ev) => {
-            try {
-                const m = JSON.parse(ev.data);
-                if (m.type === 'admin_ok') {
-                    isAdminOnDedicated = true;
-                    dedicatedSocket.removeEventListener('message', onMsg);
-                    resolve(true);
-                } else if (m.type === 'admin_fail') {
-                    isAdminOnDedicated = false;
-                    dedicatedSocket.removeEventListener('message', onMsg);
-                    resolve(false);
-                }
-            } catch (e) { }
-        };
-        dedicatedSocket.addEventListener('message', onMsg);
-        // timeout fallback
-        setTimeout(() => { dedicatedSocket.removeEventListener('message', onMsg); resolve(false); }, 4000);
-    });
-}
-
-// store last admin salt if server sends it
-// optionally place this near the earlier message handling to cache welcome.adminSalt:
-(function cacheAdminSaltHook() {
-    const orig = window.addEventListener;
-    // easiest: patch the dedicatedSocket welcome handling above — it will set window.lastAdminSalt if present
-})();
-
 
 // --- WORLD GENERATION ---
 // --- TEXTURE GENERATORS ---
@@ -3316,18 +2775,8 @@ function sendUpdate() {
 
     myData.version = GAME_VERSION;
 
-    // --- 1. DEDICATED SERVER LOGIC (MOVED TO TOP) ---
-    // This check must happen FIRST. If we are an Admin on a dedicated server,
-    // 'isHost' is true, but we still need to send data to the server, not broadcast locally.
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({
-            type: 'update',
-            id: dedicatedId,
-            payload: myData
-        }));
-    }
-    // --- 2. PEERJS HOST LOGIC ---
-    else if (isHost) {
+    // --- PEERJS HOST LOGIC ---
+    if (isHost) {
         const now = Date.now();
         // Day/Night & Weather Logic
         const date = new Date();
@@ -3385,7 +2834,7 @@ function createRemotePlayer(id, data) {
     scene.add(group);
 
     // Store the player data
-    // FIX: Handle both nested 'pos' (P2P) and flat 'x,y,z' (Dedicated)
+    // Accept both nested 'pos' and flat 'x,y,z' shapes from peers.
     const tx = (data.pos && data.pos.x) || data.x || 0;
     const ty = (data.pos && data.pos.y) || data.y || 0;
     const tz = (data.pos && data.pos.z) || data.z || 0;
@@ -3710,14 +3159,8 @@ function sendChatMessage(text) {
     // 3. Prepare Network Message
     const msg = { type: 'chat', text: safeText };
 
-    // --- FIX: PRIORITIZE DEDICATED SERVER CONNECTION ---
-    // We check this FIRST. Even if you are Admin (isHost=true), 
-    // you must send the chat to the server so it can reach other players.
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify(msg));
-    }
     // --- PEERJS HOST LOGIC ---
-    else if (isHost) {
+    if (isHost) {
         const peerMsg = { ...msg, name: saveState.displayName, id: myPeerId };
         broadcastToClients(peerMsg);
     }
@@ -3927,28 +3370,6 @@ function showChatBubble(parentMesh, text) {
             tex.dispose();
         }
     }, readTime);
-}
-
-async function refreshServerCount() {
-    const el = document.getElementById('official-count');
-    if (!el) return;
-
-    // Convert WSS URL to HTTPS (e.g. wss://site.com -> https://site.com)
-    const wsUrl = (window.DEDICATED_SERVER_URL || DEDICATED_WS_URL);
-    const httpUrl = wsUrl.replace('ws://', 'http://').replace('wss://', 'https://');
-
-    try {
-        const response = await fetch(httpUrl);
-        if (!response.ok) throw new Error("Server Offline");
-
-        const data = await response.json();
-        el.innerText = `${data.players} Online`;
-        el.style.color = 'var(--p-good)';
-    } catch (err) {
-        console.warn("Server Check Failed:", err);
-        el.innerText = "Offline";
-        el.style.color = 'var(--p-bad)';
-    }
 }
 
 function createLavaWorld() {
@@ -4266,24 +3687,6 @@ function updateDayNightCycle(dt) {
         worldTime += (dt / DAY_DURATION) * 24;
         if (worldTime >= 24) worldTime -= 24;
     }
-
-    // On dedicated servers, smoothly lerp towards server target time
-    if (isConnectedToDedicated && typeof window._serverTargetTime === 'number') {
-        let diff = window._serverTargetTime - worldTime;
-
-        // Handle day wrap-around (e.g., server at 0.1, client at 23.9)
-        if (diff > 12) diff -= 24;
-        if (diff < -12) diff += 24;
-
-        // Only correct if drift is noticeable (> 0.01 hours ~ 0.4 seconds game time)
-        if (Math.abs(diff) > 0.01) {
-            // Lerp towards server time smoothly
-            worldTime += diff * 0.1; // 10% correction per frame
-            if (worldTime >= 24) worldTime -= 24;
-            if (worldTime < 0) worldTime += 24;
-        }
-    }
-
 
     // 1. Calculate Colors
     let lightIntensity = 0.65; // Reduced for cozy/warm feel (was 1.0)
@@ -4983,12 +4386,19 @@ function createNPCs() {
     npcLavaKeeper.lookAt(0, 0, 0);
     scene.add(npcLavaKeeper);
 
+    // 6. Old Fisher (Main World - on the lake shore, southwest of the Merchant)
+    npcFisher = createPlayerMesh('#8D6E63', "Old Fisher", 'straw', '#000000', 'bear');
+    npcFisher.position.set(-(LAKE_RADIUS + 3), 0, -(LAKE_RADIUS + 3));
+    npcFisher.lookAt(0, 0, 0);
+    scene.add(npcFisher);
+
     // Add Icons
     addIcon(npcLavaKeeper, '🌋');
     addIcon(npcMerchant, '$');
     addIcon(npcStylist, '👕');
     addIcon(npcBait, '🪱');
     addIcon(npcTutorial, '❓');
+    addIcon(npcFisher, '🎣');
 
     // --- LAVA WORLD NPCs (Fixed Height) ---
     // Moved Y from -2.5 to 0 so they stand ON the floor
@@ -5021,7 +4431,7 @@ function createNPCs() {
     // Move the NPCs to wherever the level editor placed them.
     if (window.CUSTOM_LEVEL && window.Level) {
         const lv = window.CUSTOM_LEVEL;
-        const byType = { merchant: npcMerchant, stylist: npcStylist, bait: npcBait, tutorial: npcTutorial, lava: npcLavaKeeper };
+        const byType = { merchant: npcMerchant, stylist: npcStylist, bait: npcBait, tutorial: npcTutorial, lava: npcLavaKeeper, fisher: npcFisher };
         lv.npcs.forEach((n) => {
             const mesh = byType[n.type];
             if (!mesh) return;
@@ -9483,6 +8893,7 @@ function setupInputs() {
             else if (interactTarget === 'stylist') toggleShop();
             else if (interactTarget === 'bait') toggleBaitShop();
             else if (interactTarget === 'tutorial') toggleTutorial();
+            else if (interactTarget === 'fisher') talkToFisher();
             else if (interactTarget === 'lava_keeper') {
                 if (saveState.lavaUnlocked) {
                     enterLavaWorld();
@@ -9503,18 +8914,7 @@ function setupInputs() {
             }
             // Try to pick nearby flower
             else {
-                let pickedFlower = false;
-                for (let i = 0; i < pickableFlowers.length; i++) {
-                    const flower = pickableFlowers[i];
-                    if (flower && !flower.userData.isPicked && flower.visible) {
-                        const dist = player.position.distanceTo(flower.position);
-                        if (dist < 2) {
-                            pickFlower(i);
-                            pickedFlower = true;
-                            break;
-                        }
-                    }
-                }
+                tryPickNearbyFlower();
             }
         }
 
@@ -9775,6 +9175,7 @@ function setupInputs() {
         else if (interactTarget === 'stylist') toggleShop();
         else if (interactTarget === 'bait') toggleBaitShop();
         else if (interactTarget === 'tutorial') toggleTutorial();
+        else if (interactTarget === 'fisher') talkToFisher();
 
         // --- ADDED LAVA KEEPER CHECK FOR MOBILE ---
         else if (interactTarget === 'lava_keeper') {
@@ -9797,6 +9198,11 @@ function setupInputs() {
         }
         // ------------------------------------------
 
+        // Try to pick a nearby flower first (mobile players have no interact
+        // key, so this is their only way to gather flowers).
+        else if (tryPickNearbyFlower()) {
+            // handled
+        }
         else { isLeftMouseDown = true; handleAction(true); }
     };
 
@@ -9823,13 +9229,13 @@ function setupInputs() {
     // --- PROP BUTTONS ---
     const btnPlace = document.getElementById('btn-mobile-place');
     if (btnPlace) {
-        btnPlace.ontouchstart = e => { stopCam(e); requestPlaceProp(); };
+        btnPlace.ontouchstart = e => { stopCam(e); togglePropsUI(); };
         btnPlace.ontouchmove = stopCam;
     }
 
-    const btnUndo = document.getElementById('btn-mobile-undo');
+    const btnUndo = document.getElementById('btn-mobile-undo-prop') || document.getElementById('btn-mobile-undo');
     if (btnUndo) {
-        btnUndo.ontouchstart = e => { stopCam(e); requestUndoProp(); };
+        btnUndo.ontouchstart = e => { stopCam(e); undoProp(); };
         btnUndo.ontouchmove = stopCam;
     }
 
@@ -10194,10 +9600,7 @@ function performPunch() {
     // 1. Send Animation (FIXED PRIORITY)
     const animMsg = { type: 'anim', anim: 'punch' };
 
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify(animMsg));
-    }
-    else if (isHost) {
+    if (isHost) {
         broadcastToClients(animMsg);
     }
     else if (hostConn && hostConn.open) {
@@ -10224,10 +9627,7 @@ function performPunch() {
             // Send Hit Event (FIXED PRIORITY)
             // Note: We don't call handleHit locally for remote players; 
             // we send the command and let the server/client logic handle it.
-            if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-                dedicatedSocket.send(JSON.stringify(hitMsg));
-            }
-            else if (isHost) {
+            if (isHost) {
                 handleHit(hitMsg); // P2P Host handles it directly
             }
             else if (hostConn && hostConn.open) {
@@ -10240,10 +9640,9 @@ function performPunch() {
 function handleHit(data) {
     // Check for ID mismatch
     const isMePeer = data.targetId === myPeerId;
-    const isMeDedicated = (dedicatedId && data.targetId === dedicatedId);
 
     // FIX: Simplified check to ensure it works even if connection state flags are desynced
-    if (isMePeer || isMeDedicated) {
+    if (isMePeer) {
 
         knockbackVelocity.x = data.force.x;
         knockbackVelocity.z = data.force.z;
@@ -10421,19 +9820,12 @@ function stopFishing(success, msg) {
     // --------------------------------------------------
 
     if (success) {
-        // --- NEW: Server Authority Check ---
-        if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-            dedicatedSocket.send(JSON.stringify({
-                type: 'fishCaught',
-                baitId: activeBaitId,
-                zone: fishingZone
-            }));
-            return; // Wait for server confirmation
-        }
-        // -----------------------------------
-
         if (minigame.targetFish) {
             broadcastSound('catch');
+            // Record where this fish came from so progression can see it.
+            const caughtZone = resolveCatchZone();
+            lastCatchZone = caughtZone;
+            minigame.targetFish.zone = caughtZone;
             const wasNewSpecies = !saveState.journal[minigame.targetFish.name];
             saveState.inventory.push(minigame.targetFish);
             updateJournal(minigame.targetFish, minigame.targetFish.tierId);
@@ -10685,13 +10077,8 @@ function triggerHaunt(targetId) {
     // 2. Prepare Message
     const msg = { type: 'forceGhost', x: pos.x, z: pos.z };
 
-    // 3. Send to Network (FIXED PRIORITY)
-    // ALWAYS check Dedicated Socket FIRST. Even if isHost is true (Admin), 
-    // we must send to the WebSocket if we are connected to it.
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify(msg));
-    }
-    else if (isHost) {
+    // 3. Send to Network
+    if (isHost) {
         broadcastToClients(msg);
     }
 
@@ -10757,6 +10144,7 @@ function animate() {
     if (npcStylist) updateSpriteDirection(npcStylist, camera.position);
     if (npcBait) updateSpriteDirection(npcBait, camera.position);
     if (npcTutorial) updateSpriteDirection(npcTutorial, camera.position);
+    if (npcFisher) updateSpriteDirection(npcFisher, camera.position);
     if (npcLavaKeeper) updateSpriteDirection(npcLavaKeeper, camera.position);
     // NEW: Update Lava World NPC Sprites
     if (npcLavaMerchant) updateSpriteDirection(npcLavaMerchant, camera.position);
@@ -11150,6 +10538,7 @@ function animate() {
             const dStylist = player.position.distanceTo(npcStylist.position);
             const dBait = player.position.distanceTo(npcBait.position);
             const dLava = npcLavaKeeper ? player.position.distanceTo(npcLavaKeeper.position) : 999;
+            const dFisher = npcFisher ? player.position.distanceTo(npcFisher.position) : 999;
 
             if (dMerchant < 3) {
                 canSell = true; interactTarget = 'merchant';
@@ -11180,6 +10569,12 @@ function animate() {
                     prompt.innerText = "PRESS E TO UNLOCK ($80k)";
                     if (btn) btn.innerText = "BUY";
                 }
+                prompt.style.display = 'block';
+            }
+            else if (dFisher < 3) {
+                interactTarget = 'fisher';
+                prompt.innerText = "PRESS E TO TALK";
+                if (btn) btn.innerText = "TALK";
                 prompt.style.display = 'block';
             }
         }
@@ -11330,7 +10725,7 @@ function escapeHTML(str) {
 }
 
 // --- SECURITY: coerce fish objects that arrived from the network ---
-// A hostile dedicated server controls fish fields; keep only primitives with
+// A hostile peer controls fish fields; keep only primitives with
 // sane lengths so poisoned values can't render as HTML or break inventory
 // code (the Merchant panel interpolates price into innerHTML).
 function sanitizeFish(f) {
@@ -11958,21 +11353,8 @@ function chopTree(index, fromNetwork = false) {
         // Broadcast to others
         const msg = { type: 'chop_tree', index: index };
 
-        // Send to Dedicated Server if connected
-        if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-            dedicatedSocket.send(JSON.stringify(msg));
-            // Sync resource inventories to server
-            dedicatedSocket.send(JSON.stringify({
-                type: 'syncResources',
-                woodInventory: saveState.woodInventory,
-                oreInventory: saveState.oreInventory || {},
-                wood: saveState.wood || 0,
-                stone: saveState.stone || 0,
-                skills: saveState.skills
-            }));
-        }
         // Host Broadcast
-        else if (isHost) {
+        if (isHost) {
             broadcastToClients(msg);
         }
         // Client Send to Host
@@ -12083,18 +11465,7 @@ function mineRock(index, fromNetwork = false) {
         // For now, I'll send 'mine_rock' message.
 
         const msg = { type: 'mine_rock', index: index };
-        if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-            dedicatedSocket.send(JSON.stringify(msg));
-            // Sync resource inventories to server
-            dedicatedSocket.send(JSON.stringify({
-                type: 'syncResources',
-                woodInventory: saveState.woodInventory || {},
-                oreInventory: saveState.oreInventory,
-                wood: saveState.wood || 0,
-                stone: saveState.stone || 0,
-                skills: saveState.skills
-            }));
-        } else if (isHost) {
+        if (isHost) {
             broadcastToClients(msg);
         } else if (hostConn && hostConn.open) {
             hostConn.send(msg);
@@ -12396,24 +11767,6 @@ function saveGame() {
     updateUI();
     updateLocalVisuals();
     updateHotbarVisuals(); // FIX: Refresh hotbar after load
-
-    // --- Sync with Dedicated Server if connected ---
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        // Sync name/visuals with full saveState
-        dedicatedSocket.send(JSON.stringify({
-            type: 'setName',
-            name: saveState.displayName,
-            peerId: myPeerId,
-            saveState: saveState // Send full saveState for visuals sync
-        }));
-
-        // Sync money to prevent desync after shop purchases
-        dedicatedSocket.send(JSON.stringify({
-            type: 'syncMoney',
-            money: saveState.money
-        }));
-    }
-    // ---------------------
 
     try {
         localStorage.setItem('islandFisherSave', JSON.stringify(saveState));
@@ -12852,6 +12205,7 @@ window.toggleBaitShop = function () {
 
 // --- TUTORIAL NPC GUIDE ---
 let npcTutorial = null;
+let npcFisher = null;
 
 window.toggleTutorial = function () {
     const ui = document.getElementById('tutorial-overlay');
@@ -12862,6 +12216,23 @@ window.toggleTutorial = function () {
         // Reset to basics tab
         showTutorialTab('basics');
     }
+}
+
+// --- OLD FISHER DIALOGUE ---
+// A rotating set of tips so the lakeside NPC is more than decoration.
+let fisherTipIndex = 0;
+const FISHER_TIPS = [
+    "Old Fisher: Been casting on this lake nigh on forty years. Patience, lad, patience.",
+    "Old Fisher: Fish bite better when it rains, I swear it.",
+    "Old Fisher: Try the ponds at dusk — different stock lurks in the dark water.",
+    "Old Fisher: A bigger reel window means a bigger catch. Don't fight the line.",
+    "Old Fisher: Sell your haul to the Merchant east of the lake. He pays fair... mostly.",
+    "Old Fisher: There's rarer water out past the shore. Row out if you're brave."
+];
+window.talkToFisher = function () {
+    const tip = FISHER_TIPS[fisherTipIndex % FISHER_TIPS.length];
+    fisherTipIndex++;
+    showToast(tip);
 }
 
 window.showTutorialTab = function (tabName) {
@@ -13069,12 +12440,6 @@ window.deleteSave = function () {
 window.leaveGame = function () {
     if (confirm("Are you sure you want to leave the room?")) {
         Object.keys(otherPlayers).forEach(pid => removePlayer(pid));
-
-        // FIX: Close dedicated socket
-        if (dedicatedSocket) {
-            dedicatedSocket.close();
-            dedicatedSocket = null;
-        }
 
         if (peer) peer.destroy();
         location.reload();
@@ -14217,6 +13582,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             const guitarDiv = document.createElement('div');
             guitarDiv.className = 'grid-entry';
             const hasGuitar = saveState.unlockedTools.includes('guitar');
+            const guitarTool = TOOLS.find(t => t.id === 'guitar') || { price: 1000 };
 
             const gTitle = document.createElement('div');
             gTitle.innerHTML = (window.PX ? PX.icon('guitar', 16) : '') + " <b>Acoustic Guitar</b>";
@@ -14234,19 +13600,10 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
                 guitarDiv.appendChild(btn);
             } else {
                 const btn = document.createElement('button');
-                btn.innerText = "Buy ($500)";
-                btn.style.color = saveState.money >= 500 ? 'var(--p-good)' : 'var(--p-bad)';
-                btn.onclick = () => {
-                    if (saveState.money >= 500) {
-                        saveState.money -= 500;
-                        saveState.unlockedTools.push('guitar');
-                        if (!saveState.hasGuitar) saveState.hasGuitar = true;
-                        Sound.sell();
-                        saveGame();
-                        renderShop();
-                        setupHotbar();
-                    } else showToast("Not enough money!");
-                };
+                const price = guitarTool.price;
+                btn.innerText = `Buy ($${price})`;
+                btn.style.color = saveState.money >= price ? 'var(--p-good)' : 'var(--p-bad)';
+                btn.onclick = () => actionBuyTool('guitar');
                 guitarDiv.appendChild(btn);
             }
             container.appendChild(guitarDiv);
@@ -14255,6 +13612,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             const axeDiv = document.createElement('div');
             axeDiv.className = 'grid-entry';
             const hasAxe = saveState.unlockedTools.includes('axe');
+            const axeTool = TOOLS.find(t => t.id === 'axe') || { price: 500 };
 
             const aTitle = document.createElement('div');
             aTitle.innerHTML = (window.PX ? PX.icon('axe', 16) : '') + " <b>Woodcutter's Axe</b>";
@@ -14272,18 +13630,10 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
                 axeDiv.appendChild(btn);
             } else {
                 const btn = document.createElement('button');
-                btn.innerText = "Buy ($150)";
-                btn.style.color = saveState.money >= 150 ? 'var(--p-good)' : 'var(--p-bad)';
-                btn.onclick = () => {
-                    if (saveState.money >= 150) {
-                        saveState.money -= 150;
-                        saveState.unlockedTools.push('axe');
-                        Sound.sell();
-                        saveGame();
-                        renderShop();
-                        setupHotbar();
-                    } else showToast("Not enough money!");
-                };
+                const price = axeTool.price;
+                btn.innerText = `Buy ($${price})`;
+                btn.style.color = saveState.money >= price ? 'var(--p-good)' : 'var(--p-bad)';
+                btn.onclick = () => actionBuyTool('axe');
                 axeDiv.appendChild(btn);
             }
             container.appendChild(axeDiv);
@@ -14292,6 +13642,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             const gloveDiv = document.createElement('div');
             gloveDiv.className = 'grid-entry';
             const hasGlove = saveState.unlockedTools.includes('glove');
+            const gloveTool = TOOLS.find(t => t.id === 'glove') || { price: 1000 };
 
             const glTitle = document.createElement('div');
             glTitle.innerHTML = (window.PX ? PX.icon('glove', 16) : '') + " <b>PvP Glove</b>";
@@ -14309,19 +13660,10 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
                 gloveDiv.appendChild(btn);
             } else {
                 const btn = document.createElement('button');
-                btn.innerText = "Buy ($1000)";
-                btn.style.color = saveState.money >= 1000 ? 'var(--p-good)' : 'var(--p-bad)';
-                btn.onclick = () => {
-                    if (saveState.money >= 1000) {
-                        saveState.money -= 1000;
-                        saveState.unlockedTools.push('glove');
-                        if (!saveState.hasGlove) saveState.hasGlove = true;
-                        Sound.sell();
-                        saveGame();
-                        renderShop();
-                        setupHotbar();
-                    } else showToast("Not enough money!");
-                };
+                const price = gloveTool.price;
+                btn.innerText = `Buy ($${price})`;
+                btn.style.color = saveState.money >= price ? 'var(--p-good)' : 'var(--p-bad)';
+                btn.onclick = () => actionBuyTool('glove');
                 gloveDiv.appendChild(btn);
             }
             container.appendChild(gloveDiv);
@@ -14330,6 +13672,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             const pickDiv = document.createElement('div');
             pickDiv.className = 'grid-entry';
             const hasPick = saveState.unlockedTools.includes('pickaxe');
+            const pickTool = TOOLS.find(t => t.id === 'pickaxe') || { price: 800 };
 
             const pTitle = document.createElement('div');
             pTitle.innerHTML = (window.PX ? PX.icon('pickaxe', 16) : '') + " <b>Pickaxe</b>";
@@ -14347,19 +13690,10 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
                 pickDiv.appendChild(btn);
             } else {
                 const btn = document.createElement('button');
-                btn.innerText = "Buy ($800)";
-                btn.style.color = saveState.money >= 800 ? 'var(--p-good)' : 'var(--p-bad)';
-                btn.onclick = () => {
-                    if (saveState.money >= 800) {
-                        saveState.money -= 800;
-                        if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod'];
-                        if (!saveState.unlockedTools.includes('pickaxe')) saveState.unlockedTools.push('pickaxe');
-                        Sound.sell();
-                        saveGame();
-                        renderShop();
-                        setupHotbar();
-                    } else showToast("Not enough money!");
-                };
+                const price = pickTool.price;
+                btn.innerText = `Buy ($${price})`;
+                btn.style.color = saveState.money >= price ? 'var(--p-good)' : 'var(--p-bad)';
+                btn.onclick = () => actionBuyTool('pickaxe');
                 pickDiv.appendChild(btn);
             }
             container.appendChild(pickDiv);
@@ -14790,22 +14124,16 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
                     var: note.freq
                 };
 
-                if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-                    // MIDI EXEMPTION: forward ALL guitar notes to the dedicated server
-                    // without applying local per-tick throttling.
-                    dedicatedSocket.send(JSON.stringify(msg));
-                } else {
-                    // P2P path keeps the original flood protection so we don't
-                    // spam other peers with too many packets per tick.
-                    if (sentCount < 2) {
-                        if (isHost) {
-                            broadcastToClients(msg);
-                        } else if (hostConn && hostConn.open) {
-                            hostConn.send(msg);
-                        }
-                        sentCount++;
-                    }
+            // P2P path keeps the original flood protection so we don't
+            // spam other peers with too many packets per tick.
+            if (sentCount < 2) {
+                if (isHost) {
+                    broadcastToClients(msg);
+                } else if (hostConn && hostConn.open) {
+                    hostConn.send(msg);
                 }
+                sentCount++;
+            }
 
                 // This note has been handled, remove from queue
                 activeMidiNotes.splice(i, 1);
@@ -14963,15 +14291,10 @@ function spawnPortal(x, z, fromNetwork = false) {
     showToast("A Void Portal has opened!");
     broadcastSound('magic', { x: x, y: 0, z: z });
 
-    // FIX: Send to Dedicated Server if connected
     if (!fromNetwork) {
         const msg = { type: 'spawnPortal', x: x, z: z };
 
-        // PRIORITIZE DEDICATED
-        if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-            dedicatedSocket.send(JSON.stringify(msg));
-        }
-        else if (isHost) {
+        if (isHost) {
             broadcastToClients(msg);
         }
     }
@@ -15075,41 +14398,7 @@ window.exitVoid = function () {
     document.getElementById('btn-void-respawn').style.display = 'none';
 }
 
-async function promptAdminLogin() {
-    const pw = prompt("Enter admin password (obfuscated login).");
-    if (!pw) return;
 
-    const ok = await dedicatedAdminLogin(pw);
-
-    if (ok) {
-        alert("Admin login successful.");
-
-        // Show the Host Panel Shield
-        document.getElementById('btn-host-panel').style.display = 'block';
-
-        // HIDE the Admin Login Button
-        document.getElementById('btn-admin-login').style.display = 'none';
-
-        updateHostPanel();
-    }
-    else {
-        alert("Admin login failed.");
-    }
-}
-
-
-// New function to handle unbanning
-function promptUnbanIP() {
-    if (!isConnectedToDedicated || !isAdminOnDedicated) return;
-    const ip = prompt("Enter IP address to unban:");
-    if (ip) {
-        dedicatedSocket.send(JSON.stringify({
-            type: 'admin_cmd',
-            cmd: 'unban',
-            ip: ip.trim()
-        }));
-    }
-}
 
 function togglePlayerList() {
     const ui = document.getElementById('player-list-overlay');
@@ -15262,7 +14551,7 @@ function updateHostPanel() {
         }
     }
 
-    if (isHost || isAdminOnDedicated) {
+    if (isHost) {
         const adminDiv = document.createElement('div');
         adminDiv.style.marginBottom = '15px';
         adminDiv.style.paddingBottom = '10px';
@@ -15288,28 +14577,11 @@ function updateHostPanel() {
         btnPortal.style.marginTop = '5px';
         btnPortal.innerText = "Spawn Portal";
         btnPortal.onclick = () => {
-            // Check network mode
-            if (isConnectedToDedicated && isAdminOnDedicated) {
-                dedicatedSocket.send(JSON.stringify({ type: 'admin_cmd', cmd: 'spawnPortal' }));
-            } else {
-                const x = player.position.x + 5;
-                const z = player.position.z;
-                spawnPortal(x, z);
-            }
+            const x = player.position.x + 5;
+            const z = player.position.z;
+            spawnPortal(x, z);
         };
         adminDiv.appendChild(btnPortal);
-
-        // --- NEW UNBAN BUTTON ---
-        if (isConnectedToDedicated && isAdminOnDedicated) {
-            const btnUnban = document.createElement('button');
-            btnUnban.className = 'btn-lg';
-            btnUnban.style.background = '#2f6b33';
-            btnUnban.style.marginTop = '5px';
-            btnUnban.innerText = "Unban IP";
-            btnUnban.onclick = promptUnbanIP;
-            adminDiv.appendChild(btnUnban);
-        }
-        // ------------------------
 
         container.appendChild(adminDiv);
     }
@@ -15377,19 +14649,7 @@ function updateHostPanel() {
 }
 
 function kickPeer(pid) {
-    // 1. Dedicated Server Logic (PRIORITY)
-    // If we are connected to the official server, we MUST send the command there.
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({
-            type: 'admin_cmd',
-            cmd: 'kick',
-            targetId: pid
-        }));
-        showToast(`Kicking ${pid}...`);
-        return;
-    }
-
-    // 2. PeerJS (P2P) Host Logic (For private rooms)
+    // PeerJS (P2P) Host Logic
     const conn = clientConns[pid];
     if (conn) {
         conn.send({ type: 'error', message: "You have been kicked by the host." });
@@ -15403,18 +14663,7 @@ function kickPeer(pid) {
 }
 
 function banPeer(pid) {
-    // 1. Dedicated Server Logic (PRIORITY)
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({
-            type: 'admin_cmd',
-            cmd: 'ban',
-            targetId: pid
-        }));
-        showToast(`Banning ${pid}...`);
-        return;
-    }
-
-    // 2. PeerJS (P2P) Host Logic (For private rooms)
+    // PeerJS (P2P) Host Logic
     if (!bannedPeers.includes(pid)) bannedPeers.push(pid);
 
     broadcastToClients({ type: 'purge_chat', targetId: pid });
@@ -15440,26 +14689,7 @@ function banPeer(pid) {
 }
 
 function toggleGlobalMute(pid, type) {
-    // 1. DEDICATED SERVER ADMIN LOGIC
-    if (isConnectedToDedicated && isAdminOnDedicated) {
-        if (dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-
-            // Map 'midi' type to 'mute_midi' command
-            let cmd = 'mute_chat';
-            if (type === 'voice') cmd = 'mute_voice';
-            if (type === 'midi') cmd = 'mute_midi'; // <--- ADD THIS
-
-            dedicatedSocket.send(JSON.stringify({
-                type: 'admin_cmd',
-                cmd: cmd,
-                targetId: pid
-            }));
-            showToast(`Sent ${type} mute command for ${pid}`);
-        }
-        return;
-    }
-
-    // 2. P2P HOST LOGIC
+    // P2P HOST LOGIC
     if (!isHost) return;
 
     if (type === 'voice') {
@@ -15479,32 +14709,6 @@ function toggleGlobalMute(pid, type) {
 function sellFish() {
     // This is the "quick sell" action when pressing Interact near the merchant.
     // It should sell: fish + all wood types + all ore/rock types.
-
-    // Dedicated Server Authority (no local mutation; server sends stateUpdate)
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        const fishCount = (saveState.inventory || []).length;
-
-        const woodCountTyped = Object.values(saveState.woodInventory || {}).reduce((sum, v) => sum + (v || 0), 0);
-        const woodCountLegacy = (saveState.wood || 0);
-        const woodCount = woodCountTyped + woodCountLegacy;
-
-        const oreCountTyped = Object.values(saveState.oreInventory || {}).reduce((sum, v) => sum + (v || 0), 0);
-        const oreCountLegacy = (saveState.stone || 0);
-        const oreCount = oreCountTyped + oreCountLegacy;
-
-        if (fishCount <= 0 && woodCount <= 0 && oreCount <= 0) {
-            showToast("Nothing to sell!");
-            return;
-        }
-
-        if (fishCount > 0) dedicatedSocket.send(JSON.stringify({ type: 'sellFish' }));
-        if (woodCount > 0) dedicatedSocket.send(JSON.stringify({ type: 'sellWood' }));
-        if (oreCount > 0) dedicatedSocket.send(JSON.stringify({ type: 'sellOre' }));
-
-        const merchantUI = document.getElementById('merchant-ui');
-        if (merchantUI) merchantUI.style.display = 'none';
-        return;
-    }
 
     let totalValue = 0;
     let totalCount = 0;
@@ -15636,19 +14840,8 @@ function pickFlower(index, fromNetwork = false) {
         // Broadcast to others
         const msg = { type: 'pick_flower', index: index };
 
-        // Send to Dedicated Server if connected
-        if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-            dedicatedSocket.send(JSON.stringify(msg));
-            dedicatedSocket.send(JSON.stringify({
-                type: 'syncResources',
-                woodInventory: saveState.woodInventory || {},
-                oreInventory: saveState.oreInventory || {},
-                flowerInventory: saveState.flowerInventory || {},
-                skills: saveState.skills
-            }));
-        }
         // Host Broadcast
-        else if (isHost) {
+        if (isHost) {
             broadcastToClients(msg);
         }
         // Client Send to Host

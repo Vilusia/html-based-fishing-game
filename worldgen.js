@@ -410,7 +410,8 @@
         { id: "stylist", name: "Stylist", color: 0xFF69B4, species: "bunny", hat: "bow", icon: "\uD83D\uDC55" },
         { id: "bait", name: "Bait Shop", color: 0x32CD32, species: "frog", hat: "straw", icon: "\uD83E\uDEB1" },
         { id: "tutorial", name: "Tutorial", color: 0x9370DB, species: "bunny", hat: "bow", icon: "?" },
-        { id: "lava", name: "Inferno Guard", color: 0x8B0000, species: "dragon", hat: "viking", icon: "\uD83C\uDF0B" }
+        { id: "lava", name: "Inferno Guard", color: 0x8B0000, species: "dragon", hat: "viking", icon: "\uD83C\uDF0B" },
+        { id: "fisher", name: "Old Fisher", color: 0x8D6E63, species: "bear", hat: "straw", icon: "\uD83C\uDFA3" }
     ];
 
     function npcType(id) { return NPC_TYPES.find((t) => t.id === id) || NPC_TYPES[0]; }

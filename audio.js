@@ -375,10 +375,7 @@ function broadcastSound(name, variant = 0) {
         var: variant
     };
 
-    // Dedicated server takes priority so sounds actually reach it
-    if (isConnectedToDedicated && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify(msg));
-    } else if (isHost) {
+    if (isHost) {
         // P2P host
         broadcastToClients(msg);
     } else if (hostConn && hostConn.open) {

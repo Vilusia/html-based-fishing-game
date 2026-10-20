@@ -292,7 +292,7 @@ const TOOLS = [
     { id: 'axe', name: 'Axe', icon: '🪓', price: 500 },
     { id: 'pickaxe', name: 'Pickaxe', icon: '⛏️', price: 800 },
     { id: 'guitar', name: 'Guitar', icon: '🎸', price: 1000 },
-    { id: 'glove', name: 'Boxing Glove', icon: '🥊', price: 0 }, // Default or unlock? Keeping basic for now
+    { id: 'glove', name: 'Boxing Glove', icon: '🥊', price: 1000 },
 ];
 
 // --- SKILL SYSTEM ---

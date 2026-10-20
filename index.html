@@ -1046,6 +1046,13 @@
             box-shadow: inset 1px 1px 0 var(--p-bevel);
         }
 
+        .touch-row {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            pointer-events: none;
+        }
+
         #mobile-toggles {
             position: absolute;
             top: 10px;
@@ -2482,7 +2489,7 @@
         <button class="close-x-btn" onclick="closeServerBrowser()">×</button>
         <h2>Community Servers</h2>
         <p style="color: var(--p-text-dim); font-size: 15px; margin: 0 0 10px; max-width: 560px;">
-            Public lobbies hosted by other players, plus dedicated servers. No room code needed —
+            Public lobbies hosted by other players. No room code needed —
             just hit JOIN.
         </p>
         <input type="text" id="server-search-input" placeholder="Search lobbies by name, host or tag…"
@@ -2553,15 +2560,10 @@
                 <div style="margin: 10px;">OR</div>
                 <input type="text" id="room-id-input" placeholder="Enter Room ID" style="text-align:center;">
                 <button class="btn-lg" id="btn-join">JOIN GAME</button>
-                <!-- Official Dedicated Server (insert inside #start-options) -->
-                <div style="margin-top: 10px; display: flex; gap: 5px; align-items: center;">
-                    <button class="btn-lg" onclick="openServerBrowser()" style="flex: 1; margin:0;">
+                <!-- Community Server Browser (P2P player-hosted lobbies) -->
+                <div style="margin-top: 10px;">
+                    <button class="btn-lg" onclick="openServerBrowser()" style="width: 100%; margin:0;">
                         Browse Community Servers
-                    </button>
-
-                    <button class="btn-lg" onclick="window.open('https://htmlfishing.com/server-guide/', '_blank')"
-                        style="width: 50px; margin:0; font-size: 14px;" title="How to Host a Server">
-                        ?
                     </button>
                 </div>
                 <div id="custom-level-box"
@@ -3365,11 +3367,21 @@
             </div>
 
             <div id="touch-buttons" class="touch-zone">
-                <div style="display: flex; gap: 15px; margin-bottom: 5px;">
+                <div class="touch-row">
                     <div id="btn-mobile-meow" class="touch-btn-sm">🐱</div>
-                    <div id="btn-mobile-undo-prop" class="touch-btn-sm" onclick="undoProp()">🗑️</div>
+                    <div id="btn-mobile-undo-prop" class="touch-btn-sm">🗑️</div>
                 </div>
 
+                <div class="touch-row">
+                    <div id="btn-mobile-guitar" class="touch-btn-sm">🎸</div>
+                    <div id="btn-mobile-glove" class="touch-btn-sm">🥊</div>
+                    <div id="btn-mobile-show-fish" class="touch-btn-sm">🐟</div>
+                </div>
+
+                <div class="touch-row">
+                    <div id="btn-mobile-place" class="touch-btn-sm">🪑</div>
+                    <div id="btn-mobile-empty" class="touch-btn-sm">✋</div>
+                </div>
 
                 <div id="btn-action" class="touch-btn">FISH</div>
                 <div id="btn-jump" class="touch-btn">JUMP</div>
@@ -3397,14 +3409,14 @@
     </script>
 
     <script src="icons.js?v=6"></script>
-    <script src="worldgen.js?v=7"></script>
-    <script src="core.js?v=12.70"></script>
+    <script src="worldgen.js?v=8"></script>
+    <script src="core.js?v=12.71"></script>
     <script src="fish.js?v=12.40"></script>
     <script src="character3d.js?v=5"></script>
     <script src="networking.js?v=12.31"></script>
-    <script src="audio.js?v=12.31"></script>
-    <script src="progression.js?v=2"></script>
-    <script src="ui.js?v=12.71"></script>
+    <script src="audio.js?v=12.32"></script>
+    <script src="progression.js?v=3"></script>
+    <script src="ui.js?v=12.72"></script>
     <script src="props.js?v=12.34"></script>
     <script src="level-loader.js?v=4"></script>
 

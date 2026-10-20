@@ -112,66 +112,48 @@ function placeProp(type) {
     const z = parseFloat(player.position.z.toFixed(2));
     const rot = parseFloat(player.rotation.y.toFixed(3)); // Add rotation
 
-    // FIX 1: Added "&& dedicatedSocket" to prevent crash when it is null (P2P mode)
-    if (typeof dedicatedSocket !== 'undefined' && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({
+    const propData = {
+        id: Date.now() + "_" + Math.random().toString().substr(2, 5),
+        type,
+        x,
+        z,
+        rot, // Include rotation in prop data
+        timestamp: Date.now()
+    };
+
+    if (isHost) {
+        spawnPropMesh(propData);
+        myProps.push(propData);
+        broadcastToClients({ type: 'propPlaced', prop: propData });
+    } else if (hostConn && hostConn.open) {
+        hostConn.send({
             type: 'placeProp',
             propType: type,
             x,
             z,
-            rot // Send rotation to server
-        }));
-    } else {
-        const propData = {
-            id: Date.now() + "_" + Math.random().toString().substr(2, 5),
-            type,
-            x,
-            z,
-            rot, // Include rotation in prop data
-            timestamp: Date.now()
-        };
-
-        if (isHost) {
-            spawnPropMesh(propData);
-            myProps.push(propData);
-            // FIX 2: Changed 'placeProp' to 'propPlaced' so clients actually receive it
-            broadcastToClients({ type: 'propPlaced', prop: propData });
-        } else if (hostConn && hostConn.open) {
-            hostConn.send({
-                type: 'placeProp',
-                propType: type,
-                x,
-                z,
-                rot // Send rotation to host
-            });
-        }
-
-        // Progression: count placements for the "Decorator" achievement. Props
-        // are session-scoped, so the count lives in the save rather than being
-        // derived from the scene.
-        saveState.propsPlaced = (Number(saveState.propsPlaced) || 0) + 1;
-        if (typeof notifyPropPlaced === 'function') notifyPropPlaced();
+            rot // Send rotation to host
+        });
     }
+
+    // Progression: count placements for the "Decorator" achievement. Props
+    // are session-scoped, so the count lives in the save rather than being
+    // derived from the scene.
+    saveState.propsPlaced = (Number(saveState.propsPlaced) || 0) + 1;
+    if (typeof notifyPropPlaced === 'function') notifyPropPlaced();
 }
 
 
 function undoProp() {
-    // FIX: Added "&& dedicatedSocket" check here as well
-    if (typeof dedicatedSocket !== 'undefined' && dedicatedSocket && dedicatedSocket.readyState === WebSocket.OPEN) {
-        dedicatedSocket.send(JSON.stringify({ type: 'undoProp' }));
-    } else {
-        // P2P Logic
-        if (isHost) {
-            // Host Undo
-            if (myProps.length > 0) {
-                const last = myProps.pop();
-                removePropFromWorld(last.id);
-                broadcastToClients({ type: 'propRemoved', id: last.id });
-            }
-        } else if (hostConn && hostConn.open) {
-            // Client Request Undo
-            hostConn.send({ type: 'undoProp' });
+    if (isHost) {
+        // Host Undo
+        if (myProps.length > 0) {
+            const last = myProps.pop();
+            removePropFromWorld(last.id);
+            broadcastToClients({ type: 'propRemoved', id: last.id });
         }
+    } else if (hostConn && hostConn.open) {
+        // Client Request Undo
+        hostConn.send({ type: 'undoProp' });
     }
 }
 
@@ -739,31 +721,6 @@ function removePropFromWorld(id) {
 }
 
 // --- HOOK NETWORKING ---
-// Safely attempt to hook into the dedicated socket message handler
-const _propHookInterval = setInterval(() => {
-    if (typeof dedicatedSocket !== 'undefined' && dedicatedSocket) {
-        clearInterval(_propHookInterval);
-        console.log("[PROP SYSTEM] Hooking into Dedicated Socket...");
-
-        const originalOnMessage = dedicatedSocket.onmessage;
-        dedicatedSocket.onmessage = (event) => {
-            if (originalOnMessage) originalOnMessage(event);
-
-            try {
-                const msg = JSON.parse(event.data);
-                if (msg.type === 'propPlaced') {
-                    spawnPropMesh(msg.prop);
-                } else if (msg.type === 'propRemoved') {
-                    removePropFromWorld(msg.id);
-                } else if (msg.type === 'allProps') {
-                    // Initial sync (capped: a hostile server must not be able
-                    // to spawn an unbounded number of meshes and kill the tab)
-                    if (Array.isArray(msg.props)) msg.props.slice(0, 1000).forEach(p => spawnPropMesh(p));
-                } else if (msg.type === 'welcome' && msg.activeProps) {
-                    if (Array.isArray(msg.activeProps)) msg.activeProps.slice(0, 1000).forEach(p => spawnPropMesh(p));
-                }
-            } catch (e) { }
-        };
-    }
-}, 1000);
+// Prop sync over P2P is handled in ui.js (handleDataFromClient / handleDataFromHost),
+// which processes propPlaced / propRemoved / allProps. Nothing to hook here.
 
