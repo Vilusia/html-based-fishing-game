@@ -275,6 +275,29 @@
         const sh = shapeDistance(isl, x, z);
         const shelf = sh.shelf;
         const d = sh.d;
+
+        // Carve out ponds - if point is inside any pond, return pond surface level
+        try {
+            const lay = layout();
+            if (lay && lay.ponds) {
+                for (let i = 0; i < lay.ponds.length; i++) {
+                    const p = lay.ponds[i];
+                    const pdx = x - p.x, pdz = z - p.z;
+                    const pd = Math.sqrt(pdx * pdx + pdz * pdz);
+                    if (pd < p.radius) {
+                        return -0.03; // Flat pond bottom/surface level
+                    }
+                    if (pd < p.radius * 1.15) {
+                        const blend = (pd - p.radius) / (p.radius * 0.15);
+                        // Blend from pond level up to island height
+                        const pondH = -0.03;
+                        const baseH = (d < shelf) ? (floor + ((isl.peak * isl.squash) - floor) * ((1 - Math.cos((1 - (d/shelf)) * Math.PI)) / 2)) : floor;
+                        return pondH * (1 - blend) + baseH * blend;
+                    }
+                }
+            }
+        } catch (e) { /* ignore */ }
+
         if (d >= shelf) return floor;
 
         const t = d / shelf;              // 0 centre .. 1 shelf edge
