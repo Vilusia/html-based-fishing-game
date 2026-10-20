@@ -281,8 +281,23 @@
                     const p = lay.ponds[i];
                     const pdx = x - p.x, pdz = z - p.z;
                     const pd = Math.sqrt(pdx * pdx + pdz * pdz);
-                    if (pd < p.radius * 2.0) {
-                        return -0.08; // Fully flattened basin
+                    if (pd < p.radius * 1.8) {
+                        return -0.1; // Fully flattened basin
+                    }
+                }
+            }
+        } catch (e) { /* ignore */ }
+
+        // Also check if near pond even if not on this island's height contribution
+        try {
+            const lay = layout();
+            if (lay && lay.ponds) {
+                for (let i = 0; i < lay.ponds.length; i++) {
+                    const p = lay.ponds[i];
+                    const pdx = x - p.x, pdz = z - p.z;
+                    const pd = Math.sqrt(pdx * pdx + pdz * pdz);
+                    if (pd < p.radius * 1.8) {
+                        return Math.min(-0.1, floor);
                     }
                 }
             }
@@ -293,11 +308,9 @@
         const d = sh.d;
         if (d >= shelf) return floor;
 
-        const t = d / shelf;              // 0 centre .. 1 shelf edge
-        // Smooth dome: 1 at centre, 0 at edge, with a flat-ish top.
+        const t = d / shelf;
         const dome = (1 - Math.cos((1 - t) * Math.PI)) / 2;
         const top = isl.peak * isl.squash;
-        // Blend from the deep floor up to the island top.
         return floor + (top - floor) * dome;
     }
 
