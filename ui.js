@@ -10590,13 +10590,10 @@ function animate() {
                     if (testPos.x > b.minX - 0.5 && testPos.x < b.maxX + 0.5 &&
                         testPos.z > b.minZ - 0.5 && testPos.z < b.maxZ + 0.5) hitWall = true;
                 }
-                if (window.CUSTOM_LEVEL && window.Level) {
-                    // Inside the authored map, water blocks on foot; the ocean
-                    // apron outside it is open. A rowboat ignores both.
-                    if (!isSailing &&
-                        window.Level.inBounds(window.CUSTOM_LEVEL, testPos.x, testPos.z) &&
-                        window.Level.isWater(window.CUSTOM_LEVEL, testPos.x, testPos.z)) hitWall = true;
-                } else {
+                // Custom levels have no on-foot water barrier: every body of water
+                // is swimmable, matching the open-ocean rule at home. See the
+                // movement collision below for the same reasoning.
+                if (!(window.CUSTOM_LEVEL && window.Level)) {
                     // Home island water only blocks inside the island; the open
                     // ocean is swimmable, so knocking someone off the island is fine.
                     const homeIsland = testPos.length() < ISLAND_RADIUS + 2;
@@ -10697,25 +10694,23 @@ function animate() {
                 // Water Collision (Lake, Pond, Dark Pond). A rowboat ignores all
                 // of it, and the open ocean is walkable (as a slow swim), so only
                 // the home island's own water still blocks an on-foot player.
-                if (!isSailing) {
-                    if (window.CUSTOM_LEVEL && window.Level) {
-                        // Inside the authored map, water blocks on foot as before;
-                        // outside it (the ocean apron) is open water to swim/sail.
-                        if (window.Level.inBounds(window.CUSTOM_LEVEL, np.x, np.z) &&
-                            window.Level.isWater(window.CUSTOM_LEVEL, np.x, np.z)) col = true;
-                    } else {
-                        const npDist = np.length();
-                        const homeIsland = npDist < ISLAND_RADIUS + 2;
-                        if (homeIsland) {
-                            if (npDist < LAKE_RADIUS + 0.5) col = true; // Main Lake
+                if (!isSailing && !(window.CUSTOM_LEVEL && window.Level)) {
+                    // (Custom levels skip this: all their water is swimmable. The
+                    // authored map's own sea and the ocean apron beyond it are one
+                    // continuous body, so blocking the inner part would wall the
+                    // player in and make the apron islands unreachable. Fishing
+                    // zones still come from Level.isWater / zoneAt.)
+                    const npDist = np.length();
+                    const homeIsland = npDist < ISLAND_RADIUS + 2;
+                    if (homeIsland) {
+                        if (npDist < LAKE_RADIUS + 0.5) col = true; // Main Lake
 
-                            if (window.pondCollider) {
-                                if (np.distanceTo(_optVec3.set(window.pondCollider.x, 0, window.pondCollider.z)) < window.pondCollider.radius + 0.5) col = true;
-                            }
+                        if (window.pondCollider) {
+                            if (np.distanceTo(_optVec3.set(window.pondCollider.x, 0, window.pondCollider.z)) < window.pondCollider.radius + 0.5) col = true;
+                        }
 
-                            if (window.darkPondCollider) {
-                                if (np.distanceTo(_optVec3.set(window.darkPondCollider.x, 0, window.darkPondCollider.z)) < window.darkPondCollider.radius + 0.5) col = true;
-                            }
+                        if (window.darkPondCollider) {
+                            if (np.distanceTo(_optVec3.set(window.darkPondCollider.x, 0, window.darkPondCollider.z)) < window.darkPondCollider.radius + 0.5) col = true;
                         }
                     }
                 }
