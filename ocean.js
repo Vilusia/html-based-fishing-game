@@ -38,22 +38,19 @@
         };
     }
 
-    const SEED = "open-ocean-archipelago-v2";
+    const SEED = "open-ocean-archipelago-v3";
 
     // Tunables. Radii are in world units; heights are in the same space as
-    // getTerrainHeight (0 = shore, island hills go up to ~10).
-    // Size spread is deliberately wide: a few tiny specks, plenty of mid-size
-    // islands, and the odd large landmark you can spot from far away.
-    const ISLAND_COUNT = 30;      // how many islands to scatter
-    const MIN_RADIUS = 7;         // smallest island (a tiny rock islet)
-    const MAX_RADIUS = 62;        // largest island (a proper landmark)
-    const MIN_PEAK = 1.6;         // lowest island top (above ocean)
-    const MAX_PEAK = 9.5;         // tallest island top
-    const MIN_SEPARATION = 30;    // minimum gap between island rims
-    // Larger islands are rarer: bias the radius roll toward the small end.
-    // Islands above this size are treated as landmarks and placed first so
-    // they get the roomy spots rather than being crowded out by small ones.
-    const LANDMARK_RADIUS = 40;
+    // getTerrainHeight (0 = shore, island hills go up to ~14).
+    // Much wider spread: tiny skerries, mid islands, massive landmarks, and everything in between.
+    const ISLAND_COUNT = 38;      // more islands for a busier archipelago
+    const MIN_RADIUS = 4;         // tiniest rock skerry
+    const MAX_RADIUS = 95;        // massive landmark island
+    const MIN_PEAK = 1.2;         // nearly flat atolls
+    const MAX_PEAK = 13.5;        // jagged spires
+    const MIN_SEPARATION = 26;    // tighter packing for more variety
+    // Larger islands are rarer but we want some huge ones.
+    const LANDMARK_RADIUS = 55;
 
     // The home island + the two special worlds must stay clear of navigation,
     // so keep a wide exclusion ring around the origin.
@@ -116,10 +113,29 @@
                 // Shape variation: islands aren't perfect circles. Each gets an
                 // elliptical stretch (xScale/zScale) plus a rotation, so some are
                 // long and thin, others round and blobby.
-                const stretch = 0.55 + rand() * 0.9;   // 0.55 (long) .. 1.45 (wide)
-                const xScale = stretch;
-                const zScale = 1 / Math.max(0.4, stretch);
-                const rotation = rand() * Math.PI;
+                const shapeType = rand();
+                let stretch, xScale, zScale;
+                if (shapeType < 0.25) {
+                    // Very long and thin
+                    stretch = 0.35 + rand() * 0.25;
+                    xScale = stretch;
+                    zScale = 1 / Math.max(0.25, stretch * (1.2 + rand() * 0.6));
+                } else if (shapeType < 0.5) {
+                    // Wide and stubby
+                    stretch = 1.4 + rand() * 0.8;
+                    xScale = stretch;
+                    zScale = 1 / Math.max(0.4, stretch / (1.1 + rand() * 0.5));
+                } else if (shapeType < 0.7) {
+                    // Lumpy/irregular - asymmetric
+                    xScale = 0.5 + rand() * 1.4;
+                    zScale = 0.5 + rand() * 1.4;
+                } else {
+                    // Classic ellipse
+                    stretch = 0.45 + rand() * 1.1;
+                    xScale = stretch;
+                    zScale = 1 / Math.max(0.3, stretch);
+                }
+                const rotation = rand() * Math.PI * 2;
 
                 islands.push({
                     x: x,
@@ -129,32 +145,33 @@
                     xScale: xScale,
                     zScale: zScale,
                     rotation: rotation,
-                    peak: MIN_PEAK + rand() * (MAX_PEAK - MIN_PEAK),
-                    // Wider squash range: some flat atolls, some steep peaks.
-                    squash: 0.55 + rand() * 0.75,
+                    peak: MIN_PEAK + Math.pow(rand(), 0.8) * (MAX_PEAK - MIN_PEAK),
+                    // Wider squash range: some flat atolls, some steep jagged peaks.
+                    squash: 0.4 + rand() * 0.95,
                     seed: Math.floor(rand() * 1e9),
                     // Which islands get a prop/cabin and which get a cave mouth.
-                    hasProp: rand() < 0.35,
-                    hasCave: rand() < 0.25
+                    hasProp: rand() < 0.4,
+                    hasCave: rand() < 0.3
                 });
                 return true;
             }
             return false;
         };
 
-        // Pass 1: landmarks first so they land in the roomy gaps.
+        // Pass 1: mega landmarks first so they land in the roomy spots.
         let landmarks = 0;
-        for (let i = 0; i < 4 && landmarks < 4; i++) {
+        for (let i = 0; i < 6 && landmarks < 6; i++) {
             const r = LANDMARK_RADIUS + rand() * (MAX_RADIUS - LANDMARK_RADIUS);
             if (tryPlace(r, true)) landmarks++;
         }
 
-        // Pass 2: the rest, all smaller than the landmark threshold.
+        // Pass 2: the rest - super varied sizes.
         let attempts = 0;
-        const maxAttempts = ISLAND_COUNT * 60;
+        const maxAttempts = ISLAND_COUNT * 80;
         while (islands.length < ISLAND_COUNT && attempts < maxAttempts) {
             attempts++;
-            const radius = Math.min(rollRadius(), LANDMARK_RADIUS - 2);
+            const p = rand();
+            const radius = MIN_RADIUS + Math.pow(p, 0.65) * (LANDMARK_RADIUS - 2 - MIN_RADIUS);
             tryPlace(radius, false);
         }
 
@@ -374,47 +391,47 @@
         const rand = mulberry32(isl.seed);
         const sea = (typeof OCEAN_LEVEL === "number") ? OCEAN_LEVEL : -3;
 
-        // Trees.
+        // Trees - more on bigger islands, sparser on tiny ones
         const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6D4C41, roughness: 1.0 });
         const leafTex = WG.createLeafTexture();
-        const treeCount = Math.round(isl.radius * 0.35);
+        const treeCount = Math.round(isl.radius * 0.45);
         for (let i = 0; i < treeCount; i++) {
             const a = rand() * Math.PI * 2;
-            const d = rand() * isl.radius * 0.7;
+            const d = rand() * isl.radius * (0.6 + rand() * 0.3);
             const x = isl.x + Math.cos(a) * d;
             const z = isl.z + Math.sin(a) * d;
             const h = heightAt(x, z);
-            if (h < sea + 0.6) continue;
+            if (h < sea + 0.5) continue;
 
             const leafMat = new THREE.MeshStandardMaterial({
                 map: leafTex, color: 0x88CC88, roughness: 0.8, flatShading: true
             });
-            leafMat.color.setHSL(0.35 + (rand() - 0.5) * 0.2, 0.6, 0.4);
+            leafMat.color.setHSL(0.32 + (rand() - 0.5) * 0.25, 0.55 + rand() * 0.25, 0.35 + rand() * 0.15);
             const t = WG.createDetailedTree(leafMat, trunkMat);
-            const s = 0.7 + rand() * 0.4;
+            const s = 0.5 + rand() * 0.6;
             t.position.set(x, h, z);
             t.rotation.y = rand() * Math.PI * 2;
-            t.scale.set(s, s, s);
+            t.scale.set(s, s * (0.8 + rand() * 0.4), s);
             group.add(t);
             out.trees.push(t);
-            out.colliders.push({ x: x, z: z, radius: 1.5 });
+            out.colliders.push({ x: x, z: z, radius: 1.3 + s * 0.3 });
         }
 
         // Rocks. Block movement like trees do on ocean islands.
-        const rockCount = Math.round(isl.radius * 0.18);
+        const rockCount = Math.round(isl.radius * 0.28);
         for (let i = 0; i < rockCount; i++) {
             const a = rand() * Math.PI * 2;
-            const d = rand() * isl.radius * 0.85;
+            const d = rand() * isl.radius * 0.95;
             const x = isl.x + Math.cos(a) * d;
             const z = isl.z + Math.sin(a) * d;
             const h = heightAt(x, z);
-            if (h < sea + 0.4) continue;
-            const rScale = 0.8 + rand() * 1.1;
+            if (h < sea + 0.35) continue;
+            const rScale = 0.4 + rand() * 2.6;
             const r = WG.createRockMesh(rScale);
-            r.position.set(x, h + 0.2, z);
-            r.rotation.y = rand() * Math.PI * 2;
+            r.position.set(x, h + 0.15, z);
+            r.rotation.set(rand() * Math.PI, rand() * Math.PI * 2, rand() * Math.PI * 0.6);
             group.add(r);
-            out.colliders.push({ x: x, z: z, radius: rScale * 0.8 });
+            out.colliders.push({ x: x, z: z, radius: rScale * 0.85 });
         }
 
         // Flowers (pickable) if the game exposes the hook. Wrapped so a failure
