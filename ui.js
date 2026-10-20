@@ -2048,11 +2048,8 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
                     const p = lay.ponds[i];
                     const pdx = x - p.x, pdz = z - p.z;
                     const pd = Math.sqrt(pdx * pdx + pdz * pdz);
-                    if (pd < p.radius + 6) {
-                        if (pd < p.radius * 1.3) {
-                            const base = window.Ocean.heightAt ? window.Ocean.heightAt(x, z) : 0;
-                            if (base > -1) return Math.min(base, -0.05);
-                        }
+                    if (pd < p.radius * 2.0) {
+                        return -0.08;
                     }
                 }
             }
