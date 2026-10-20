@@ -8929,7 +8929,85 @@ function createLocalPlayer() {
     } else {
         player.position.set(25, 0, 0);
     }
+    attachSailBoat(player);
     scene.add(player);
+}
+
+// Build the rowboat the player sits in while sailing and parent it to the
+// player group, hidden until boarded. Named "sailBoat" so toggleSailing() can
+// find it. The player is a group, so the boat inherits position + facing.
+function attachSailBoat(group) {
+    if (!group || group.getObjectByName('sailBoat')) return;
+    const boat = makeSailBoatMesh();
+    boat.name = 'sailBoat';
+    boat.visible = false;
+    group.add(boat);
+    return boat;
+}
+
+// A chunky, readable rowboat scaled to sit around the player. Built from boxes
+// and a hull shell so it reads clearly from the game's camera distance.
+function makeSailBoatMesh() {
+    const g = new THREE.Group();
+    const hullMat = new THREE.MeshStandardMaterial({ color: 0x8B5A2B, roughness: 0.9 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x5C3A1E, roughness: 0.85 });
+    const seatMat = new THREE.MeshStandardMaterial({ color: 0x6D4C41, roughness: 0.9 });
+
+    const W = 1.6, L = 3.6, H = 0.9;
+    // Hull bottom (slightly tapered via scale, sits at waterline).
+    const bottom = new THREE.Mesh(new THREE.BoxGeometry(W, 0.25, L), hullMat);
+    bottom.position.y = 0.05;
+    g.add(bottom);
+
+    // Side walls, angled outward so it reads as a hull.
+    for (const s of [-1, 1]) {
+        const side = new THREE.Mesh(new THREE.BoxGeometry(0.18, H, L), hullMat);
+        side.position.set(s * (W / 2 - 0.09), H / 2, 0);
+        side.rotation.z = s * 0.14;
+        g.add(side);
+    }
+    // Bow (front) and stern (back) walls.
+    const bow = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.18), hullMat);
+    bow.position.set(0, H / 2, L / 2 - 0.09);
+    g.add(bow);
+    const stern = bow.clone();
+    stern.position.z = -(L / 2 - 0.09);
+    stern.scale.x = 0.9;
+    g.add(stern);
+
+    // Gunwale trim caps the walls.
+    for (const s of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, L + 0.1), trimMat);
+        rail.position.set(s * (W / 2 - 0.03), H + 0.02, 0);
+        rail.rotation.z = s * 0.14;
+        g.add(rail);
+    }
+
+    // Two bench seats.
+    for (const z of [0.7, -0.7]) {
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(W - 0.35, 0.12, 0.4), seatMat);
+        seat.position.set(0, H * 0.55, z);
+        g.add(seat);
+    }
+
+    // Oars resting along the gunwales.
+    const oarMat = new THREE.MeshStandardMaterial({ color: 0x7A5230, roughness: 0.9 });
+    for (const s of [-1, 1]) {
+        const oar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, L + 0.4), oarMat);
+        oar.position.set(s * (W / 2 + 0.18), H + 0.06, 0);
+        oar.rotation.y = s * 0.08;
+        g.add(oar);
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.5), oarMat);
+        blade.position.set(s * (W / 2 + 0.24), H + 0.06, -(L / 2 + 0.5));
+        g.add(blade);
+    }
+
+    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+    // Sit the hull so the player sprite appears inside the boat, not on top.
+    g.position.y = 0.05;
+    g.userData.isSailBoat = true;
+    return g;
 }
 
 // Finds a walkable land cell close to the centre of a custom level.
@@ -14935,6 +15013,15 @@ function nearLaunchableWater(x, z) {
     return false;
 }
 
+// Show/hide the rowboat the player sits in while sailing. Lazily attaches it
+// in case the player group was rebuilt without one.
+function setSailBoatVisible(on) {
+    if (!player) return;
+    let boat = player.getObjectByName('sailBoat');
+    if (!boat) boat = attachSailBoat(player);
+    if (boat) boat.visible = !!on;
+}
+
 window.toggleSailing = function () {
     if (isInVoid || isInLavaWorld) { showToast("Can't sail here."); return; }
     if (!saveState.hasBoat) {
@@ -14947,6 +15034,7 @@ window.toggleSailing = function () {
         const onWater = waterSurfaceAt(player.position.x, player.position.z) !== null;
         if (onWater) { showToast('Row closer to shore before stepping out.'); return; }
         isSailing = false;
+        setSailBoatVisible(false);
         playerVelocity.y = 0;
         broadcastSound('footstep');
         showToast('Stepped ashore.');
@@ -14959,6 +15047,7 @@ window.toggleSailing = function () {
     }
 
     isSailing = true;
+    setSailBoatVisible(true);
     stopFishing(false, 'Boarded the boat.');
     playerVelocity.y = 0;
     broadcastSound('catch');
