@@ -627,7 +627,34 @@
                 if (Math.hypot(x - o.x, z - o.z) < radius + o.radius + 34) { ok = false; break; }
             }
             if (!ok) continue;
-            const stretch = 0.55 + rand() * 0.9;
+            // Shape variation, same scheme as layout(): each island gets an
+            // elliptical stretch (xScale/zScale) plus a rotation. These MUST be
+            // declared here - referencing them without defining them threw a
+            // ReferenceError that aborted setupThreeJS() and left the MAKE
+            // LOBBY button unwired on custom-level pages.
+            const shapeType = rand();
+            let stretch, xScale, zScale;
+            if (shapeType < 0.25) {
+                // Very long and thin
+                stretch = 0.35 + rand() * 0.25;
+                xScale = stretch;
+                zScale = 1 / Math.max(0.25, stretch * (1.2 + rand() * 0.6));
+            } else if (shapeType < 0.5) {
+                // Wide and stubby
+                stretch = 1.4 + rand() * 0.8;
+                xScale = stretch;
+                zScale = 1 / Math.max(0.4, stretch / (1.1 + rand() * 0.5));
+            } else if (shapeType < 0.7) {
+                // Lumpy/irregular - asymmetric
+                xScale = 0.5 + rand() * 1.4;
+                zScale = 0.5 + rand() * 1.4;
+            } else {
+                // Classic ellipse
+                stretch = 0.45 + rand() * 1.1;
+                xScale = stretch;
+                zScale = 1 / Math.max(0.3, stretch);
+            }
+            const rotation = rand() * Math.PI * 2;
             islands.push({
                 x: x,
                 z: z,

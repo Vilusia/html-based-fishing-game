@@ -1071,17 +1071,29 @@ window.onload = function () {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('lobby-screen').style.display = 'flex';
 
-    setupThreeJS();
-    setupInputs();
-    animate();
-    initAudio();
-
+    // Wire the lobby buttons BEFORE building the world. World generation can
+    // throw (e.g. a bad custom level); when it did, the old order left these
+    // buttons unwired and only MAKE LOBBY dead, which looked like a UI bug
+    // rather than a world-building failure.
     // MAKE LOBBY opens the dedicated creation screen; JOIN uses a room code.
     const btnMakeLobby = document.getElementById('btn-make-lobby');
     if (btnMakeLobby) btnMakeLobby.onclick = openCreateLobby;
     const btnHostLegacy = document.getElementById('btn-host');
     if (btnHostLegacy) btnHostLegacy.onclick = hostGame;
     document.getElementById('btn-join').onclick = joinGame;
+
+    // If world building fails we still have a usable lobby screen; report the
+    // problem instead of dying silently.
+    try {
+        setupThreeJS();
+        setupInputs();
+        animate();
+        initAudio();
+    } catch (err) {
+        console.error('[world] setup failed:', err);
+        const statusEl = document.getElementById('lobby-status');
+        if (statusEl) statusEl.innerText = "World failed to load: " + (err && err.message ? err.message : err);
+    }
 
     const btnAdmin = document.getElementById('btn-admin-login');
     if (btnAdmin) {
