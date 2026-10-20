@@ -5,18 +5,46 @@ let pickableFlowers = []; // Trackable, pickable flower meshes
 
 // --- SKILL SYSTEM HELPERS ---
 function addSkillXP(skillName, xpAmount) {
-    if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 }, floristry: { xp: 0 } };
+    if (typeof ensureSkills === 'function') ensureSkills();
+    else if (!saveState.skills) saveState.skills = {};
     if (!saveState.skills[skillName]) saveState.skills[skillName] = { xp: 0 };
 
     const oldLevel = getLevelFromXP(saveState.skills[skillName].xp);
     saveState.skills[skillName].xp += xpAmount;
     const newLevel = getLevelFromXP(saveState.skills[skillName].xp);
 
-    // Level up notification
+    // Level up notification. Use the registry's display name when we have one.
     if (newLevel > oldLevel) {
-        showToast(`${skillName.charAt(0).toUpperCase() + skillName.slice(1)} Level ${newLevel}!`, 'success');
+        const def = (typeof SKILLS !== 'undefined') ? SKILLS.find(s => s.id === skillName) : null;
+        const label = def ? def.name : (skillName.charAt(0).toUpperCase() + skillName.slice(1));
+        showToast(`${label} Level ${newLevel}!`, 'success');
         Sound.sell(); // Play level up sound
     }
+}
+
+// Reads a skill's current level (1-99) straight from the save.
+function getSkillLevel(skillName) {
+    const entry = saveState.skills && saveState.skills[skillName];
+    return getLevelFromXP(entry ? entry.xp : 0);
+}
+
+// Trading raises what the Merchant pays. +1% per level, up to +50% at 50+.
+function tradingSellMultiplier() {
+    const lvl = getSkillLevel('trading');
+    return 1 + Math.min(lvl, 50) * 0.01;
+}
+
+// Cooking reduces the chance a fish cooks into a burnt mess: never below 5%,
+// fully reliable by level 50.
+function cookingBurnChance() {
+    const lvl = getSkillLevel('cooking');
+    return Math.max(0.05, 0.4 - lvl * 0.007);
+}
+
+// Sailing widens the "deep water" band you can reach and the bonus ocean haul.
+function sailingReach() {
+    const lvl = getSkillLevel('sailing');
+    return 24 + Math.min(lvl, 99) * 0.6; // extra units past the shore at 99
 }
 
 // Get a random resource based on skill level (higher level = chance for better resources)
@@ -253,6 +281,19 @@ function updateMerchantUI(container) {
         console.warn("Pickaxe not found in TOOLS!");
     }
 
+    // ROWBOAT LOGIC (Sailing)
+    let boatBtn = '';
+    const boatTool = TOOLS.find(t => t.id === 'boat');
+    if (boatTool) {
+        if (saveState.hasBoat) {
+            boatBtn = `<button class="btn-lg btn-green" disabled style="width:100%;">Rowboat Owned</button>`;
+        } else {
+            const canAfford = saveState.money >= boatTool.price;
+            const style = canAfford ? 'width:100%;' : 'width:100%; opacity:0.5; cursor:not-allowed;';
+            boatBtn = `<button class="btn-lg" style="${style}" onclick="actionBuyTool('boat')">Buy Rowboat ($${boatTool.price})</button>`;
+        }
+    }
+
     container.innerHTML = `
         <div style="background:var(--p-face); padding:30px; border-radius:0; border:2px solid var(--p-line);
                     box-shadow: inset 1px 1px 0 var(--p-bevel), inset -1px -1px 0 var(--p-bevel-dark), 0 4px 0 rgba(0,0,0,0.5);
@@ -284,6 +325,7 @@ function updateMerchantUI(container) {
             <div style="display:flex; flex-direction:column; gap:10px; margin-bottom: 20px; margin-top: 10px;">
                 ${axeBtn}
                 ${pickBtn}
+                ${boatBtn}
             </div>
 
             <button class="close-x-btn" onclick="document.getElementById('merchant-ui').style.display='none'">×</button>
@@ -520,6 +562,7 @@ window.actionBuyTool = function (toolId) {
 
     if (toolId === 'guitar') saveState.hasGuitar = true;
     if (toolId === 'glove') saveState.hasGlove = true;
+    if (toolId === 'boat') saveState.hasBoat = true;
 
     // Auto-equip if possible or just refresh hotbar
     updateHotbarVisuals();
@@ -532,7 +575,9 @@ window.actionBuyTool = function (toolId) {
     if (shopOverlay && shopOverlay.style.display === 'flex' && typeof renderShop === 'function') {
         renderShop();
     }
-    updateMerchantUI(document.getElementById('merchant-ui'));
+    // Only refresh the merchant sheet if it actually exists on screen.
+    const merchantEl = document.getElementById('merchant-ui');
+    if (merchantEl) updateMerchantUI(merchantEl);
 };
 
 function playSnagSound() {
@@ -8933,6 +8978,7 @@ function setupInputs() {
         if (e.code === k.voice) toggleMic();
         if (e.code === k.showFish) toggleShowFish();
         if (e.code === k.hideHud) toggleHud();
+        if (k.sail && e.code === k.sail && !e.repeat) toggleSailing();
 
         // Meow
         if (e.code === k.meow && !e.repeat) {
@@ -10240,6 +10286,14 @@ function animate() {
         // Main World & Lava World both use Y=0 as the ground level
         let floorY = getTerrainHeight(player.position.x, player.position.z);
         if (isInVoid) floorY = 2000;
+        // While sailing the boat rides the surface: on water, hold the player at
+        // water level instead of sinking to the lakebed; on land, use the ground.
+        if (isSailing && !isInVoid && !isInLavaWorld) {
+            const overWater = (window.CUSTOM_LEVEL && window.Level)
+                ? window.Level.isWater(window.CUSTOM_LEVEL, player.position.x, player.position.z)
+                : (Math.sqrt(player.position.x ** 2 + player.position.z ** 2) < LAKE_RADIUS - 1);
+            if (overWater) floorY = Math.max(floorY, 0.6);
+        }
 
         // 2. KNOCKBACK (PvP)
         if (Math.abs(knockbackVelocity.x) > 0.1 || Math.abs(knockbackVelocity.z) > 0.1) {
@@ -10266,12 +10320,12 @@ function animate() {
                 }
                 if (window.CUSTOM_LEVEL && window.Level) {
                     // Custom levels: block walking into water or off the map.
-                    if (window.Level.isWater(window.CUSTOM_LEVEL, testPos.x, testPos.z) ||
-                        !window.Level.inBounds(window.CUSTOM_LEVEL, testPos.x, testPos.z)) hitWall = true;
-                } else if (testPos.length() < LAKE_RADIUS + 0.5) hitWall = true;
+                    if (!isSailing && (window.Level.isWater(window.CUSTOM_LEVEL, testPos.x, testPos.z) ||
+                        !window.Level.inBounds(window.CUSTOM_LEVEL, testPos.x, testPos.z))) hitWall = true;
+                } else if (!isSailing && testPos.length() < LAKE_RADIUS + 0.5) hitWall = true;
 
                 // Pond collision
-                if (window.pondCollider) {
+                if (window.pondCollider && !isSailing) {
                     const distPond = Math.sqrt(
                         Math.pow(testPos.x - window.pondCollider.x, 2) +
                         Math.pow(testPos.z - window.pondCollider.z, 2)
@@ -10280,7 +10334,7 @@ function animate() {
                 }
 
                 // River collision
-                if (window.riverColliders) {
+                if (window.riverColliders && !isSailing) {
                     for (const rc of window.riverColliders) {
                         const distRiver = Math.sqrt(
                             Math.pow(testPos.x - rc.x, 2) +
@@ -10317,7 +10371,8 @@ function animate() {
 
         const sprite = player.getObjectByName("playerSprite");
         if (v.length() > 0) {
-            v.normalize().multiplyScalar(PLAYER_SPEED * dt);
+            // A rowboat glides a little faster than walking.
+            v.normalize().multiplyScalar(PLAYER_SPEED * (isSailing ? 1.35 : 1) * dt);
             // OPTIMIZATION: Reuse vector
             const np = _optVec1.copy(player.position).add(v);
             let col = false;
@@ -10352,18 +10407,21 @@ function animate() {
                     if (np.x > b.minX - 0.5 && np.x < b.maxX + 0.5 &&
                         np.z > b.minZ - 0.5 && np.z < b.maxZ + 0.5) col = true;
                 }
-                // Water Collision (Lake, Pond, Dark Pond)
-                if (window.CUSTOM_LEVEL && window.Level) {
-                    if (window.Level.isWater(window.CUSTOM_LEVEL, np.x, np.z) ||
-                        !window.Level.inBounds(window.CUSTOM_LEVEL, np.x, np.z)) col = true;
-                } else if (np.length() < LAKE_RADIUS + 0.5) col = true; // Main Lake
+                // Water Collision (Lake, Pond, Dark Pond). A rowboat ignores all
+                // of it, so the player can cross open water while sailing.
+                if (!isSailing) {
+                    if (window.CUSTOM_LEVEL && window.Level) {
+                        if (window.Level.isWater(window.CUSTOM_LEVEL, np.x, np.z) ||
+                            !window.Level.inBounds(window.CUSTOM_LEVEL, np.x, np.z)) col = true;
+                    } else if (np.length() < LAKE_RADIUS + 0.5) col = true; // Main Lake
 
-                if (window.pondCollider) {
-                    if (np.distanceTo(_optVec3.set(window.pondCollider.x, 0, window.pondCollider.z)) < window.pondCollider.radius + 0.5) col = true;
-                }
+                    if (window.pondCollider) {
+                        if (np.distanceTo(_optVec3.set(window.pondCollider.x, 0, window.pondCollider.z)) < window.pondCollider.radius + 0.5) col = true;
+                    }
 
-                if (window.darkPondCollider) {
-                    if (np.distanceTo(_optVec3.set(window.darkPondCollider.x, 0, window.darkPondCollider.z)) < window.darkPondCollider.radius + 0.5) col = true;
+                    if (window.darkPondCollider) {
+                        if (np.distanceTo(_optVec3.set(window.darkPondCollider.x, 0, window.darkPondCollider.z)) < window.darkPondCollider.radius + 0.5) col = true;
+                    }
                 }
 
                 // River checks removed (River is gone)
@@ -10446,7 +10504,13 @@ function animate() {
                 // Exception: Allow walking past edge if on the dock (Z > 85, X close to 0)
                 const onDock = (player.position.z > 85 && player.position.z < 170 && Math.abs(player.position.x) < 6);
                 if (!onDock && player.position.length() > ISLAND_RADIUS - 1) player.position.setLength(ISLAND_RADIUS - 1);
-                if (player.position.length() < LAKE_RADIUS + 0.5) player.position.setLength(LAKE_RADIUS + 0.5);
+                // The boat may sit on the lake; the walk clamp that normally keeps
+                // the player ashore is relaxed while sailing.
+                if (isSailing) {
+                    if (player.position.length() < LAKE_RADIUS - 6) player.position.setLength(LAKE_RADIUS - 6);
+                } else if (player.position.length() < LAKE_RADIUS + 0.5) {
+                    player.position.setLength(LAKE_RADIUS + 0.5);
+                }
             }
         }
 
@@ -10909,9 +10973,10 @@ function renderSkillsUI() {
     if (!list) return;
     list.innerHTML = '';
 
-    if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 }, floristry: { xp: 0 } };
+    if (typeof ensureSkills === 'function') ensureSkills();
+    else if (!saveState.skills) saveState.skills = {};
 
-    const skillData = [
+    const skillData = (typeof SKILLS !== 'undefined') ? SKILLS : [
         { id: 'fishing', name: 'Fishing', icon: 'rod', color: '#4a90d9' },
         { id: 'lumberjack', name: 'Lumberjack', icon: 'axe', color: '#a9763f' },
         { id: 'mining', name: 'Mining', icon: 'pickaxe', color: '#9aa3c0' },
@@ -10944,7 +11009,139 @@ function renderSkillsUI() {
 }
 
 
-// --- HOTBAR & AXE SYSTEM ---
+// --- COOKING SYSTEM ---
+// Cooking turns raw fish into meals. The meal keeps the fish's identity but is
+// worth more and can't be cooked twice, so the loop is: catch -> cook -> sell.
+const COOK_VALUE_MULT = 2.2;   // cooked meal sell price vs. raw fish
+const COOK_BURN_VALUE_MULT = 0.4; // burnt meal, still sellable for a little
+
+function isCookableFish(f) {
+    return f && !f.cooked && !f.burnt && typeof f.name === 'string';
+}
+
+// The meal a raw fish becomes, or the burnt version of it.
+function makeCookedFish(f, burnt) {
+    const base = Number(f.price || f.value || 10);
+    const mult = burnt ? COOK_BURN_VALUE_MULT : COOK_VALUE_MULT;
+    return Object.assign({}, f, {
+        name: (burnt ? 'Burnt ' : 'Cooked ') + f.name,
+        cooked: !burnt,
+        burnt: !!burnt,
+        cookedFrom: f.name,
+        price: Math.max(1, Math.round(base * mult))
+    });
+}
+
+window.toggleCookingUI = function () {
+    const ui = document.getElementById('cooking-ui');
+    if (!ui) return;
+    const isOpen = ui.style.display === 'flex';
+    if (!isOpen) {
+        ui.style.display = 'flex';
+        renderCookingUI();
+        if (document.pointerLockElement) document.exitPointerLock();
+    } else {
+        ui.style.display = 'none';
+        const canvas = renderer?.domElement;
+        if (canvas && !document.pointerLockElement) canvas.requestPointerLock();
+    }
+};
+
+function cookableIndexes() {
+    const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
+    const out = [];
+    inv.forEach((f, i) => { if (isCookableFish(f)) out.push(i); });
+    return out;
+}
+
+function renderCookingUI() {
+    const list = document.getElementById('cooking-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const lvl = getSkillLevel('cooking');
+    const head = document.createElement('div');
+    head.style.cssText = 'font-size:14px;color:var(--p-text-mute);';
+    head.textContent = `Cooking level ${lvl} · burn chance ${Math.round(cookingBurnChance() * 100)}%`;
+    list.appendChild(head);
+
+    const idxs = cookableIndexes();
+    if (idxs.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'color:var(--p-text-dim);padding:10px;';
+        empty.textContent = 'No raw fish to cook. Catch some first!';
+        list.appendChild(empty);
+        return;
+    }
+
+    // Group by species so 20 identical fish don't make 20 rows.
+    const groups = new Map();
+    idxs.forEach(i => {
+        const f = saveState.inventory[i];
+        if (!groups.has(f.name)) groups.set(f.name, { count: 0, sample: f });
+        groups.get(f.name).count++;
+    });
+
+    groups.forEach((g, name) => {
+        const base = Number(g.sample.price || g.sample.value || 10);
+        const meal = Math.round(base * COOK_VALUE_MULT);
+        const row = document.createElement('div');
+        row.style.cssText = 'background:var(--p-face-2);border:2px solid var(--p-line);padding:10px;display:flex;justify-content:space-between;align-items:center;';
+        const info = document.createElement('div');
+        info.innerHTML = `<div style="font-weight:bold;">${window.PX ? PX.icon('fish', 15) + ' ' : ''}${escapeHTML(name)} ×${g.count}</div>` +
+            `<div style="font-size:13px;color:var(--p-text-dim);margin-top:2px;">Raw $${base} → Meal ~$${meal}</div>`;
+        const btn = document.createElement('button');
+        btn.className = 'btn-sm btn-green';
+        btn.textContent = 'COOK';
+        btn.onclick = () => { cookFishByName(name); renderCookingUI(); };
+        row.appendChild(info);
+        row.appendChild(btn);
+        list.appendChild(row);
+    });
+}
+
+// Cooks every raw fish of one species. Returns how many were cooked.
+function cookFishByName(name) {
+    const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
+    let rawXP = 0, count = 0;
+    inv.forEach((f, i) => {
+        if (!isCookableFish(f) || f.name !== name) return;
+        const burnt = Math.random() < cookingBurnChance();
+        inv[i] = makeCookedFish(f, burnt);
+        rawXP += 6 + Math.round(Number(f.price || f.value || 10) / 12);
+        count++;
+    });
+    if (count > 0) {
+        addSkillXP('cooking', rawXP);
+        Sound.sell();
+        saveGame();
+        updateUI();
+        showToast(`Cooked ${count} × ${name} (+${rawXP} Cooking XP)`, 'success');
+    }
+    return count;
+}
+
+window.cookAllFish = function () {
+    const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
+    let rawXP = 0, count = 0, burnt = 0;
+    inv.forEach((f, i) => {
+        if (!isCookableFish(f)) return;
+        const isBurnt = Math.random() < cookingBurnChance();
+        if (isBurnt) burnt++;
+        inv[i] = makeCookedFish(f, isBurnt);
+        rawXP += 6 + Math.round(Number(f.price || f.value || 10) / 12);
+        count++;
+    });
+    if (count === 0) { showToast('No raw fish to cook!'); return; }
+    addSkillXP('cooking', rawXP);
+    Sound.sell();
+    saveGame();
+    updateUI();
+    renderCookingUI();
+    showToast(`Cooked ${count} fish (${burnt} burnt, +${rawXP} Cooking XP)`, 'success');
+};
+
+
 
 function setupHotbar() {
     const container = document.getElementById('hotbar-container');
@@ -11691,6 +11888,8 @@ function loadSave() {
     }
     // Even with no stored save we still want progression containers present.
     if (typeof ensureProgression === 'function') ensureProgression();
+    // Backfill any skills added since the save was written (cooking/trading/sailing).
+    if (typeof ensureSkills === 'function') ensureSkills();
 
     // Sync visual elements
     if (masterGain) masterGain.gain.value = saveState.masterVolume;
@@ -13742,6 +13941,35 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
                 pickDiv.appendChild(btn);
             }
             container.appendChild(pickDiv);
+
+            // --- 5. ROWBOAT (Sailing) ---
+            const boatDiv = document.createElement('div');
+            boatDiv.className = 'grid-entry';
+            const boatTool = TOOLS.find(t => t.id === 'boat') || { price: 2500 };
+
+            const bTitle = document.createElement('div');
+            bTitle.innerHTML = (window.PX ? PX.icon('boat', 16) : '') + " <b>Rowboat</b>";
+            boatDiv.appendChild(bTitle);
+
+            const bDesc = document.createElement('div');
+            bDesc.className = 'item-desc';
+            bDesc.innerText = "Launch from the lake to sail open water.";
+            boatDiv.appendChild(bDesc);
+
+            if (saveState.hasBoat) {
+                const btn = document.createElement('button');
+                btn.innerText = "Owned";
+                btn.disabled = true;
+                boatDiv.appendChild(btn);
+            } else {
+                const btn = document.createElement('button');
+                const price = boatTool.price;
+                btn.innerText = `Buy ($${price})`;
+                btn.style.color = saveState.money >= price ? 'var(--p-good)' : 'var(--p-bad)';
+                btn.onclick = () => actionBuyTool('boat');
+                boatDiv.appendChild(btn);
+            }
+            container.appendChild(boatDiv);
         }
 
         // --- IMPORTANT: RENDER OUTFITS EVERY TIME SHOP UPDATES ---
@@ -14443,6 +14671,57 @@ window.exitVoid = function () {
     document.getElementById('btn-void-respawn').style.display = 'none';
 }
 
+// ---------------------------------------------------------------------------
+// SAILING
+// ---------------------------------------------------------------------------
+// The rowboat lets the player cross water. It is bought once (hasBoat) and then
+// toggled with the sail key: you can only board while standing near the lake
+// shore, and you only step off once you're back over land.
+
+// True when the player is close enough to the main lake to launch a boat.
+function nearLaunchableWater(x, z) {
+    if (window.CUSTOM_LEVEL && window.Level) {
+        return window.Level.isWater(window.CUSTOM_LEVEL, x, z);
+    }
+    const d = Math.sqrt(x * x + z * z);
+    return d < LAKE_RADIUS + 8;
+}
+
+window.toggleSailing = function () {
+    if (isInVoid || isInLavaWorld) { showToast("Can't sail here."); return; }
+    if (!saveState.hasBoat) {
+        showToast('You need a Rowboat first — buy one from the Merchant!');
+        return;
+    }
+
+    if (isSailing) {
+        // Step ashore: only allowed once the current spot is on land.
+        const onWater = (window.CUSTOM_LEVEL && window.Level)
+            ? window.Level.isWater(window.CUSTOM_LEVEL, player.position.x, player.position.z)
+            : (Math.sqrt(player.position.x ** 2 + player.position.z ** 2) < LAKE_RADIUS + 0.5);
+        if (onWater) { showToast('Row closer to shore before stepping out.'); return; }
+        isSailing = false;
+        playerVelocity.y = 0;
+        broadcastSound('footstep');
+        showToast('Stepped ashore.');
+        return;
+    }
+
+    if (!nearLaunchableWater(player.position.x, player.position.z)) {
+        showToast('Stand by the lake to launch your boat.');
+        return;
+    }
+
+    isSailing = true;
+    stopFishing(false, 'Boarded the boat.');
+    playerVelocity.y = 0;
+    broadcastSound('catch');
+    showToast('Boarded the rowboat. Sail out to the open water!');
+
+    // Sailing XP for the first launch each session-shaped action.
+    addSkillXP('sailing', 5);
+};
+
 
 
 function togglePlayerList() {
@@ -14805,6 +15084,11 @@ function sellFish() {
         return;
     }
 
+    // Trading skill: better prices with every level.
+    const baseValue = totalValue;
+    const mult = tradingSellMultiplier();
+    totalValue = Math.round(totalValue * mult);
+
     // Clear inventories now that we've computed totals
     saveState.inventory = [];
     saveState.woodInventory = {};
@@ -14817,13 +15101,19 @@ function sellFish() {
     saveGame();
     updateUI();
 
+    // Trading XP scales with the size of the sale; the bonus is called out.
+    const tradeXP = Math.max(1, Math.round(baseValue / 40));
+    addSkillXP('trading', tradeXP);
+    if (typeof notifyGoldEarned === 'function') notifyGoldEarned(totalValue);
+
     // If merchant UI is open, refresh it
     const merchantUI = document.getElementById('merchant-ui');
     if (merchantUI && merchantUI.style.display === 'flex') {
         updateMerchantUI(merchantUI);
     }
 
-    showToast(`Sold ${totalCount} items for $${totalValue}!`);
+    const bonusText = mult > 1 ? ` (+${Math.round((mult - 1) * 100)}% trading)` : '';
+    showToast(`Sold ${totalCount} items for $${totalValue}${bonusText}!`);
 }
 
 

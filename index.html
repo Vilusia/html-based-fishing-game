@@ -233,6 +233,7 @@
         #btn-players,
         #btn-props-ui,
         #btn-skills-ui,
+        #btn-cook-ui,
         #btn-admin-login,
         #btn-inventory-mobile {
             background: var(--p-face-2);
@@ -2223,6 +2224,7 @@
         #btn-players,
         #btn-props-ui,
         #btn-skills-ui,
+        #btn-cook-ui,
         #btn-admin-login,
         #btn-inventory-mobile,
         .btn-lg,
@@ -2291,6 +2293,7 @@
         #btn-players,
         #btn-props-ui,
         #btn-skills-ui,
+        #btn-cook-ui,
         #btn-admin-login,
         #btn-inventory-mobile {
             padding: 0 12px;
@@ -2883,6 +2886,25 @@
         </div>
     </div>
 
+    <!-- COOKING OVERLAY -->
+    <div id="cooking-ui" class="overlay-screen">
+        <div id="cooking-panel"
+            style="position: relative; width: 90%; max-width: 460px; padding: 20px; display: flex; flex-direction: column; max-height: 80vh;">
+            <button class="close-x-btn" onclick="toggleCookingUI()"
+                style="position: absolute; top: 10px; right: 10px;">×</button>
+            <h2>Cooking &amp; Smoking</h2>
+            <div style="font-size:14px;color:var(--p-text-dim);margin-bottom:10px;">
+                Cook raw fish into meals worth more gold. Higher Cooking means fewer burnt meals.
+            </div>
+            <div id="cooking-list"
+                style="width:100%; flex:1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
+                <!-- Cookable fish will be injected here -->
+            </div>
+            <button class="btn-lg btn-green" onclick="cookAllFish()" style="margin-top: 12px;">COOK ALL</button>
+            <button class="btn-lg" onclick="toggleCookingUI()" style="margin-top: 8px;">CLOSE</button>
+        </div>
+    </div>
+
     <!-- TUTORIAL OVERLAY -->
     <div id="tutorial-overlay" class="overlay-screen">
         <div id="tutorial-panel"
@@ -3319,6 +3341,7 @@
                 <button id="btn-players" onclick="togglePlayerList()">👥</button>
                 <button id="btn-props-ui" onclick="togglePropsUI()">Props</button>
                 <button id="btn-skills-ui" onclick="toggleSkillsUI()">Skills</button>
+                <button id="btn-cook-ui" onclick="toggleCookingUI()">Cook</button>
 
                 <div class="stat-box">
                     <span id="money-display">$0</span>
@@ -3448,15 +3471,15 @@
         );
     </script>
 
-    <script src="icons.js?v=6"></script>
+    <script src="icons.js?v=7"></script>
     <script src="worldgen.js?v=8"></script>
-    <script src="core.js?v=12.72"></script>
-    <script src="fish.js?v=12.41"></script>
+    <script src="core.js?v=12.73"></script>
+    <script src="fish.js?v=12.42"></script>
     <script src="character3d.js?v=5"></script>
     <script src="networking.js?v=12.31"></script>
     <script src="audio.js?v=12.33"></script>
     <script src="progression.js?v=5"></script>
-    <script src="ui.js?v=12.73"></script>
+    <script src="ui.js?v=12.75"></script>
     <script src="props.js?v=12.34"></script>
     <script src="level-loader.js?v=4"></script>
 

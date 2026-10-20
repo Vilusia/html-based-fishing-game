@@ -651,6 +651,11 @@ let nextPortalSpawn = Date.now() + 600000;
 let portalDespawnTime = 0;
 let portalCooldown = 0;
 
+// Sailing: true while the player is afloat in their rowboat. While sailing the
+// water collision is ignored and the player skims the lake surface, so they can
+// reach open ocean (and the rarer catch pools out there).
+let isSailing = false;
+
 // --- DAY/NIGHT CYCLE ---
 let worldTime = 12.0; // 0 to 24 hours (Starts at Noon)
 const DAY_DURATION = 1200; // Seconds for a full 24h cycle (20 minutes)

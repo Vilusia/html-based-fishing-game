@@ -17,7 +17,7 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v12.70";
+const GAME_VERSION = "v12.71";
 
 // Save-file schema version. Bump whenever a change can't be read by older
 // code, and add a matching step in migrateSave() (ui.js). Kept separate from
@@ -293,6 +293,7 @@ const TOOLS = [
     { id: 'pickaxe', name: 'Pickaxe', icon: '⛏️', price: 800 },
     { id: 'guitar', name: 'Guitar', icon: '🎸', price: 1000 },
     { id: 'glove', name: 'Boxing Glove', icon: '🥊', price: 1000 },
+    { id: 'boat', name: 'Rowboat', icon: '🛶', price: 2500, notEquippable: true },
 ];
 
 // --- SKILL SYSTEM ---
@@ -311,6 +312,34 @@ const SKILL_XP_TABLE = (function () {
 
 // Max level XP (level 99)
 const MAX_SKILL_XP = SKILL_XP_TABLE[98];
+
+// --- SKILL REGISTRY ---
+// Single source of truth for every skill: order, display name, icon (from
+// icons.js) and bar colour. ui.js renders the Skills panel straight from this
+// list, so adding a skill here (plus its XP call) is all it takes.
+const SKILLS = [
+    { id: 'fishing', name: 'Fishing', icon: 'rod', color: '#4a90d9' },
+    { id: 'lumberjack', name: 'Lumberjack', icon: 'axe', color: '#a9763f' },
+    { id: 'mining', name: 'Mining', icon: 'pickaxe', color: '#9aa3c0' },
+    { id: 'floristry', name: 'Floristry', icon: 'flower', color: '#e58fb8' },
+    { id: 'cooking', name: 'Cooking', icon: 'pot', color: '#e07b39' },
+    { id: 'trading', name: 'Trading', icon: 'coin', color: '#d9b23c' },
+    { id: 'sailing', name: 'Sailing', icon: 'boat', color: '#3fa9a0' }
+];
+
+const SKILL_IDS = SKILLS.map(s => s.id);
+
+// Ensures a save has every registered skill, so old saves gain the new ones
+// without a schema migration.
+function ensureSkills() {
+    if (!saveState.skills || typeof saveState.skills !== 'object') saveState.skills = {};
+    SKILL_IDS.forEach(id => {
+        if (!saveState.skills[id] || typeof saveState.skills[id] !== 'object') {
+            saveState.skills[id] = { xp: 0 };
+        }
+        if (typeof saveState.skills[id].xp !== 'number') saveState.skills[id].xp = 0;
+    });
+}
 
 // Ore types (unlock every ~10 levels)
 const ORE_TYPES = [
@@ -382,6 +411,7 @@ const DEFAULT_KEYBINDS = {
     glove: 'KeyB',
     meow: 'KeyZ',
     showFish: 'KeyF',
+    sail: 'KeyR',
     chat: 'Enter',
     menu: 'Escape',
     hideHud: 'KeyH'
@@ -409,6 +439,7 @@ const DEFAULT_SAVE_STATE = {
     micId: 'default',
     musicMuted: false,
     hasGlove: false,
+    hasBoat: false,         // Sailing: own a rowboat (bought from the Merchant)
     species: 'cat', // Legacy
     currentEars: 'cat',
     currentEyes: 'standard',
@@ -455,7 +486,10 @@ const DEFAULT_SAVE_STATE = {
         mining: { xp: 0 },
         lumberjack: { xp: 0 },
         fishing: { xp: 0 },
-        floristry: { xp: 0 }
+        floristry: { xp: 0 },
+        cooking: { xp: 0 },
+        trading: { xp: 0 },
+        sailing: { xp: 0 }
     },
 
     oreInventory: {},   // e.g. { stone: 5, copper: 2 }

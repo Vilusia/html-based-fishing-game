@@ -174,6 +174,38 @@ visible, so casts never pay for hidden DOM work.
 
 ---
 
+## Skills (`core.js` + `ui.js`)
+
+`SKILLS` in `core.js` is the single source of truth: an array of
+`{ id, name, icon, color }`. The Skills panel renders straight from it, so
+adding a skill is three steps:
+
+1. add a registry entry to `SKILLS`,
+2. call `addSkillXP(id, amount)` where the activity happens,
+3. `ensureSkills()` backfills the XP field on old saves automatically.
+
+| Skill | Gained by | Effect |
+| --- | --- | --- |
+| Fishing, Lumberjack, Mining, Floristry | the matching gathering action | unlock better fish/trees/ore/flowers |
+| **Cooking** | `cookFishByName` / `cookAllFish` | higher level lowers the burn chance (`max(5%, 40% - lvl×0.7%)`) |
+| **Trading** | `sellFish()` | +1% sale price per level, capped at +50% |
+| **Sailing** | launching the rowboat, and fishing from open water | flavour + the boat itself |
+
+### Cooking
+
+Raw fish are turned into meals worth `2.2×` (`COOK_VALUE_MULT`) via the **Cook**
+button; a burnt result is still sellable at `0.4×`. Cooked meals can't be
+cooked twice, so the loop is catch → cook → sell.
+
+### Sailing
+
+Buy the **Rowboat** from the Merchant (`hasBoat`) and press the `sail` keybind
+(`KeyR`) near water to launch. While sailing the boat ignores water collision,
+rides the lake surface, and moves 35% faster; step ashore from land only.
+
+
+---
+
 ## Save data
 
 State lives in `localStorage` under `islandFisherSave`.
@@ -216,9 +248,9 @@ To change the schema:
 | --- | --- |
 | `money`, `inventory` | Currency and carried fish |
 | `journal` | `{ [fishName]: [tierIds] }` — discovers persist after selling |
-| `skills` | XP per skill (mining, lumberjack, fishing, floristry) |
+| `skills` | XP per skill (mining, lumberjack, fishing, floristry, cooking, trading, sailing) |
 | `oreInventory` / `woodInventory` / `flowerInventory` | Typed resource counts |
-| `unlockedTools`, `hasGlove`, `hasGuitar` | Tool ownership |
+| `unlockedTools`, `hasGlove`, `hasGuitar`, `hasBoat` | Tool ownership |
 | `unlockedBobbers`, `currentBobber` | Bobber skins |
 | `lobbyName`, `lobbyPublic`, `lobbyTags`, `lobbyAdult` | Server-browser settings |
 | `achievements`, `bounties`, `quests` | Progression state |
