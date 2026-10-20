@@ -3424,7 +3424,7 @@ function safeEmbedImage(text) {
 // keys are limited to 100 calls/hour, which is fine for a small lobby but is
 // another reason to move search behind the master server later if it grows.
 // ===========================================================================
-const GIF_API_KEY = '';                  // <-- paste your GIPHY API key here
+const GIF_API_KEY = 'aM8lJdWLEnPC1CHzdP8gkv0SnMBArJfP'; // GIPHY API key
 const GIF_CLIENT_KEY = 'html_fishing';    // identifies this integration to GIPHY
 const GIF_LIMIT = 24;                     // results per search (API max 50)
 const GIF_TIMEOUT_MS = 8000;
