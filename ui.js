@@ -3390,14 +3390,240 @@ function sendChatMessage(text) {
 }
 
 // --- SECURITY FIX: Safe Image Embedding ---
+// Only direct image URLs may render inline. GIF-picker links are additionally
+// restricted to the picker's own media hosts (see isAllowedGifUrl) so a peer
+// cannot post an arbitrary URL and force every client to fetch it.
 function safeEmbedImage(text) {
     const escaped = escapeHTML(text);
     // Strict check for image URL
     const imgRegex = /^https?:\/\/.+\.(png|jpg|jpeg|gif|webp)$/i;
-    if (imgRegex.test(text)) {
-        return `<img src="${escaped}" class="chat-img" style="max-width:200px; max-height:200px; border-radius:10px; vertical-align:middle;" alt="Image">`;
+    if (!imgRegex.test(text)) return escaped;
+    // A giphy/tenor media link is the only kind the picker produces; anything
+    // that looks like one but sits on another host is left as plain text.
+    if (/giphy\.com|tenor\.com/i.test(text) && !isAllowedGifUrl(text)) return escaped;
+    return `<img src="${escaped}" class="chat-img" style="max-width:200px; max-height:200px; border-radius:10px; vertical-align:middle;" alt="Image">`;
+}
+
+// ===========================================================================
+// GIF SEARCH (GIPHY, Tenor-compatible API)
+// ---------------------------------------------------------------------------
+// A search box built into the chat. Picking a result sends the GIF's direct
+// URL as an ordinary chat message, so it flows through exactly the same
+// pipeline (and the same safeEmbedImage rendering) as any pasted image link.
+//
+// Setup: paste a GIPHY API key below (free, from the GIPHY developer
+// dashboard). Without one the panel opens and explains that search is not
+// configured rather than failing silently.
+//
+// Why GIPHY and not Tenor: Google shut the Tenor API down on 30 June 2026 and
+// stopped issuing new keys in January 2026. GIPHY runs Tenor-compatible
+// endpoints on /v2/* that take the same request and return the same
+// results[].media_formats.* shape, so this is a host + parameter swap.
+//
+// NOTE: the key is visible to anyone who views the page source. GIPHY beta
+// keys are limited to 100 calls/hour, which is fine for a small lobby but is
+// another reason to move search behind the master server later if it grows.
+// ===========================================================================
+const GIF_API_KEY = '';                  // <-- paste your GIPHY API key here
+const GIF_CLIENT_KEY = 'html_fishing';    // identifies this integration to GIPHY
+const GIF_LIMIT = 24;                     // results per search (API max 50)
+const GIF_TIMEOUT_MS = 8000;
+
+// GIPHY's Tenor-compatible layer. Swapping this one constant is all it takes to
+// move back to Tenor should their API ever return.
+const GIF_API_HOST = 'https://api.giphy.com';
+
+// Only these hosts are trusted to serve GIFs into the chat. Both the picker and
+// incoming chat messages are filtered through this, so a peer cannot use the
+// GIF path to make everyone's client fetch an arbitrary URL (IP leak / abuse).
+const GIF_MEDIA_HOSTS = ['media.giphy.com', 'media0.giphy.com', 'media1.giphy.com',
+                         'media2.giphy.com', 'media3.giphy.com', 'media4.giphy.com',
+                         'i.giphy.com'];
+
+function isAllowedGifUrl(url) {
+    if (typeof url !== 'string' || url.length > 512) return false;
+    let u;
+    try { u = new URL(url); } catch (e) { return false; }
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    if (!GIF_MEDIA_HOSTS.includes(host)) return false;
+    return /\.(gif|webp|mp4|png)$/i.test(u.pathname);
+}
+
+let gifSearchAbort = null;
+let gifLastQuery = '';
+
+function gifStatus(msg, isError) {
+    const el = document.getElementById('gif-status');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = isError ? 'error' : '';
+}
+
+function gifRenderResults(results) {
+    const box = document.getElementById('gif-results');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!results.length) {
+        gifStatus('No GIFs found.', false);
+        return;
     }
-    return escaped;
+    gifStatus('', false);
+    for (const r of results) {
+        // Prefer the small preview for the grid; fall back through the sizes
+        // the API offers so an odd result set still renders.
+        const mf = r.media_formats || {};
+        const preview = (mf.tinygif || mf.nanogif || mf.gif || {}).url;
+        const full = (mf.gif || mf.tinygif || mf.nanogif || {}).url;
+        if (!isAllowedGifUrl(preview) || !isAllowedGifUrl(full)) continue;
+
+        const img = document.createElement('img');
+        img.src = preview;
+        img.alt = (r.content_description || 'GIF').substring(0, 100);
+        img.loading = 'lazy';
+        img.dataset.full = full;
+        // Per-item share analytics URL (GIPHY has no /v2/registershare).
+        img.dataset.share = (r.analytics && r.analytics.onsent && r.analytics.onsent.url) || '';
+        img.onclick = () => gifPick(img.dataset.full, img.dataset.share);
+        box.appendChild(img);
+    }
+}
+
+// Picking a GIF sends its URL as a normal chat message, so everyone (including
+// the sender) renders it through the existing image-embedding path.
+function gifPick(fullUrl, shareUrl) {
+    if (!isAllowedGifUrl(fullUrl)) { gifStatus('That GIF is not from an allowed host.', true); return; }
+    // Fire the share event so the API can improve results. Best effort only;
+    // the URL comes from the API response, but re-check the host anyway.
+    if (GIF_API_KEY && shareUrl) {
+        try {
+            const share = new URL(shareUrl);
+            if (share.protocol === 'https:' && /(^|\.)giphy\.com$/i.test(share.hostname)) {
+                share.searchParams.set('ts', String(Date.now()));
+                fetch(share.toString()).catch(() => { /* non-fatal */ });
+            }
+        } catch (e) { /* non-fatal */ }
+    }
+    sendChatMessage(fullUrl);
+    gifClosePanel();
+}
+
+function gifClosePanel() {
+    const panel = document.getElementById('gif-panel');
+    if (panel) panel.style.display = 'none';
+    if (gifSearchAbort) { gifSearchAbort.abort(); gifSearchAbort = null; }
+    gifStatus('', false);
+}
+
+function gifOpenPanel() {
+    const panel = document.getElementById('gif-panel');
+    if (!panel) return;
+    panel.style.display = 'flex';
+    const ui = document.getElementById('chat-ui');
+    if (ui) ui.style.opacity = '1';
+    if (chatFadeTimer) clearTimeout(chatFadeTimer);
+    if (!GIF_API_KEY) {
+        gifStatus('GIF search is not configured (no GIPHY API key).', true);
+        return;
+    }
+    const search = document.getElementById('gif-search');
+    if (search) search.focus();
+    // Show trending immediately so the panel is never empty on open.
+    if (!document.getElementById('gif-results').childElementCount) {
+        gifLoadTrending();
+    }
+}
+
+async function gifFetch(url) {
+    if (gifSearchAbort) gifSearchAbort.abort();
+    gifSearchAbort = new AbortController();
+    const timer = setTimeout(() => gifSearchAbort && gifSearchAbort.abort(), GIF_TIMEOUT_MS);
+    try {
+        const res = await fetch(url, { signal: gifSearchAbort.signal });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        // A known error can still arrive with HTTP 200; surface it rather than
+        // rendering an empty grid.
+        if (data && data.error) throw new Error(data.error);
+        return data;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// Shared query parameters. `rating=pg` keeps search results lobby-friendly;
+// the API defaults to unrestricted.
+function gifParams(extra) {
+    const params = new URLSearchParams({
+        key: GIF_API_KEY,
+        client_key: GIF_CLIENT_KEY,
+        limit: String(GIF_LIMIT),
+        rating: 'pg'
+    });
+    if (extra) for (const k in extra) params.set(k, extra[k]);
+    return params;
+}
+
+async function gifLoadTrending() {
+    if (!GIF_API_KEY) return;
+    gifStatus('Loading...', false);
+    try {
+        const data = await gifFetch(GIF_API_HOST + '/v2/featured?' + gifParams());
+        gifRenderResults(data.results || []);
+    } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        gifStatus('Could not reach the GIF service.', true);
+    }
+}
+
+async function gifSearch(query) {
+    const q = (query || '').trim();
+    if (!GIF_API_KEY) { gifStatus('GIF search is not configured (no GIPHY API key).', true); return; }
+    if (!q) { gifLoadTrending(); return; }
+    gifLastQuery = q;
+    gifStatus('Searching...', false);
+    try {
+        const data = await gifFetch(GIF_API_HOST + '/v2/search?' + gifParams({ q: q }));
+        gifRenderResults(data.results || []);
+    } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        gifStatus('Could not reach the GIF service.', true);
+    }
+}
+
+// Wires the GIF button, search box and close button. Called from setupInputs().
+function setupGifPicker() {
+    const btn = document.getElementById('gif-btn');
+    const close = document.getElementById('gif-close');
+    const search = document.getElementById('gif-search');
+    const panel = document.getElementById('gif-panel');
+    if (!btn || !panel) return;
+
+    btn.onclick = () => {
+        if (panel.style.display === 'none' || !panel.style.display) gifOpenPanel();
+        else gifClosePanel();
+    };
+    if (close) close.onclick = gifClosePanel;
+
+    let debounce = null;
+    if (search) {
+        search.oninput = () => {
+            if (debounce) clearTimeout(debounce);
+            debounce = setTimeout(() => gifSearch(search.value), 400);
+        };
+        search.onkeydown = (e) => {
+            // Keep typing inside the box; Enter searches immediately.
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (debounce) clearTimeout(debounce);
+                gifSearch(search.value);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                gifClosePanel();
+            }
+            e.stopPropagation();
+        };
+    }
 }
 
 function displayChatMessage(name, text, id) {
@@ -9109,6 +9335,7 @@ function updateSpriteDirection(obj, targetCamPos) {
 
 function setupInputs() {
     const ci = document.getElementById('chat-input');
+    setupGifPicker();
 
     // Chat Fade Logic
     ci.addEventListener('focus', () => {

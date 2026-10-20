@@ -675,6 +675,123 @@
             border-color: var(--p-water) !important;
         }
 
+        /* --- GIF PICKER (GIPHY) --- */
+        #chat-input-row {
+            display: flex;
+            gap: 6px;
+            pointer-events: auto;
+        }
+
+        #chat-input-row #chat-input {
+            flex: 1;
+            min-width: 0;
+        }
+
+        #gif-btn {
+            background: var(--p-face-2);
+            border: 2px solid var(--p-line);
+            color: var(--p-sand);
+            font-weight: bold;
+            font-size: 13px;
+            padding: 8px 10px;
+            cursor: pointer;
+        }
+
+        #gif-btn:hover {
+            background: var(--p-face-3);
+            border-color: var(--p-water);
+        }
+
+        #gif-panel {
+            background: var(--p-face);
+            border: 2px solid var(--p-line);
+            margin-bottom: 5px;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            max-height: 320px;
+            flex-shrink: 0;
+        }
+
+        #gif-panel-head {
+            display: flex;
+            gap: 6px;
+            padding: 6px;
+            border-bottom: 2px solid var(--p-line);
+        }
+
+        #gif-search {
+            flex: 1;
+            min-width: 0;
+            background: var(--p-sunken) !important;
+            border: 2px solid var(--p-line) !important;
+            color: var(--p-text);
+            padding: 6px 10px;
+            outline: none;
+            pointer-events: auto;
+        }
+
+        #gif-search:focus {
+            border-color: var(--p-water) !important;
+        }
+
+        #gif-close {
+            background: var(--p-face-2);
+            border: 2px solid var(--p-line);
+            color: var(--p-text-dim);
+            font-size: 16px;
+            line-height: 1;
+            padding: 0 8px;
+            cursor: pointer;
+        }
+
+        #gif-close:hover {
+            color: var(--p-bad);
+            border-color: var(--p-bad);
+        }
+
+        #gif-results {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+            padding: 6px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            min-height: 60px;
+        }
+
+        #gif-results img {
+            width: 100%;
+            height: 78px;
+            object-fit: cover;
+            cursor: pointer;
+            border: 2px solid transparent;
+            background: var(--p-sunken);
+            display: block;
+        }
+
+        #gif-results img:hover {
+            border-color: var(--p-water);
+        }
+
+        #gif-status {
+            padding: 0 6px 6px;
+            font-size: 12px;
+            color: var(--p-text-dim);
+            min-height: 14px;
+        }
+
+        #gif-status.error {
+            color: var(--p-bad);
+        }
+
+        #gif-attrib {
+            padding: 0 6px 6px;
+            font-size: 10px;
+            color: var(--p-text-mute);
+            text-align: right;
+        }
+
         /* --- OVERLAYS --- */
         .overlay-screen {
             position: absolute;
@@ -3401,7 +3518,20 @@
         <div id="npc-prompt">PRESS E TO INTERACT</div>
         <div id="chat-ui" style="display: none;">
             <div id="chat-messages"></div>
-            <input type="text" id="chat-input" placeholder="Chat here...">
+            <!-- GIF picker (GIPHY). Hidden until the GIF button is pressed. -->
+            <div id="gif-panel" style="display: none;">
+                <div id="gif-panel-head">
+                    <input type="text" id="gif-search" placeholder="Search GIFs..." autocomplete="off">
+                    <button type="button" id="gif-close" title="Close">&times;</button>
+                </div>
+                <div id="gif-results"></div>
+                <div id="gif-status"></div>
+                <div id="gif-attrib">Powered by GIPHY</div>
+            </div>
+            <div id="chat-input-row">
+                <input type="text" id="chat-input" placeholder="Chat here...">
+                <button type="button" id="gif-btn" title="Search GIFs">GIF</button>
+            </div>
         </div>
         <div id="minigame-ui">
             <div id="minigame-overlay-text">HOLD TO REEL!</div>
@@ -3514,7 +3644,7 @@
     <script src="networking.js?v=12.34"></script>
     <script src="audio.js?v=12.36"></script>
     <script src="progression.js?v=8"></script>
-    <script src="ui.js?v=12.101"></script>
+    <script src="ui.js?v=12.102"></script>
     <script src="props.js?v=12.37"></script>
     <script src="level-loader.js?v=7"></script>
 
