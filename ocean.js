@@ -272,9 +272,6 @@
     // dome so the shoreline is gentle (good for beaching a boat).
     function islandHeight(isl, x, z) {
         const floor = (typeof OCEAN_FLOOR === "number") ? OCEAN_FLOOR : -9;
-        const sh = shapeDistance(isl, x, z);
-        const shelf = sh.shelf;
-        const d = sh.d;
 
         // Carve out ponds - if point is inside any pond, return pond surface level
         try {
@@ -284,21 +281,16 @@
                     const p = lay.ponds[i];
                     const pdx = x - p.x, pdz = z - p.z;
                     const pd = Math.sqrt(pdx * pdx + pdz * pdz);
-                    if (pd < p.radius * 0.95) {
-                        return -0.05; // Flat pond level
-                    }
-                    if (pd < p.radius * 1.5) {
-                        const blend = (pd - p.radius * 0.95) / (p.radius * 0.55);
-                        const pondH = -0.05;
-                        const t2 = Math.min(d / shelf, 1);
-                        const dome2 = (d < shelf) ? ((1 - Math.cos((1 - t2) * Math.PI)) / 2) : 0;
-                        const baseH = floor + ((isl.peak * isl.squash) - floor) * dome2;
-                        return pondH * (1 - Math.min(blend, 1)) + baseH * Math.min(blend, 1);
+                    if (pd < p.radius * 2.0) {
+                        return -0.08; // Fully flattened basin
                     }
                 }
             }
         } catch (e) { /* ignore */ }
 
+        const sh = shapeDistance(isl, x, z);
+        const shelf = sh.shelf;
+        const d = sh.d;
         if (d >= shelf) return floor;
 
         const t = d / shelf;              // 0 centre .. 1 shelf edge
