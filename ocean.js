@@ -400,7 +400,7 @@
             out.colliders.push({ x: x, z: z, radius: 1.5 });
         }
 
-        // Rocks. Left non-solid so players can walk through them (ocean islands).
+        // Rocks. Block movement like trees do on ocean islands.
         const rockCount = Math.round(isl.radius * 0.18);
         for (let i = 0; i < rockCount; i++) {
             const a = rand() * Math.PI * 2;
@@ -414,7 +414,7 @@
             r.position.set(x, h + 0.2, z);
             r.rotation.y = rand() * Math.PI * 2;
             group.add(r);
-            // No collider: rocks on islands can be walked through.
+            out.colliders.push({ x: x, z: z, radius: rScale * 0.8 });
         }
 
         // Flowers (pickable) if the game exposes the hook. Wrapped so a failure
