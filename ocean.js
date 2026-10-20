@@ -38,16 +38,22 @@
         };
     }
 
-    const SEED = "open-ocean-archipelago-v1";
+    const SEED = "open-ocean-archipelago-v2";
 
     // Tunables. Radii are in world units; heights are in the same space as
-    // getTerrainHeight (0 = shore, island hills go up to ~7).
-    const ISLAND_COUNT = 26;      // how many islands to scatter
-    const MIN_RADIUS = 14;        // smallest island
-    const MAX_RADIUS = 34;        // largest island
-    const MIN_PEAK = 2.2;         // lowest island top (above ocean)
-    const MAX_PEAK = 7.0;         // tallest island top
-    const MIN_SEPARATION = 34;    // minimum gap between island rims
+    // getTerrainHeight (0 = shore, island hills go up to ~10).
+    // Size spread is deliberately wide: a few tiny specks, plenty of mid-size
+    // islands, and the odd large landmark you can spot from far away.
+    const ISLAND_COUNT = 30;      // how many islands to scatter
+    const MIN_RADIUS = 7;         // smallest island (a tiny rock islet)
+    const MAX_RADIUS = 62;        // largest island (a proper landmark)
+    const MIN_PEAK = 1.6;         // lowest island top (above ocean)
+    const MAX_PEAK = 9.5;         // tallest island top
+    const MIN_SEPARATION = 30;    // minimum gap between island rims
+    // Larger islands are rarer: bias the radius roll toward the small end.
+    // Islands above this size are treated as landmarks and placed first so
+    // they get the roomy spots rather than being crowded out by small ones.
+    const LANDMARK_RADIUS = 40;
 
     // The home island + the two special worlds must stay clear of navigation,
     // so keep a wide exclusion ring around the origin.
@@ -73,55 +79,91 @@
         const rand = mulberry32(xmur3(SEED)());
         const islands = [];
 
-        // Poisson-ish rejection sampling: place islands one at a time, rejecting
-        // any that would sit too close to an already-placed island (or too close
-        // to the home island / world edge). Bounded attempts so this always ends.
+        // Radius roll, biased small so big islands feel special: squaring a
+        // uniform roll weights the low end. Landmarks are not placed here — they
+        // get an explicit pass first (below) so they can claim the roomy spots.
+        const rollRadius = () => MIN_RADIUS + (rand() * rand()) * (MAX_RADIUS - MIN_RADIUS);
+
+        // A shared placer: tries to drop an island of `radius`, rejecting spots
+        // that overlap the ring edge or another island. Bounded attempts.
+        const tryPlace = (radius, isLandmark) => {
+            let attempts = 0;
+            const maxAttempts = 200;
+            while (attempts < maxAttempts) {
+                attempts++;
+
+                // Pick a point in the ring, biased outward so we don't crowd the
+                // home island's shoreline.
+                const angle = rand() * Math.PI * 2;
+                const t = Math.pow(rand(), 0.7); // push toward the outer edge
+                const dist = ring.inner + t * (ring.outer - ring.inner);
+                const x = Math.cos(angle) * dist;
+                const z = Math.sin(angle) * dist;
+
+                // Keep every island fully inside the sailable ring. Landmarks
+                // get extra clearance from the home island.
+                const innerPad = isLandmark ? 20 : 0;
+                if (dist + radius > ring.outer) continue;
+                if (dist - radius < ring.inner + innerPad) continue;
+
+                let ok = true;
+                for (const other of islands) {
+                    const d = Math.hypot(x - other.x, z - other.z);
+                    if (d < radius + other.radius + MIN_SEPARATION) { ok = false; break; }
+                }
+                if (!ok) continue;
+
+                // Shape variation: islands aren't perfect circles. Each gets an
+                // elliptical stretch (xScale/zScale) plus a rotation, so some are
+                // long and thin, others round and blobby.
+                const stretch = 0.55 + rand() * 0.9;   // 0.55 (long) .. 1.45 (wide)
+                const xScale = stretch;
+                const zScale = 1 / Math.max(0.4, stretch);
+                const rotation = rand() * Math.PI;
+
+                islands.push({
+                    x: x,
+                    z: z,
+                    radius: radius,
+                    // Elongation applied in islandHeight/mesh builds.
+                    xScale: xScale,
+                    zScale: zScale,
+                    rotation: rotation,
+                    peak: MIN_PEAK + rand() * (MAX_PEAK - MIN_PEAK),
+                    // Wider squash range: some flat atolls, some steep peaks.
+                    squash: 0.55 + rand() * 0.75,
+                    seed: Math.floor(rand() * 1e9),
+                    // Which islands get a prop/cabin and which get a cave mouth.
+                    hasProp: rand() < 0.35,
+                    hasCave: rand() < 0.25
+                });
+                return true;
+            }
+            return false;
+        };
+
+        // Pass 1: landmarks first so they land in the roomy gaps.
+        let landmarks = 0;
+        for (let i = 0; i < 4 && landmarks < 4; i++) {
+            const r = LANDMARK_RADIUS + rand() * (MAX_RADIUS - LANDMARK_RADIUS);
+            if (tryPlace(r, true)) landmarks++;
+        }
+
+        // Pass 2: the rest, all smaller than the landmark threshold.
         let attempts = 0;
         const maxAttempts = ISLAND_COUNT * 60;
         while (islands.length < ISLAND_COUNT && attempts < maxAttempts) {
             attempts++;
-
-            const radius = MIN_RADIUS + rand() * (MAX_RADIUS - MIN_RADIUS);
-            // Pick a point in the ring, biased outward so we don't crowd the
-            // home island's shoreline.
-            const angle = rand() * Math.PI * 2;
-            const t = Math.pow(rand(), 0.7); // push toward the outer edge
-            const dist = ring.inner + t * (ring.outer - ring.inner);
-            const x = Math.cos(angle) * dist;
-            const z = Math.sin(angle) * dist;
-
-            // Keep every island fully inside the sailable ring.
-            if (dist + radius > ring.outer) continue;
-            if (dist - radius < ring.inner) continue;
-
-            let ok = true;
-            for (const other of islands) {
-                const d = Math.hypot(x - other.x, z - other.z);
-                if (d < radius + other.radius + MIN_SEPARATION) { ok = false; break; }
-            }
-            if (!ok) continue;
-
-            const peak = MIN_PEAK + rand() * (MAX_PEAK - MIN_PEAK);
-            islands.push({
-                x: x,
-                z: z,
-                radius: radius,
-                peak: peak,
-                // Slight vertical squash so islands read as mounds, not cones.
-                squash: 0.75 + rand() * 0.4,
-                seed: Math.floor(rand() * 1e9),
-                // Which islands get a prop/cabin and which get a cave mouth.
-                hasProp: rand() < 0.35,
-                hasCave: rand() < 0.25
-            });
+            const radius = Math.min(rollRadius(), LANDMARK_RADIUS - 2);
+            tryPlace(radius, false);
         }
 
         _layout = {
             islands: islands,
             ring: ring,
             // Quick lookup grid so heightAt only tests nearby islands. Bucket is
-            // roughly the largest island diameter.
-            cell: MAX_RADIUS * 2 + MIN_SEPARATION,
+            // roughly the largest island footprint (shelf + widest ellipse axis).
+            cell: MAX_RADIUS * 1.4 * 1.5 + MIN_SEPARATION,
             grid: null
         };
         buildLookupGrid(_layout);
@@ -132,7 +174,10 @@
         const cell = lay.cell;
         const map = new Map();
         lay.islands.forEach((isl, i) => {
-            const reach = isl.radius + 2;
+            // Reach must cover the stretched (elliptical) footprint, not just the
+            // nominal radius: the widest axis is radius * shelf * maxScale.
+            const stretch = Math.max(isl.xScale || 1, isl.zScale || 1);
+            const reach = isl.radius * 1.4 * stretch + 2;
             const minX = Math.floor((isl.x - reach) / cell);
             const maxX = Math.floor((isl.x + reach) / cell);
             const minZ = Math.floor((isl.z - reach) / cell);
@@ -158,16 +203,39 @@
         return bucket.map(i => lay.islands[i]);
     }
 
+    // Distance from an island's centre, measured in "shape space": the island's
+    // ellipse and rotation are undone first, so an elongated island reads as a
+    // circle here. Returns { d, shelf } where d is the shape-space distance and
+    // shelf is the island's (shape-space) shelf radius.
+    const _shape = { d: 0, shelf: 0 };
+    function shapeDistance(isl, x, z) {
+        let dx = x - isl.x;
+        let dz = z - isl.z;
+        // Undo the island's rotation.
+        const rot = isl.rotation || 0;
+        if (rot) {
+            const c = Math.cos(-rot), s = Math.sin(-rot);
+            const rx = dx * c - dz * s;
+            const rz = dx * s + dz * c;
+            dx = rx; dz = rz;
+        }
+        // Undo the ellipse: squeezing the long axis by xScale/zScale turns the
+        // stretched footprint back into a unit circle.
+        dx /= (isl.xScale || 1);
+        dz /= (isl.zScale || 1);
+        _shape.d = Math.sqrt(dx * dx + dz * dz);
+        _shape.shelf = isl.radius * 1.4;
+        return _shape;
+    }
+
     // Height contribution of one island at (x, z). Returns a negative ocean
     // floor far away, rising smoothly to `peak` at the centre. Uses a cosine
     // dome so the shoreline is gentle (good for beaching a boat).
     function islandHeight(isl, x, z) {
         const floor = (typeof OCEAN_FLOOR === "number") ? OCEAN_FLOOR : -9;
-        const dx = x - isl.x;
-        const dz = z - isl.z;
-        const d = Math.sqrt(dx * dx + dz * dz);
-        // Outer shelf extends 40% past the visual radius so shallows ring it.
-        const shelf = isl.radius * 1.4;
+        const sh = shapeDistance(isl, x, z);
+        const shelf = sh.shelf;
+        const d = sh.d;
         if (d >= shelf) return floor;
 
         const t = d / shelf;              // 0 centre .. 1 shelf edge
@@ -332,7 +400,7 @@
             out.colliders.push({ x: x, z: z, radius: 1.5 });
         }
 
-        // Rocks.
+        // Rocks. Left non-solid so players can walk through them (ocean islands).
         const rockCount = Math.round(isl.radius * 0.18);
         for (let i = 0; i < rockCount; i++) {
             const a = rand() * Math.PI * 2;
@@ -341,10 +409,12 @@
             const z = isl.z + Math.sin(a) * d;
             const h = heightAt(x, z);
             if (h < sea + 0.4) continue;
-            const r = WG.createRockMesh(0.8 + rand() * 1.1);
+            const rScale = 0.8 + rand() * 1.1;
+            const r = WG.createRockMesh(rScale);
             r.position.set(x, h + 0.2, z);
             r.rotation.y = rand() * Math.PI * 2;
             group.add(r);
+            // No collider: rocks on islands can be walked through.
         }
 
         // Flowers (pickable) if the game exposes the hook. Wrapped so a failure
@@ -407,22 +477,26 @@
         let attempts = 0;
         while (islands.length < target && attempts < target * 60) {
             attempts++;
-            const radius = 14 + rand() * 20;
+            const radius = 9 + rand() * rand() * 40;
             const angle = rand() * Math.PI * 2;
             const t = Math.pow(rand(), 0.7);
             const dist = inner + t * (outer - inner);
             const x = Math.cos(angle) * dist;
             const z = Math.sin(angle) * dist;
-            if (dist + radius > outer) continue;
+            if (dist + radius * 1.4 > outer) continue;
             let ok = true;
             for (const o of islands) {
                 if (Math.hypot(x - o.x, z - o.z) < radius + o.radius + 34) { ok = false; break; }
             }
             if (!ok) continue;
+            const stretch = 0.55 + rand() * 0.9;
             islands.push({
                 x: x, z: z, radius: radius,
-                peak: 2.2 + rand() * 4.5,
-                squash: 0.75 + rand() * 0.4,
+                xScale: stretch,
+                zScale: 1 / Math.max(0.4, stretch),
+                rotation: rand() * Math.PI,
+                peak: 1.8 + rand() * 7.0,
+                squash: 0.55 + rand() * 0.75,
                 seed: Math.floor(rand() * 1e9),
                 hasProp: rand() < 0.3,
                 hasCave: rand() < 0.2

@@ -2318,7 +2318,11 @@ function spawnCustomLevelFlowers(level) {
 // by ocean.js (guarded) so sailing out is rewarded with a bit of gatherable
 // floristry, matching the home island. `rand` is the island's own seeded RNG so
 // the scatter is deterministic across clients.
-function spawnOceanIslandFlowers(isl, rand) {
+// Spawns pickable flowers on one ocean island. `rand` is the island's own
+// seeded RNG so the scatter is deterministic across clients. `keepOut` is an
+// optional array of { x, z, radius } (tree/rock colliders) that flowers must
+// avoid, so they don't sprout inside a trunk or boulder.
+function spawnOceanIslandFlowers(isl, rand, keepOut) {
     if (!isl || typeof rand !== 'function' || !window.Ocean) return 0;
     const sea = (typeof OCEAN_LEVEL === 'number') ? OCEAN_LEVEL : -3;
     const floristryXP = (saveState.skills && saveState.skills.floristry) ? saveState.skills.floristry.xp : 0;
@@ -2334,6 +2338,17 @@ function spawnOceanIslandFlowers(isl, rand) {
 
         const h = window.Ocean.islandHeight(isl, x, z);
         if (h < sea + 0.6) continue; // dry land only
+
+        if (keepOut) {
+            let blocked = false;
+            for (let k = 0; k < keepOut.length; k++) {
+                const c = keepOut[k];
+                const rr = c.radius + 0.8;
+                const dx = x - c.x, dz = z - c.z;
+                if (dx * dx + dz * dz < rr * rr) { blocked = true; break; }
+            }
+            if (blocked) continue;
+        }
 
         const flowerType = getResourceForLevel(floristryLevel, FLOWER_TYPES);
         const flower = createFlowerMesh(flowerType.color);
