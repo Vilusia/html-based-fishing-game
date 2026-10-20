@@ -227,12 +227,41 @@ flowers, and some carry a prop or cave mouth.
   (so its flowers survive that function's array reset).
 - **Custom levels** (`window.CUSTOM_LEVEL`) get their own apron: `ocean.js`
   places ~18 islands in a ring `size/2 + 80` … `size/2 + 560` around the map
-  (`Ocean.layoutAround`), and the walk clamp is widened to that apron. Inside
-  the authored map water still blocks on foot; outside it is open.
+  (`Ocean.layoutAround`), and the walk clamp is widened to that apron. All water
+  in a custom level is swimmable, matching the home island's open ocean: the
+  authored map's own sea and the apron are one continuous body, so treating the
+  inner part as a barrier would wall the player in and leave the apron islands
+  unreachable.
 
 Fishing out in the open ocean pays a **deep-ocean bonus**: the further from the
 home island the cast lands, the more Fishing XP and sale value (up to +80% XP
 and +60% value at the far edge), plus Sailing XP when fishing from the boat.
+
+---
+
+## Chat GIF search (`ui.js`)
+
+A **GIF** button beside the chat box opens a search panel. Picking a result
+sends the GIF's direct URL as a normal chat message, so it travels through the
+ordinary chat pipeline and renders inline via `safeEmbedImage` — no new network
+message type.
+
+Setup: put a free **GIPHY** API key in `GIF_API_KEY` (`ui.js`). Without one the
+panel opens and reports that search is not configured.
+
+- **Why GIPHY and not Tenor:** Google shut the Tenor API down on 30 June 2026
+  and stopped issuing keys in January 2026. GIPHY runs Tenor-compatible `/v2/*`
+  endpoints (`GIF_API_HOST`) that take the same request and return the same
+  `results[].media_formats.*` shape, so switching back would be a one-constant
+  change.
+- **Security:** `isAllowedGifUrl` permits only GIPHY media hosts, HTTPS, and
+  image extensions. Both the picker and *incoming* chat text are filtered
+  through it, so a peer cannot post an arbitrary `.gif` URL and force every
+  client to fetch it. Lookalike hosts such as `media.giphy.com.evil.com` are
+  rejected. Search results are filtered to `rating=pg`.
+- **Caveats:** the key is visible in the page source, and GIPHY beta keys are
+  limited to 100 calls/hour. Move search behind the master server if either
+  becomes a problem.
 
 
 ---
