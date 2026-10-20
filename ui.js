@@ -8037,14 +8037,14 @@ function drawHair(ctx, hairId, col, back) {
     // (koala), so hair is kept above NOSE_TOP or outboard of 22 / 41.5.
     const NOSE_TOP = 18;
     const NOSE_L = 22, NOSE_R = 41.5;
+    const EYE_L = 19.5, EYE_R = 44.5;    // full eye + cheek keep-out width
     // Lowest y a crown/base fill may extend to while still clearing every nose.
     const CROWN_MAX = NOSE_TOP;
     // The lowest point any ear reaches. Above this line the ears occupy the
     // space beside the head, so hair must stay inside the skull; below it the
     // sides are clear and hair may hang out freely.
-    const EAR_BOTTOM = 28;
+    const EAR_BOTTOM = 27;
     const SKIRT = EAR_BOTTOM;            // ear-safe threshold for side volumes
-    const PAD = 3;                       // outward room for side volumes
 
     // =======================================================================
     // helpers
@@ -8053,13 +8053,10 @@ function drawHair(ctx, hairId, col, back) {
     // the upper corners trimmed back, because that is exactly where every ear
     // attaches: cat/fox/wolf triangles, dog/fox floppy lobes, koala/mouse/
     // monkey circles and cow horns all grow out of x≈14 / x≈50 at y≈6..12.
-    // Trimming to x 20..44 above y=12 and opening to the full width by y=14
-    // keeps the crown covered while guaranteeing no style can graze an ear.
-    const headPath = () => {
+    const traceHead = () => {
         const IN = 6;      // corner trim (x 14+6 = 20 .. 50-6 = 44 at the top)
         const y0 = TOP;    // crown
         const yOpen = TOP + 6;
-        ctx.beginPath();
         ctx.moveTo(XL + IN, y0);
         ctx.lineTo(XR - IN, y0);
         ctx.quadraticCurveTo(XR, y0, XR, yOpen);
@@ -8071,6 +8068,10 @@ function drawHair(ctx, hairId, col, back) {
         ctx.quadraticCurveTo(XL, y0, XL + IN, y0);
         ctx.closePath();
     };
+    const headPath = () => {
+        ctx.beginPath();
+        traceHead();
+    };
     // Excludes a rectangle from the current clip: a huge rect minus the hole,
     // via the even-odd rule (points inside ONLY the hole have an even count).
     const clipOut = (x, y, w, h) => {
@@ -8081,457 +8082,1142 @@ function drawHair(ctx, hairId, col, back) {
     };
     const withHeadClip = (fn) => {
         ctx.save();
-        // The head, MINUS the drawn face box. drawSpecies paints the eyes and
-        // nose before the hair and only the eyes get re-stamped afterwards, so
-        // hair that reaches the nose would erase it (worst on the koala, whose
-        // nose starts at y 18, and the mouse, whose nose spans x 22..41.5).
         headPath();
         ctx.clip();
-        clipOut(NOSE_L, NOSE_TOP, NOSE_R - NOSE_L, 64 - NOSE_TOP);
+        if (!back) {
+            clipOut(EYE_L, NOSE_TOP, EYE_R - EYE_L, 64 - NOSE_TOP);
+        }
         fn();
         ctx.restore();
     };
-    // Paint only OUTSIDE the head silhouette, and only in ear-safe bands.
-    //
-    // The ears are the constraint: they grow out of the head's top corners and
-    // (for dog/fox/koala/monkey/elephant) hang down beside the head all the way
-    // to y ≈ 22..34. So anything drawn beside the head above EAR_BOTTOM lands on
-    // an ear. Hair therefore only leaves the skull here:
-    //
-    //   * the strip directly ABOVE the crown (x inside the head, y < above) —
-    //     spikes, mohawk crest, puffs, buns
-    //   * everything BELOW EAR_BOTTOM — tails, long skirting, braids
-    //
-    // Implemented as one even-odd path so the clip is exactly
-    // "bands minus head" regardless of clip() intersection semantics.
-    const outsideHead = (fn, below = EAR_BOTTOM, above = TOP) => {
+    // Unified continuous hair envelope:
+    //  - Above the crown (y -18..8): stays within [topX0, topX1] between ears
+    //  - Upper corners (y 8..13): curves smoothly to the head sides [14.5, 49.5]
+    //  - Ear zone (y 13..skirtY): hugs the head [14.5, 49.5] inside floppy ears
+    //  - Below ears (y skirtY..64): opens wide [2, 62] for curtains/tails/locks
+    // Because it is ONE continuous region (not disjoint bands), spikes, buns,
+    // pompadours, afros, curtains, and tails never get a gap or seam at y=8 or
+    // y=27, and back view never gets a face hole punched out of the middle.
+    const withHairEnvelope = (fn, topX0 = 20, topX1 = 44, skirtY = EAR_BOTTOM) => {
         ctx.save();
         ctx.beginPath();
-        // Outer: above-the-crown strip (kept within the head's x-range so it
-        // can't reach an ear) plus the open region below the ears.
-        ctx.rect(XL, -60, XR - XL, above + 60);
-        ctx.rect(-20, below, 104, 160 - below);
-        // Inner: the hair-safe head, subtracted via the even-odd rule.
-        headPath();
-        ctx.clip('evenodd');
-        // Second, independent pass: punch out the drawn face box so nothing
-        // here can bury a nose that drawSpecies painted before the hair.
-        clipOut(NOSE_L, NOSE_TOP, NOSE_R - NOSE_L, 64 - NOSE_TOP);
+        ctx.moveTo(topX0 + 1.5, -18);
+        ctx.lineTo(topX1 - 1.5, -18);
+        ctx.lineTo(topX1, TOP);
+        ctx.quadraticCurveTo(XR - 0.5, TOP, XR - 0.5, TOP + 5);
+        ctx.lineTo(XR - 0.5, skirtY);
+        ctx.lineTo(62, skirtY);
+        ctx.lineTo(62, 64);
+        ctx.lineTo(2, 64);
+        ctx.lineTo(2, skirtY);
+        ctx.lineTo(XL + 0.5, skirtY);
+        ctx.lineTo(XL + 0.5, TOP + 5);
+        ctx.quadraticCurveTo(XL + 0.5, TOP, topX0, TOP);
+        ctx.closePath();
+        ctx.clip();
+        if (!back) {
+            // Punch out the eyes (x 19.5..44.5, y 18..28.5) and the nose/muzzle
+            // (x 21..43, y 28.5..34). Below y=28.5 the sides (x 19.5..21 and
+            // 43..44.5) stay open so hanging hair can overlap the torso edge
+            // (x 20..44) with zero transparent gap for addSpriteOutline!
+            clipOut(EYE_L, NOSE_TOP, EYE_R - EYE_L, 10.5);
+            clipOut(21, 28.5, 22, 5.5);
+        }
         fn();
         ctx.restore();
     };
-    // A cap of hair over the crown, reaching down the sides to `depth`.
-    // Always fills with the base hair colour (never inherits a stray style).
-    // The sides are inset to EAR_X so the cap's square corners stay 1px inside
-    // the points where the ears attach (x = 14 / 50) and never clip an ear tip.
-    const EAR_X = 1;
-    const cap = (depth, inset = 0, fillCol = base) => {
-        ctx.beginPath();
-        const x0 = XL + EAR_X + inset, x1 = XR - EAR_X - inset;
-        ctx.moveTo(x0, depth);
-        ctx.lineTo(x0, TOP + 5);
-        ctx.quadraticCurveTo(x0, TOP - 1, x0 + 5, TOP - 1);
-        ctx.lineTo(x1 - 5, TOP - 1);
-        ctx.quadraticCurveTo(x1, TOP - 1, x1, TOP + 5);
-        ctx.lineTo(x1, depth);
-        ctx.closePath();
-        ctx.fillStyle = fillCol;
-        ctx.fill();
-    };
-    // Soft sheen that follows the crown curve.
-    const sheen = (y = TOP + 3, x0 = 21, x1 = 43, h = 3) => {
+
+    // Soft curved highlight ribbon across the crown.
+    const sheen = (y = TOP + 2.5, x0 = 21, x1 = 43, h = 2.5) => {
         ctx.fillStyle = lite;
         ctx.beginPath();
         ctx.moveTo(x0, y + h);
-        ctx.quadraticCurveTo(32, y - h, x1, y + h);
+        ctx.quadraticCurveTo(32, y - h * 0.7, x1, y + h);
         ctx.lineTo(x1, y);
-        ctx.quadraticCurveTo(32, y - 2 * h, x0, y);
+        ctx.quadraticCurveTo(32, y - h * 1.5, x0, y);
         ctx.closePath();
         ctx.fill();
     };
-    // A hanging strand/panel beside the face (drawn through the head clip when
-    // it hugs the head, or outside it when it hangs past the jaw).
-    const panel = (x, y, w, h, flare = 0, fillCol = base) => {
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.quadraticCurveTo(x - flare, y + h * 0.5, x, y + h);
-        ctx.lineTo(x + w, y + h);
-        ctx.quadraticCurveTo(x + w + flare, y + h * 0.5, x + w, y);
-        ctx.closePath();
+    // Crown dome with a natural arched or contoured lower hairline instead of
+    // a flat horizontal brick.
+    const crownArch = (yLeft, yMid, yRight, inset = 0.5, fillCol = base) => {
+        const x0 = XL + inset, x1 = XR - inset;
         ctx.fillStyle = fillCol;
-        ctx.fill();
-    };
-    // Long hair falls in a curtain. It hugs the head's sides all the way down
-    // to EAR_BOTTOM (where the ears stop) and only then flares outward, so the
-    // flare can never land on a floppy ear.
-    const curtain = (bottom, flare = 4, fillCol = base) => {
-        const fy = Math.min(bottom, EAR_BOTTOM + 2);
         ctx.beginPath();
-        ctx.moveTo(XL - flare, bottom);
-        ctx.lineTo(XL - flare, fy);
-        ctx.quadraticCurveTo(XL - flare + 1, EAR_BOTTOM, XL - 1, EAR_BOTTOM);
-        ctx.lineTo(XL + 1.5, TOP + 4);
-        ctx.quadraticCurveTo(XL + 1.5, TOP - 1, XL + 6, TOP - 1);
-        ctx.lineTo(XR - 6, TOP - 1);
-        ctx.quadraticCurveTo(XR - 1.5, TOP - 1, XR - 1.5, TOP + 4);
-        ctx.lineTo(XR + 1, EAR_BOTTOM);
-        ctx.quadraticCurveTo(XR + flare - 1, EAR_BOTTOM, XR + flare, fy);
-        ctx.lineTo(XR + flare, bottom);
-        ctx.quadraticCurveTo(32, bottom + 4, XL - flare, bottom);
+        ctx.moveTo(x0, yLeft);
+        ctx.lineTo(x0, TOP + 5);
+        ctx.quadraticCurveTo(x0, TOP, x0 + 5.5, TOP);
+        ctx.lineTo(x1 - 5.5, TOP);
+        ctx.quadraticCurveTo(x1, TOP, x1, TOP + 5);
+        ctx.lineTo(x1, yRight);
+        ctx.quadraticCurveTo(32, yMid, x0, yLeft);
         ctx.closePath();
+        ctx.fill();
+    };
+    // Tapered side lock framing the outer temple/cheek (stays outside EYE_L..EYE_R).
+    const sideLock = (side, yTop, yBot, w = 4.5, tipIn = 1, fillCol = base) => {
         ctx.fillStyle = fillCol;
+        ctx.beginPath();
+        const reach = (yBot > 28) ? 21 : Math.min(EYE_L, XL + 0.5 + w);
+        const reachR = (yBot > 28) ? 43 : Math.max(EYE_R, XR - 0.5 - w);
+        if (side < 0) {
+            const x0 = XL + 0.5, x1 = reach;
+            ctx.moveTo(x0, yTop);
+            ctx.lineTo(x1, yTop);
+            ctx.lineTo(x1, yBot - 3);
+            ctx.quadraticCurveTo(x1, yBot, x0 + tipIn, yBot);
+            ctx.quadraticCurveTo(x0, yBot - 1, x0, yBot - 4);
+        } else {
+            const x1 = XR - 0.5, x0 = reachR;
+            ctx.moveTo(x0, yTop);
+            ctx.lineTo(x1, yTop);
+            ctx.lineTo(x1, yBot - 4);
+            ctx.quadraticCurveTo(x1, yBot - 1, x1 - tipIn, yBot);
+            ctx.quadraticCurveTo(x0, yBot, x0, yBot - 3);
+        }
+        ctx.closePath();
         ctx.fill();
     };
 
     // =======================================================================
-    if (back) {
-        // ---- BACK VIEW ----------------------------------------------------
-        ctx.fillStyle = base;
-
-        // Rear curtain for styles that fall past the shoulders. Drawn first so
-        // the crown cap (drawn clipped, below) sits on top of it.
-        const curtained = ['long', 'wavy', 'shaggy', 'mullet', 'dreads', 'curly', 'bob'];
-        if (curtained.includes(hairId)) {
-            const bottom = (hairId === 'bob') ? EAR_BOTTOM + 14
-                         : (hairId === 'curly') ? EAR_BOTTOM + 22
-                         : EAR_BOTTOM + 30;
-            outsideHead(() => {
-                curtain(bottom, (hairId === 'curly') ? 6 : 3);
-                if (hairId === 'curly') {
-                    ctx.fillStyle = dark;
-                    for (let cy = EAR_BOTTOM + 3; cy < bottom - 3; cy += 7) {
-                        ctx.beginPath(); ctx.arc(XL - 4, cy, 3.2, 0, Math.PI * 2); ctx.fill();
-                        ctx.beginPath(); ctx.arc(XR + 4, cy, 3.2, 0, Math.PI * 2); ctx.fill();
-                    }
-                } else {
-                    ctx.fillStyle = dark;
-                    ctx.fillRect(XL - 2, bottom - 4, 28, 3);
-                }
-            });
-        }
-
-        // Tails and buns stick up above the head and out at the sides.
-        // (mohawk is not here: it has its own dedicated pass below.)
-        if (hairId === 'ponytail' || hairId === 'braid' || hairId === 'twintails' ||
-            hairId === 'pigtails' || hairId === 'bun' || hairId === 'topknot' ||
-            hairId === 'spiky' || hairId === 'afro' ||
-            hairId === 'curly') {
-            outsideHead(() => {
-                if (hairId === 'ponytail' || hairId === 'braid') {
-                    const seg = (hairId === 'braid') ? 4 : 6;
-                    for (let y = EAR_BOTTOM - 4; y < 46; y += seg) {
-                        ctx.fillStyle = (y % (seg * 2) === 0) ? mid : base;
-                        if (hairId === 'braid') {
-                            ctx.beginPath(); ctx.ellipse(32, y + 2, 4.2, 3, 0, 0, Math.PI * 2); ctx.fill();
-                        } else {
-                            ctx.fillRect(28, y, 8, seg);
-                        }
-                    }
-                    ctx.fillStyle = dark;
-                    ctx.fillRect(28, 46, (hairId === 'braid') ? 6 : 8, 3);
-                } else if (hairId === 'twintails' || hairId === 'pigtails') {
-                    for (const sx of [3, 49]) {
-                        ctx.fillStyle = base;
-                        ctx.beginPath(); ctx.ellipse(sx + 5, EAR_BOTTOM + 6, 6.5, 15, 0, 0, Math.PI * 2); ctx.fill();
-                        ctx.fillStyle = dark;
-                        ctx.beginPath(); ctx.ellipse(sx + 5, EAR_BOTTOM + 19, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-                    }
-                } else if (hairId === 'bun' || hairId === 'topknot') {
-                    ctx.fillStyle = base;
-                    ctx.beginPath(); ctx.arc(32, 3, 7, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = dark;
-                    ctx.beginPath(); ctx.arc(32, 3, 3.5, 0, Math.PI * 2); ctx.fill();
-                } else if (hairId === 'spiky') {
-                    ctx.beginPath();
-                    ctx.moveTo(18, 4); ctx.lineTo(24, -6); ctx.lineTo(29, 4);
-                    ctx.lineTo(32, -9); ctx.lineTo(35, 4); ctx.lineTo(40, -6);
-                    ctx.lineTo(46, 4); ctx.closePath(); ctx.fill();
-                } else {
-                    // afro / curly puff
-                    ctx.beginPath(); ctx.ellipse(32, 2, 21, 11, 0, 0, Math.PI * 2); ctx.fill();
-                }
-            }, SKIRT, TOP - 4);
-        }
-
-        // Crown cap, safely clipped to the skull.
-        withHeadClip(() => {
-            if (hairId === 'mohawk') return; // drawn by the dedicated pass below
-            ctx.fillStyle = base;
-            cap((hairId === 'buzzed') ? 17 : 22);
-            if (hairId !== 'buzzed') sheen();
-        });    }
+    // MOHAWK — dedicated pass, kept identical to the approved box design.
     // =======================================================================
-    else {
-        // ---- FRONT VIEW ---------------------------------------------------
-
-        // 1. Rear curtain behind the head (shows around the silhouette).
-        if (['long', 'wavy', 'curly'].includes(hairId)) {
-            ctx.fillStyle = base;
-            outsideHead(() => {
-                curtain((hairId === 'curly') ? SKIRT + 18 : SKIRT + 30,
-                        (hairId === 'curly') ? 7 : 4);
-            });
-        }
-
-        // 2. Overhangs that rise above / hang outside the head.
-        ctx.fillStyle = base;
-        outsideHead(() => {
-            const spike = () => {
-                ctx.beginPath();
-                ctx.moveTo(16, 6); ctx.lineTo(20, -4); ctx.lineTo(25, 6);
-                ctx.lineTo(32, -7); ctx.lineTo(39, 6); ctx.lineTo(44, -4);
-                ctx.lineTo(48, 6); ctx.closePath(); ctx.fill();
-                ctx.fillStyle = lite;
-                ctx.fillRect(24, -2, 4, 5); ctx.fillRect(37, -2, 4, 5);
-                ctx.fillStyle = base;
-            };
-            if (hairId === 'spiky') {
-                spike();
-            } else if (hairId === 'pompadour') {
-                ctx.beginPath();
-                ctx.moveTo(17, 6); ctx.quadraticCurveTo(19, -8, 32, -8);
-                ctx.quadraticCurveTo(45, -8, 47, 6); ctx.closePath(); ctx.fill();
-                ctx.fillStyle = lite; ctx.fillRect(23, -6, 18, 4); ctx.fillStyle = base;
-            } else if (hairId === 'bun' || hairId === 'topknot') {
-                ctx.beginPath(); ctx.arc(32, 1, 7, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = lite;
-                ctx.beginPath(); ctx.arc(30, -0.5, 2.4, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = base;
-            } else if (hairId === 'afro' || hairId === 'curly') {
-                ctx.beginPath(); ctx.ellipse(32, 2, (hairId === 'afro') ? 21 : 22, 11, 0, 0, Math.PI * 2); ctx.fill();
-            } else if (hairId === 'twintails' || hairId === 'pigtails') {
-                for (const sx of [3, 49]) {
-                    ctx.fillStyle = base;
-                    ctx.beginPath(); ctx.ellipse(sx + 5, EAR_BOTTOM + 6, 6.5, 15, 0, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = mid;
-                    ctx.beginPath(); ctx.ellipse(sx + 5, EAR_BOTTOM + 19, 5.5, 3, 0, 0, Math.PI * 2); ctx.fill();
-                }
-                ctx.fillStyle = base;
-            } else if (hairId === 'braid') {
-                for (let by = EAR_BOTTOM + 1; by < EAR_BOTTOM + 20; by += 4) {
-                    ctx.fillStyle = (by % 8 === 0) ? lite : base;
-                    ctx.beginPath(); ctx.ellipse(51, by, 3.4, 2.6, 0, 0, Math.PI * 2); ctx.fill();
-                }
-                ctx.fillStyle = base;
-            } else if (hairId === 'dreads') {
-                // Dreads hang in the gutter beside the head, so they start at
-                // the ear line and run down the jaw.
-                for (const dx of [10, 51]) {
-                    for (let dy = EAR_BOTTOM - 3; dy < EAR_BOTTOM + 18; dy += 5.5) {
-                        ctx.fillStyle = ((Math.round(dy) % 11) < 5.5) ? dark : base;
-                        ctx.fillRect(dx, dy, 3.4, 4.5);
-                        ctx.fillStyle = '#d4af37';
-                        ctx.fillRect(dx, dy + 3.4, 3.4, 1.2);
-                    }
-                }
-                ctx.fillStyle = base;
-            } else if (hairId === 'mullet' || hairId === 'shaggy') {
-                const w = (hairId === 'mullet') ? 8 : 6;
-                ctx.fillStyle = base;
-                panel(XL - w - 1, EAR_BOTTOM - 2, w, 26, 2);
-                panel(XR + 1, EAR_BOTTOM - 2, w, 26, 2);
-                ctx.fillStyle = mid;
-                ctx.fillRect(XL - w - 1, EAR_BOTTOM + 21, w, 3);
-                ctx.fillRect(XR + 1, EAR_BOTTOM + 21, w, 3);
-                ctx.fillStyle = base;
-            }
-        }, EAR_BOTTOM, TOP - 2);
-
-        // 3. The crown cap and everything that hugs the head: clipped, so it
-        //    lands on the skull and nowhere else.
-        ctx.fillStyle = base;
-        withHeadClip(() => {
-            ctx.fillStyle = base;
-            if (hairId === 'mohawk') return; // drawn by the dedicated pass below
-
-            if (hairId === 'buzzed') {
-                ctx.globalAlpha = 0.42; cap(17, 1); ctx.globalAlpha = 1;
-
-            } else if (hairId === 'pixie') {
-                cap(16);
-                panel(XL + 1, TOP + 5, 6, 9, 1);
-                panel(XR - 7, TOP + 5, 6, 9, 1);
-                sheen();
-
-            } else if (hairId === 'undercut') {
-                cap(14, 1);
-                ctx.globalAlpha = 0.35; ctx.fillRect(XL + 2, 17, 30, 6); ctx.globalAlpha = 1;
-                sheen();
-
-            } else if (hairId === 'slicked') {
-                cap(16);
-                ctx.fillStyle = dark; ctx.fillRect(31, TOP - 1, 2, 9);
-                sheen(TOP + 2, 22, 42, 2);
-                ctx.fillStyle = base;
-
-            } else if (hairId === 'sidepart') {
-                cap(17);
-                ctx.fillStyle = dark; ctx.fillRect(26, TOP - 1, 2, 10);
-                ctx.fillStyle = mid; ctx.fillRect(28, TOP - 1, 18, 5);
-                sheen(TOP + 3, 30, 44, 2);
-                ctx.fillStyle = base;
-
-            } else if (hairId === 'bangs') {
-                cap(FACE);
-                ctx.fillStyle = mid; ctx.fillRect(XL + 3, FACE - 3, 26, 3);
-                ctx.fillStyle = base;
-                panel(XL + 2, FACE, 4.5, 14);
-                panel(XR - 6.5, FACE, 4.5, 14);
-                sheen();
-
-            } else if (hairId === 'emo') {
-                ctx.beginPath();
-                ctx.moveTo(XL + 1.5, FACE + 1); ctx.lineTo(XL + 1.5, TOP + 4);
-                ctx.quadraticCurveTo(XL + 1.5, TOP - 1, XL + 7, TOP - 1);
-                ctx.lineTo(XR - 7, TOP - 1);
-                ctx.quadraticCurveTo(XR - 1.5, TOP - 1, XR - 1.5, TOP + 4);
-                ctx.lineTo(XR - 1.5, FACE + 1);
-                ctx.lineTo(33, FACE + 4);
-                ctx.closePath(); ctx.fill();
-                panel(XL + 1.5, FACE, 4.5, 16);
-                sheen(TOP + 3, 26, 44, 2);
-
-            } else if (hairId === 'bob') {
-                // Same rule as long/wavy: panels hug the sprite edge so they
-                // clear the x 20..43.5 eye band.
-                ctx.beginPath();
-                ctx.moveTo(XL + 1.5, 30);
-                ctx.lineTo(XL + 1.5, TOP + 4);
-                ctx.quadraticCurveTo(XL + 1.5, TOP - 1, XL + 7, TOP - 1);
-                ctx.lineTo(XR - 7, TOP - 1);
-                ctx.quadraticCurveTo(XR - 1.5, TOP - 1, XR - 1.5, TOP + 4);
-                ctx.lineTo(XR - 1.5, 30);
-                ctx.lineTo(NOSE_R, 30);
-                ctx.lineTo(NOSE_R, FACE);
-                ctx.lineTo(NOSE_L, FACE);
-                ctx.lineTo(NOSE_L, 30);
-                ctx.closePath(); ctx.fill();
-                ctx.fillStyle = mid;
-                ctx.fillRect(XL + 1.5, 28, 4.5, 3);
-                ctx.fillRect(NOSE_R, 28, 4.5, 3);
-                ctx.fillStyle = base;
-                sheen();
-
-            } else if (hairId === 'long' || hairId === 'wavy') {
-                // Crown bob plus side panels that drape down BESIDE the face.
-                // The eyes span x 20..43.5 on every species, so the panels are
-                // kept entirely outboard of that band (left ends at x 20, right
-                // starts at x 43.5) and never cross the cheek.
-                const pinch = (hairId === 'wavy') ? 3 : 1.5;
-                ctx.beginPath();
-                ctx.moveTo(XL + pinch, 36);
-                ctx.lineTo(XL + pinch, TOP + 4);
-                ctx.quadraticCurveTo(XL + pinch, TOP - 1, XL + 7, TOP - 1);
-                ctx.lineTo(XR - 7, TOP - 1);
-                ctx.quadraticCurveTo(XR - pinch, TOP - 1, XR - pinch, TOP + 4);
-                ctx.lineTo(XR - pinch, 36);
-                // inner edges sit exactly at the drawn face box's outer bounds
-                ctx.lineTo(NOSE_R, 36);
-                ctx.lineTo(NOSE_R, FACE);
-                ctx.lineTo(NOSE_L, FACE);
-                ctx.lineTo(NOSE_L, 36);
-                ctx.closePath(); ctx.fill();
-                ctx.fillStyle = mid;
-                ctx.fillRect(XL + pinch, 33, (hairId === 'wavy') ? 4 : 5.5, 3);
-                ctx.fillRect(NOSE_R, 33, (hairId === 'wavy') ? 4 : 5.5, 3);
-                ctx.fillStyle = base;
-                sheen();
-
-            } else if (hairId === 'curly' || hairId === 'afro') {
-                // Crown puff, clipped so it cannot reach the ears.
-                ctx.beginPath(); ctx.ellipse(32, 8, 22, 16, 0, 0, Math.PI * 2); ctx.fill();
-                if (hairId === 'curly') {
-                    ctx.fillStyle = dark;
-                    for (const [cx, cy] of [[16, 16], [48, 16], [20, 4], [44, 4]]) {
-                        ctx.beginPath(); ctx.arc(cx, cy, 3.2, 0, Math.PI * 2); ctx.fill();
-                    }
-                    ctx.fillStyle = lite;
-                    for (const [cx, cy] of [[26, 3], [38, 3]]) {
-                        ctx.beginPath(); ctx.arc(cx, cy, 2.6, 0, Math.PI * 2); ctx.fill();
-                    }
-                } else {
-                    ctx.strokeStyle = lite; ctx.lineWidth = 1.4;
-                    ctx.beginPath(); ctx.arc(32, 10, 16, 3.4, 6.1); ctx.stroke();
-                }
-                ctx.fillStyle = base;
-
-            } else if (hairId === 'ponytail' || hairId === 'braid' ||
-                       hairId === 'twintails' || hairId === 'pigtails') {
-                cap(18);
-                ctx.fillStyle = dark; ctx.fillRect(34, TOP + 1, 7, 6);
-                ctx.fillStyle = base;
-                sheen();
-
-            } else if (hairId === 'bun' || hairId === 'topknot') {
-                cap(18);
-                sheen();
-
-            } else if (hairId === 'dreads') {
-                cap(14);
-                ctx.fillStyle = dark; ctx.fillRect(XL + 2, SKIRT, 30, 3);
-                ctx.fillStyle = base;
-                sheen();
-
-            } else if (hairId === 'mullet') {
-                cap(13, 1);
-                sheen(TOP + 2, 22, 42, 2);
-
-            } else if (hairId === 'messy' || hairId === 'shaggy') {
-                ctx.beginPath();
-                ctx.moveTo(XL + 1, FACE + 3); ctx.lineTo(19, 4); ctx.lineTo(26, 13);
-                ctx.lineTo(32, 3); ctx.lineTo(38, 13); ctx.lineTo(45, 4);
-                ctx.lineTo(XR - 1, FACE + 3);
-                ctx.closePath(); ctx.fill();
-                ctx.fillStyle = mid;
-                ctx.fillRect(20, FACE, 5, 3); ctx.fillRect(39, FACE, 5, 3);
-                ctx.fillStyle = base;
-                sheen(11, 24, 40, 2);
-
-            } else if (hairId === 'spiky') {
-                ctx.beginPath();
-                ctx.moveTo(XL + 1, FACE + 2); ctx.lineTo(19, 4); ctx.lineTo(24, 14);
-                ctx.lineTo(32, 2); ctx.lineTo(40, 14); ctx.lineTo(45, 4);
-                ctx.lineTo(XR - 1, FACE + 2);
-                ctx.closePath(); ctx.fill();
-                sheen(12, 22, 42, 3);
-
-            } else if (hairId === 'pompadour') {
-                cap(16, 1);
-                sheen(TOP + 2, 22, 42, 3);
-
-            } else {
-                // Unknown id: safe, well-fitting default.
-                cap(FACE);
-                sheen();
-            }
-        });
-    }
-
-    // =======================================================================
-    // MOHAWK — dedicated pass, drawn after everything else.
-    //
-    // A solid box centred on the head (x 26..39). It rises clearly above the
-    // crown (like a proper crest) and hugs the skull down the middle — short
-    // in front (stops above the nose line) and long down the back. Generic
-    // band passes treat the head as off-limits, so the crest is drawn here
-    // where the only constraints that matter are:
-    //   * x 26..39 never touches an ear (ears live at x≈14 / x≈50),
-    //   * the front body stops at y 17, above NOSE_TOP (18) and the eye box.
     if (hairId === 'mohawk') {
         const CX = 26, CW = 13, HDR_TOP = 0;
         ctx.save();
-        // Crest above the crown (unclipped).
         ctx.fillStyle = base;
         ctx.fillRect(CX, HDR_TOP, CW, TOP - HDR_TOP + 1);
         ctx.fillStyle = lite;
         ctx.fillRect(CX + 3, HDR_TOP + 1, 7, TOP - HDR_TOP - 1);
-        // Body on the skull, clipped so it follows the head silhouette.
         headPath(); ctx.clip();
         ctx.fillStyle = base;
         ctx.fillRect(CX, TOP, CW, back ? 26 : 9);
         ctx.fillStyle = lite;
         ctx.fillRect(CX + 3, TOP + 1, 7, back ? 21 : 7);
         ctx.restore();
+        return;
+    }
+
+    // =======================================================================
+    if (back) {
+        // ---- BACK VIEW ----------------------------------------------------
+        withHairEnvelope(() => {
+            if (hairId === 'buzzed') {
+                ctx.save();
+                ctx.globalAlpha = 0.46;
+                crownArch(26, 28, 26, 1, dark);
+                ctx.globalAlpha = 0.22;
+                ctx.fillStyle = dark;
+                ctx.fillRect(XL + 2, 25, XR - XL - 4, 6);
+                ctx.restore();
+
+            } else if (hairId === 'pixie') {
+                crownArch(26, 30, 26, 0.5, base);
+                // Tapered V-points at the nape
+                ctx.fillStyle = dark;
+                ctx.beginPath();
+                ctx.moveTo(22, 26); ctx.lineTo(28, 32); ctx.lineTo(32, 28);
+                ctx.lineTo(36, 32); ctx.lineTo(42, 26); ctx.closePath(); ctx.fill();
+                sheen(TOP + 3, 21, 43, 2.5);
+
+            } else if (hairId === 'undercut') {
+                // Faded lower back + thick textured mop overhanging above y=21
+                ctx.save();
+                ctx.globalAlpha = 0.34;
+                ctx.fillStyle = dark;
+                ctx.fillRect(XL + 1, 18, XR - XL - 2, 13);
+                ctx.restore();
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(19, 19);
+                ctx.lineTo(19, 8);
+                ctx.quadraticCurveTo(32, 3, 45, 8);
+                ctx.lineTo(45, 19);
+                // Choppy overhang teeth
+                ctx.lineTo(41, 21); ctx.lineTo(37, 19); ctx.lineTo(32, 22);
+                ctx.lineTo(27, 19); ctx.lineTo(23, 21);
+                ctx.closePath(); ctx.fill();
+                sheen(TOP + 2, 22, 42, 2.5);
+
+            } else if (hairId === 'slicked' || hairId === 'sidepart') {
+                crownArch(28, 30, 28, 0.5, base);
+                ctx.fillStyle = dark;
+                ctx.fillRect(XL + 2, 27, XR - XL - 4, 3);
+                if (hairId === 'slicked') {
+                    // Combed-back vertical ridges
+                    for (let sx = 20; sx <= 44; sx += 4) {
+                        ctx.fillStyle = (sx % 8 === 0) ? dark : mid;
+                        ctx.fillRect(sx, TOP + 2, 1.5, 17);
+                    }
+                } else {
+                    ctx.fillStyle = dark;
+                    ctx.fillRect(24, TOP + 1, 1.5, 14);
+                }
+                sheen(TOP + 3, 21, 43, 2);
+
+            } else if (hairId === 'pompadour') {
+                // High sculpted dome rising to y=2 + ducktail combed seams
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(XL + 1, 28);
+                ctx.lineTo(XL + 1, 11);
+                ctx.quadraticCurveTo(20, 1, 32, 1);
+                ctx.quadraticCurveTo(44, 1, XR - 1, 11);
+                ctx.lineTo(XR - 1, 28);
+                ctx.quadraticCurveTo(32, 32, XL + 1, 28);
+                ctx.closePath(); ctx.fill();
+                // Ducktail center seam
+                ctx.fillStyle = dark;
+                ctx.fillRect(31.2, 16, 1.6, 14);
+                sheen(5, 22, 42, 3);
+
+            } else if (hairId === 'messy') {
+                // Tousled crown + jagged feathered nape
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 27);
+                ctx.lineTo(15, 11);
+                ctx.lineTo(22, 5); ctx.lineTo(27, 8); ctx.lineTo(32, 4);
+                ctx.lineTo(37, 8); ctx.lineTo(42, 5);
+                ctx.lineTo(49, 11); ctx.lineTo(49, 27);
+                ctx.lineTo(45, 32); ctx.lineTo(40, 28); ctx.lineTo(36, 33);
+                ctx.lineTo(32, 29); ctx.lineTo(28, 33); ctx.lineTo(24, 28);
+                ctx.lineTo(19, 32);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = dark;
+                ctx.fillRect(21, 25, 4, 4); ctx.fillRect(39, 25, 4, 4);
+                sheen(TOP + 3, 21, 43, 2.5);
+
+            } else if (hairId === 'spiky') {
+                // Bold anime spikes above crown + spiky flared nape
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 26);
+                ctx.lineTo(15, 12);
+                ctx.lineTo(22.5, 1.5); ctx.lineTo(25.5, 8);
+                ctx.lineTo(28.5, -0.5); ctx.lineTo(30.8, 6.5);
+                ctx.lineTo(32, -2); ctx.lineTo(33.2, 6.5);
+                ctx.lineTo(35.5, -0.5); ctx.lineTo(38.5, 8);
+                ctx.lineTo(41.5, 1.5);
+                ctx.lineTo(49, 12); ctx.lineTo(49, 26);
+                // Lower outward spikes below ear line
+                ctx.lineTo(53, 30); ctx.lineTo(46, 30); ctx.lineTo(43, 34);
+                ctx.lineTo(37, 29); ctx.lineTo(32, 35); ctx.lineTo(27, 29);
+                ctx.lineTo(21, 34); ctx.lineTo(18, 30); ctx.lineTo(11, 30);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.beginPath();
+                ctx.moveTo(27, 6.5); ctx.lineTo(28.5, 1); ctx.lineTo(30, 6.5);
+                ctx.moveTo(31, 6); ctx.lineTo(32, 0); ctx.lineTo(33, 6);
+                ctx.moveTo(34, 6.5); ctx.lineTo(35.5, 1); ctx.lineTo(37, 6.5);
+                ctx.fill();
+                sheen(13, 21, 43, 2.5);
+
+            } else if (hairId === 'emo') {
+                crownArch(29, 33, 36, 0.5, base);
+                // Diagonal layered streaks down to longer right nape
+                ctx.fillStyle = dark;
+                ctx.beginPath();
+                ctx.moveTo(18, 22); ctx.lineTo(46, 31); ctx.lineTo(46, 35); ctx.lineTo(18, 25);
+                ctx.closePath(); ctx.fill();
+                sheen(TOP + 3, 20, 43, 2.5);
+
+            } else if (hairId === 'bangs') {
+                // Straight hime back with a crisp horizontal hem
+                ctx.fillStyle = base;
+                ctx.fillRect(XL + 0.5, TOP, XR - XL - 1, 30);
+                ctx.fillStyle = dark;
+                ctx.fillRect(XL + 0.5, 35, XR - XL - 1, 3);
+                ctx.fillStyle = mid;
+                ctx.fillRect(22, TOP + 6, 1.5, 22);
+                ctx.fillRect(40, TOP + 6, 1.5, 22);
+                sheen(TOP + 3, 20, 44, 2.5);
+
+            } else if (hairId === 'bob') {
+                // Smooth rounded chin-length bob curving in at the bottom
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(13, 28);
+                ctx.lineTo(14.5, 12);
+                ctx.quadraticCurveTo(14.5, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49.5, TOP, 49.5, 12);
+                ctx.lineTo(51, 28);
+                ctx.quadraticCurveTo(51, 36, 42, 36);
+                ctx.lineTo(22, 36);
+                ctx.quadraticCurveTo(13, 36, 13, 28);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = dark;
+                ctx.fillRect(16, 33, 32, 3);
+                sheen(TOP + 3, 20, 44, 3);
+
+            } else if (hairId === 'long') {
+                // Full unbroken cascading curtain down to y=52
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(14.5, 12);
+                ctx.quadraticCurveTo(14.5, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49.5, TOP, 49.5, 12);
+                ctx.lineTo(49.5, EAR_BOTTOM);
+                ctx.quadraticCurveTo(53, 34, 52, 50);
+                // Scalloped 4-lock bottom hem
+                ctx.quadraticCurveTo(47, 54, 42, 50);
+                ctx.quadraticCurveTo(37, 54, 32, 50);
+                ctx.quadraticCurveTo(27, 54, 22, 50);
+                ctx.quadraticCurveTo(17, 54, 12, 50);
+                ctx.quadraticCurveTo(11, 34, 14.5, EAR_BOTTOM);
+                ctx.closePath(); ctx.fill();
+                // Strand shading + double sheen
+                ctx.fillStyle = dark;
+                for (const sx of [21, 31, 41]) ctx.fillRect(sx, 20, 1.5, 29);
+                ctx.fillRect(13, 48, 38, 3);
+                sheen(TOP + 3, 20, 44, 3);
+                sheen(28, 17, 47, 2.5);
+
+            } else if (hairId === 'wavy') {
+                // S-wave cascading back curtain
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(14.5, 12);
+                ctx.quadraticCurveTo(14.5, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49.5, TOP, 49.5, 12);
+                ctx.lineTo(49.5, EAR_BOTTOM);
+                ctx.bezierCurveTo(55, 32, 48, 40, 53, 47);
+                ctx.quadraticCurveTo(43, 52, 32, 48);
+                ctx.quadraticCurveTo(21, 52, 11, 47);
+                ctx.bezierCurveTo(16, 40, 9, 32, 14.5, EAR_BOTTOM);
+                ctx.closePath(); ctx.fill();
+                // Wavy highlight & shadow bands
+                for (const [wy, c] of [[22, lite], [30, dark], [38, lite], [44, dark]]) {
+                    ctx.fillStyle = c;
+                    ctx.beginPath();
+                    ctx.moveTo(15, wy);
+                    ctx.bezierCurveTo(23, wy - 3, 27, wy + 3, 32, wy);
+                    ctx.bezierCurveTo(37, wy - 3, 41, wy + 3, 49, wy);
+                    ctx.lineTo(49, wy + 2.2);
+                    ctx.bezierCurveTo(41, wy + 5, 37, wy - 1, 32, wy + 2.2);
+                    ctx.bezierCurveTo(27, wy + 5, 23, wy - 1, 15, wy + 2.2);
+                    ctx.closePath(); ctx.fill();
+                }
+                sheen(TOP + 3, 20, 44, 2.5);
+
+            } else if (hairId === 'curly') {
+                // Overlapping 3D ringlet cluster filling the back
+                crownArch(32, 38, 32, 0.5, base);
+                const puffs = [
+                    [23, 7, 5, base], [32, 6, 5.5, base], [41, 7, 5, base],
+                    [16, 30, 5.5, base], [24, 34, 6, base], [32, 36, 6.5, base], [40, 34, 6, base], [48, 30, 5.5, base],
+                    [19, 40, 5, dark], [27, 42, 5.5, dark], [37, 42, 5.5, dark], [45, 40, 5, dark],
+                    [22, 40, 4.5, base], [32, 43, 5, base], [42, 40, 4.5, base],
+                    [22, 14, 3.2, lite], [32, 12, 3.5, lite], [42, 14, 3.2, lite],
+                    [20, 24, 3.2, dark], [32, 25, 3.5, dark], [44, 24, 3.2, dark],
+                    [25, 31, 3, lite], [39, 31, 3, lite]
+                ];
+                for (const [cx, cy, r, c] of puffs) {
+                    ctx.fillStyle = c;
+                    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+                }
+
+            } else if (hairId === 'afro') {
+                // Big spherical halo puff with fluffy scalloped rim
+                ctx.fillStyle = base;
+                ctx.beginPath(); ctx.ellipse(32, 16, 19, 17, 0, 0, Math.PI * 2); ctx.fill();
+                for (const [cx, cy, r] of [
+                    [24, 3, 5.5], [32, 1.5, 6], [40, 3, 5.5],
+                    [15, 29, 5], [23, 32, 5.5], [32, 33, 6], [41, 32, 5.5], [49, 29, 5]
+                ]) {
+                    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+                }
+                sheen(5, 22, 42, 3);
+                ctx.strokeStyle = dark; ctx.lineWidth = 1.3;
+                for (const [cx, cy] of [[24, 16], [39, 16], [28, 25], [37, 25]]) {
+                    ctx.beginPath(); ctx.arc(cx, cy, 3, 0.4, 4.2); ctx.stroke();
+                }
+
+            } else if (hairId === 'shaggy') {
+                // Two-tier feathered shag cascading past the neck
+                crownArch(30, 34, 30, 0.5, base);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(14.5, 24);
+                ctx.lineTo(10, 32); ctx.lineTo(16, 31); ctx.lineTo(13, 39);
+                ctx.lineTo(22, 36); ctx.lineTo(25, 41); ctx.lineTo(32, 37);
+                ctx.lineTo(39, 41); ctx.lineTo(42, 36); ctx.lineTo(51, 39);
+                ctx.lineTo(48, 31); ctx.lineTo(54, 32); ctx.lineTo(49.5, 24);
+                ctx.closePath(); ctx.fill();
+                // Upper feathered layer shadow
+                ctx.fillStyle = dark;
+                ctx.beginPath();
+                ctx.moveTo(16, 22); ctx.lineTo(21, 27); ctx.lineTo(26, 23);
+                ctx.lineTo(32, 28); ctx.lineTo(38, 23); ctx.lineTo(43, 27);
+                ctx.lineTo(48, 22); ctx.lineTo(48, 24); ctx.lineTo(32, 30); ctx.lineTo(16, 24);
+                ctx.closePath(); ctx.fill();
+                sheen(TOP + 3, 21, 43, 2.5);
+
+            } else if (hairId === 'mullet') {
+                // Cropped upper crown + long flared jagged mullet mane below y=21
+                crownArch(22, 24, 22, 0.5, base);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 22);
+                ctx.lineTo(10, 34); ctx.lineTo(15, 34); ctx.lineTo(11, 45);
+                ctx.lineTo(20, 42); ctx.lineTo(24, 48); ctx.lineTo(32, 43);
+                ctx.lineTo(40, 48); ctx.lineTo(44, 42); ctx.lineTo(53, 45);
+                ctx.lineTo(49, 34); ctx.lineTo(54, 34); ctx.lineTo(49, 22);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = dark;
+                ctx.fillRect(17, 20, 30, 2.5); // step-cut line
+                for (const sx of [19, 28, 36, 44]) ctx.fillRect(sx, 30, 2, 13);
+                sheen(TOP + 2, 21, 43, 2.5);
+
+            } else if (hairId === 'dreads') {
+                // Full crown of locs + 7 connected rope dreadlocks with gold cuffs
+                crownArch(20, 22, 20, 0.5, base);
+                ctx.fillStyle = dark;
+                ctx.fillRect(XL + 1, 13, XR - XL - 2, 2.2); // tie band
+                // Solid backing block to y=36 so addSpriteOutline never puts
+                // dark speckles between the locs over the head
+                ctx.fillStyle = dark;
+                ctx.fillRect(15, 16, 34, 21);
+                const xs = [15, 20, 25, 30, 35, 40, 45];
+                xs.forEach((dx, idx) => {
+                    const len = (idx % 2 === 0) ? 28 : 25;
+                    ctx.fillStyle = base;
+                    ctx.fillRect(dx, 16, 4, len);
+                    for (let y = 16; y < 16 + len - 2; y += 5) {
+                        ctx.fillStyle = (((y + idx * 5) % 10) < 5) ? base : dark;
+                        ctx.fillRect(dx + 0.3, y, 3.4, 3.8);
+                    }
+                    ctx.fillStyle = '#d4af37';
+                    ctx.fillRect(dx + 0.3, 16 + len - 5.5, 3.4, 1.6);
+                });
+                sheen(TOP + 1.5, 21, 43, 2);
+
+            } else if (hairId === 'ponytail') {
+                // Pulled-back crown + scrunchie + flaring ponytail
+                crownArch(27, 29, 27, 0.5, base);
+                sheen(TOP + 3, 21, 43, 2.5);
+                // Scrunchie
+                ctx.fillStyle = dark;
+                ctx.beginPath(); ctx.ellipse(32, 19, 5, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+                // Flowing tail
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(28, 19);
+                ctx.quadraticCurveTo(23, 31, 26, 43);
+                ctx.quadraticCurveTo(29, 48, 32, 49);
+                ctx.quadraticCurveTo(35, 48, 38, 43);
+                ctx.quadraticCurveTo(41, 31, 36, 19);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.beginPath();
+                ctx.moveTo(30, 21); ctx.quadraticCurveTo(28, 32, 30, 42);
+                ctx.lineTo(33, 42); ctx.quadraticCurveTo(32, 32, 33, 21);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = dark;
+                ctx.fillRect(28, 43, 8, 3);
+
+            } else if (hairId === 'braid') {
+                // Pulled-back crown + woven central braid down the spine
+                crownArch(26, 28, 26, 0.5, base);
+                sheen(TOP + 3, 21, 43, 2.5);
+                ctx.fillStyle = dark;
+                ctx.fillRect(28.5, 18, 7, 27);
+                for (let by = 17, step = 0; by <= 41; by += 4, step++) {
+                    ctx.fillStyle = (step % 2 === 0) ? base : mid;
+                    ctx.beginPath(); ctx.ellipse(30.2, by + 2, 3.6, 2.8, 0.35, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = (step % 2 === 0) ? mid : lite;
+                    ctx.beginPath(); ctx.ellipse(33.8, by + 3.5, 3.6, 2.8, -0.35, 0, Math.PI * 2); ctx.fill();
+                }
+                // Band + tassel tip
+                ctx.fillStyle = '#d4af37';
+                ctx.fillRect(29, 44, 6, 1.8);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(29.5, 45.8); ctx.lineTo(28, 50); ctx.lineTo(32, 52); ctx.lineTo(36, 50); ctx.lineTo(34.5, 45.8);
+                ctx.closePath(); ctx.fill();
+
+            } else if (hairId === 'pigtails' || hairId === 'twintails') {
+                const isTwin = (hairId === 'twintails');
+                crownArch(28, 30, 28, 0.5, base);
+                // Center part line
+                ctx.fillStyle = dark;
+                ctx.fillRect(31.3, TOP + 1, 1.4, 20);
+                sheen(TOP + 3, 20, 30, 2);
+                sheen(TOP + 3, 34, 44, 2);
+                // Twin/pigtail plumes anchored broadly inside the lower head so
+                // addSpriteOutline wraps the outer edge without pinching y=27
+                const tailBot = isTwin ? 50 : 42;
+                for (const dir of [-1, 1]) {
+                    const xIn = (dir < 0) ? 21 : 43;
+                    const xEdge = (dir < 0) ? 14.5 : 49.5;
+                    ctx.fillStyle = base;
+                    ctx.beginPath();
+                    ctx.moveTo(xIn, 24);
+                    ctx.lineTo(xEdge, 24);
+                    ctx.lineTo(xEdge, EAR_BOTTOM);
+                    ctx.quadraticCurveTo(xEdge + dir * 7, 30, xEdge + dir * 6, tailBot - 3);
+                    ctx.quadraticCurveTo(xEdge + dir * 3, tailBot + 1, xEdge + dir * 1, tailBot);
+                    ctx.quadraticCurveTo(xIn, tailBot - 4, xIn, 29);
+                    ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = lite;
+                    ctx.beginPath();
+                    ctx.ellipse(xEdge + dir * 2, 34, 1.8, isTwin ? 5.5 : 3.5, dir * 0.18, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Hair tie band
+                    ctx.fillStyle = '#d4af37';
+                    ctx.fillRect((dir < 0) ? 15 : 44.5, 26.2, 4.5, 1.8);
+                }
+
+            } else if (hairId === 'bun') {
+                crownArch(27, 29, 27, 0.5, base);
+                sheen(13, 21, 43, 2.5);
+                // Wrap band + big round bun on top
+                ctx.fillStyle = dark;
+                ctx.fillRect(25, 6.5, 14, 2.5);
+                ctx.fillStyle = base;
+                ctx.beginPath(); ctx.arc(32, 2.5, 7, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = dark;
+                ctx.beginPath(); ctx.arc(32, 3, 3.2, 0.3, 4.2); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.beginPath(); ctx.arc(29.8, 0.2, 2.3, 0, Math.PI * 2); ctx.fill();
+
+            } else if (hairId === 'topknot') {
+                // Shaved fade lower back + tied samurai topknot tuft
+                ctx.save();
+                ctx.globalAlpha = 0.32;
+                ctx.fillStyle = dark;
+                ctx.fillRect(XL + 1, 18, XR - XL - 2, 11);
+                ctx.restore();
+                crownArch(19, 21, 19, 1, base);
+                // Knot stem, gold/dark band, and fanned brush top
+                ctx.fillStyle = '#d4af37';
+                ctx.fillRect(27.5, 5.5, 9, 2);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(28, 6); ctx.lineTo(24, -2); ctx.lineTo(29, 0);
+                ctx.lineTo(32, -3); ctx.lineTo(35, 0); ctx.lineTo(40, -2);
+                ctx.lineTo(36, 6); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.fillRect(30.5, -1, 3, 5);
+            }
+        }, 20, 44, EAR_BOTTOM);
+    }
+    // =======================================================================
+    else {
+        // ---- FRONT VIEW ---------------------------------------------------
+        if (hairId === 'emo') {
+            // Emo gets a custom clip that protects the nose & left eye while
+            // letting the signature diagonal fringe sweep down over the right
+            // brow/eye (createSpeciesTexture re-stamps the eyes underneath).
+            ctx.save();
+            headPath();
+            ctx.clip();
+            clipOut(NOSE_L, NOSE_TOP, NOSE_R - NOSE_L, 64 - NOSE_TOP);
+            clipOut(EYE_L, NOSE_TOP, 9.5, 11);
+            // Asymmetrical side-swept fringe from left part (x=20) to right cheek
+            ctx.fillStyle = base;
+            ctx.beginPath();
+            ctx.moveTo(14.5, 29);
+            ctx.lineTo(14.5, 12);
+            ctx.quadraticCurveTo(14.5, TOP, 21, TOP);
+            ctx.lineTo(43, TOP);
+            ctx.quadraticCurveTo(49.5, TOP, 49.5, 12);
+            ctx.lineTo(49.5, 34);
+            ctx.lineTo(45, 35);
+            ctx.lineTo(44.5, 22);
+            // Sweeping diagonal bang points across the forehead/right brow
+            ctx.lineTo(41, 21);
+            ctx.lineTo(38, 17.5);
+            ctx.lineTo(34, 19.5);
+            ctx.lineTo(29, 15.5);
+            ctx.lineTo(21, 13.5);
+            ctx.lineTo(19, 26);
+            ctx.closePath(); ctx.fill();
+            // Layered dark & highlight diagonal streaks
+            ctx.fillStyle = dark;
+            ctx.fillRect(20, TOP, 1.6, 5.5); // side part
+            ctx.beginPath();
+            ctx.moveTo(23, 10); ctx.lineTo(39, 17); ctx.lineTo(37, 18); ctx.lineTo(22, 11.5);
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle = lite;
+            ctx.beginPath();
+            ctx.moveTo(25, 9.5); ctx.lineTo(42, 15.5); ctx.lineTo(40, 17); ctx.lineTo(24, 11);
+            ctx.closePath(); ctx.fill();
+            ctx.restore();
+            return;
+        }
+
+        withHairEnvelope(() => {
+            if (hairId === 'buzzed') {
+                // Subtle translucent buzzcut with an M-shaped temple contour
+                // and a slight widow's peak in the center.
+                ctx.save();
+                ctx.globalAlpha = 0.44;
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 20);
+                ctx.lineTo(15, 12);
+                ctx.quadraticCurveTo(15, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 12);
+                ctx.lineTo(49, 20);
+                ctx.lineTo(46, 20);
+                ctx.lineTo(45, 13.2);
+                ctx.lineTo(37, 13.2);
+                ctx.lineTo(32, 15.2); // widow's peak
+                ctx.lineTo(27, 13.2);
+                ctx.lineTo(19, 13.2);
+                ctx.lineTo(18, 20);
+                ctx.closePath(); ctx.fill();
+                ctx.restore();
+
+            } else if (hairId === 'pixie') {
+                // Asymmetrical short pixie with 3 diagonal wispy bangs and
+                // tapered cheek points.
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 13);
+                ctx.quadraticCurveTo(15, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 13);
+                // 3 diagonal wispy locks across the forehead
+                ctx.lineTo(44, 16.8); ctx.lineTo(40, 14);
+                ctx.lineTo(35, 16.8); ctx.lineTo(31, 13.8);
+                ctx.lineTo(25, 16.2); ctx.lineTo(21, 13.2);
+                ctx.closePath(); ctx.fill();
+                sideLock(-1, 11, 23, 4.2, 0.5, base);
+                sideLock(1, 11, 25, 4.5, 0.5, base);
+                sheen(TOP + 2, 22, 42, 2.2);
+
+            } else if (hairId === 'undercut') {
+                // Faded temples + textured swept top tuft rising to y=5
+                ctx.save();
+                ctx.globalAlpha = 0.32;
+                sideLock(-1, 12, 22, 4, 1, dark);
+                sideLock(1, 12, 22, 4, 1, dark);
+                ctx.restore();
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(19.5, 14.5);
+                ctx.lineTo(19.5, 7);
+                ctx.quadraticCurveTo(24, 4, 33, 4.5);
+                ctx.quadraticCurveTo(41, 5, 44.5, 8);
+                ctx.lineTo(44.5, 16);
+                // Textured diagonal fringe
+                ctx.lineTo(39, 16.8); ctx.lineTo(36, 14.8);
+                ctx.lineTo(30, 16.5); ctx.lineTo(26, 14.5);
+                ctx.closePath(); ctx.fill();
+                sheen(7.5, 22, 42, 2.2);
+
+            } else if (hairId === 'slicked') {
+                // Combed straight back with a subtle widow's peak & comb lines
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 13);
+                ctx.quadraticCurveTo(15, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 13);
+                ctx.lineTo(43, 13.5);
+                ctx.quadraticCurveTo(36, 13.5, 32, 16); // widow's peak
+                ctx.quadraticCurveTo(28, 13.5, 21, 13.5);
+                ctx.closePath(); ctx.fill();
+                sideLock(-1, 11, 21, 3.8, 0.5, base);
+                sideLock(1, 11, 21, 3.8, 0.5, base);
+                // Combed-back strand grooves
+                for (const [sx, c] of [[21, dark], [24, lite], [28, dark], [32, lite], [36, dark], [40, lite], [43, dark]]) {
+                    ctx.fillStyle = c;
+                    ctx.fillRect(sx, TOP, 1.4, 5.2);
+                }
+
+            } else if (hairId === 'sidepart') {
+                // Razor part at x=23 with a sweeping wave across the forehead
+                sideLock(-1, 11, 21, 3.8, 0.5, base);
+                sideLock(1, 11, 21, 3.8, 0.5, base);
+                // Left combed-down section (x 15..23)
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 15);
+                ctx.lineTo(15, 11);
+                ctx.quadraticCurveTo(15, TOP, 23, TOP);
+                ctx.lineTo(23, 13);
+                ctx.quadraticCurveTo(19, 15.5, 15, 15);
+                ctx.closePath(); ctx.fill();
+                // Right swept wave (x 24..49)
+                ctx.beginPath();
+                ctx.moveTo(24, 12.5);
+                ctx.lineTo(24, TOP - 0.5);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 12);
+                ctx.lineTo(46, 15.5);
+                ctx.quadraticCurveTo(38, 17.2, 24, 12.5);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = dark;
+                ctx.fillRect(22.6, TOP, 1.6, 5.5); // crisp part line
+                sheen(TOP + 2, 26, 44, 2.2);
+
+            } else if (hairId === 'pompadour') {
+                // High rockabilly roll rising to y=0 + slick tapered sideburns
+                sideLock(-1, 10, 23, 3.8, 0.5, dark);
+                sideLock(1, 10, 23, 3.8, 0.5, dark);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(19.5, 14);
+                ctx.quadraticCurveTo(19.5, 0, 32, 0);
+                ctx.quadraticCurveTo(44.5, 0, 44.5, 14);
+                ctx.quadraticCurveTo(37, 16.8, 28, 15.5);
+                ctx.quadraticCurveTo(22, 14.8, 19.5, 14);
+                ctx.closePath(); ctx.fill();
+                // Glossy upper roll highlight + underside crease
+                sheen(3.5, 22, 42, 3);
+                ctx.fillStyle = dark;
+                ctx.fillRect(21, 13.5, 22, 1.4);
+
+            } else if (hairId === 'messy') {
+                // Tousled crown tufts (y 5..8) + 5 overlapping jagged forehead
+                // locks pointing DOWN (no bald holes at the crown!)
+                sideLock(-1, 11, 23, 4.5, 0, base);
+                sideLock(1, 11, 23, 4.5, 0, base);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                // Upper tousled tufts
+                ctx.moveTo(15, 14);
+                ctx.lineTo(19.5, 6); ctx.lineTo(24, 8);
+                ctx.lineTo(28, 4.5); ctx.lineTo(32, 7.5);
+                ctx.lineTo(36, 4.5); ctx.lineTo(40, 8);
+                ctx.lineTo(44.5, 6); ctx.lineTo(49, 14);
+                // Jagged forehead bangs pointing down
+                ctx.lineTo(43, 17); ctx.lineTo(39, 14);
+                ctx.lineTo(35, 17.2); ctx.lineTo(31, 14.2);
+                ctx.lineTo(27, 17); ctx.lineTo(23, 14);
+                ctx.lineTo(19, 16.8);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.beginPath();
+                ctx.moveTo(25, 9); ctx.lineTo(28, 15.5); ctx.lineTo(30, 9);
+                ctx.moveTo(34, 9); ctx.lineTo(36, 15.5); ctx.lineTo(39, 9);
+                ctx.fill();
+
+            } else if (hairId === 'spiky') {
+                // 5 bold anime spikes rising above the crown (y -2..8) + solid
+                // crown + jagged spiky bangs pointing down onto the forehead
+                sideLock(-1, 11, 24, 4.5, 0, base);
+                sideLock(1, 11, 24, 4.5, 0, base);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 14.5);
+                // Left-to-right upper spikes (within 22.5..41.5 above y=8)
+                ctx.lineTo(22.5, 1.5); ctx.lineTo(25.5, 7.5);
+                ctx.lineTo(28.5, -0.5); ctx.lineTo(30.8, 6.5);
+                ctx.lineTo(32, -2); ctx.lineTo(33.2, 6.5);
+                ctx.lineTo(35.5, -0.5); ctx.lineTo(38.5, 7.5);
+                ctx.lineTo(41.5, 1.5);
+                ctx.lineTo(49, 14.5);
+                // Pointed forehead spikes
+                ctx.lineTo(42, 17.2); ctx.lineTo(38, 14);
+                ctx.lineTo(32, 17.4); ctx.lineTo(26, 14);
+                ctx.lineTo(22, 17.2);
+                ctx.closePath(); ctx.fill();
+                // Bright spike facets
+                ctx.fillStyle = lite;
+                ctx.beginPath();
+                ctx.moveTo(27, 6.5); ctx.lineTo(28.5, 1); ctx.lineTo(30, 6.5);
+                ctx.moveTo(31, 6); ctx.lineTo(32, 0); ctx.lineTo(33, 6);
+                ctx.moveTo(34, 6.5); ctx.lineTo(35.5, 1); ctx.lineTo(37, 6.5);
+                ctx.fill();
+
+            } else if (hairId === 'bangs') {
+                // Hime-cut blunt bangs with 3 micro-part slits at the bottom
+                // edge + long straight cheek-framing sidelocks down to y=35
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 16.5);
+                ctx.lineTo(15, 11);
+                ctx.quadraticCurveTo(15, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 11);
+                ctx.lineTo(49, 16.5);
+                // Blunt fringe with 3 neat vertical slits so it reads as hair
+                ctx.lineTo(40.5, 16.5); ctx.lineTo(39.5, 13.5); ctx.lineTo(38.5, 16.5);
+                ctx.lineTo(33, 16.5);   ctx.lineTo(32, 13.2);   ctx.lineTo(31, 16.5);
+                ctx.lineTo(25.5, 16.5); ctx.lineTo(24.5, 13.5); ctx.lineTo(23.5, 16.5);
+                ctx.closePath(); ctx.fill();
+                // Crisp straight hime sidelocks (reach 21/43 below y=28.5 so
+                // they seal against the torso without an outline gap)
+                ctx.fillRect(14.5, 11, 6.5, 24);
+                ctx.fillRect(43, 11, 6.5, 24);
+                ctx.fillStyle = dark;
+                ctx.fillRect(14.5, 33, 6.5, 2);
+                ctx.fillRect(43, 33, 6.5, 2);
+                sheen(TOP + 2.5, 20, 44, 2.5);
+
+            } else if (hairId === 'bob') {
+                // Rounded chin-length bob with a parted arch fringe and
+                // inward-curling chin tips outside the eyes
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 16);
+                ctx.lineTo(15, 11);
+                ctx.quadraticCurveTo(15, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 11);
+                ctx.lineTo(49, 16);
+                ctx.quadraticCurveTo(38, 16.5, 30, 13.2); // side-parted arch
+                ctx.quadraticCurveTo(23, 16.5, 15, 16);
+                ctx.closePath(); ctx.fill();
+                // Rounded sidelocks curving in below the eye/jaw line
+                sideLock(-1, 11, 35, 5, 2, base);
+                sideLock(1, 11, 35, 5, 2, base);
+                ctx.fillStyle = dark;
+                ctx.fillRect(29.2, TOP, 1.5, 5.2);
+                ctx.fillRect(14.5, 32.5, 6.5, 2.5);
+                ctx.fillRect(43, 32.5, 6.5, 2.5);
+                sheen(TOP + 2.5, 20, 44, 2.5);
+
+            } else if (hairId === 'long') {
+                // Center-parted sweeping bangs + one-piece flowing sidelocks
+                // that widen smoothly below the ears down to y=49
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 17);
+                ctx.lineTo(15, 11);
+                ctx.quadraticCurveTo(15, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 11);
+                ctx.lineTo(49, 17);
+                ctx.quadraticCurveTo(39, 16.8, 32, 12.8); // center part arch
+                ctx.quadraticCurveTo(25, 16.8, 15, 17);
+                ctx.closePath(); ctx.fill();
+                for (const dir of [-1, 1]) {
+                    const xEdge = (dir < 0) ? 14.5 : 49.5;
+                    const xIn = (dir < 0) ? 21 : 43;
+                    const xWide = (dir < 0) ? 11.5 : 52.5;
+                    ctx.fillStyle = base;
+                    ctx.beginPath();
+                    ctx.moveTo(xEdge, 12);
+                    ctx.lineTo(xIn, 12);
+                    ctx.lineTo(xIn, 46);
+                    ctx.quadraticCurveTo((xWide + xIn) * 0.5, 50.5, xWide, 47);
+                    ctx.lineTo(xWide, EAR_BOTTOM + 2);
+                    ctx.quadraticCurveTo(xEdge, EAR_BOTTOM, xEdge, 25);
+                    ctx.closePath(); ctx.fill();
+                    // Outer dark depth strip + inner sheen + tip shadow
+                    ctx.fillStyle = dark;
+                    ctx.fillRect((dir < 0) ? xWide : xEdge - 0.5, EAR_BOTTOM + 2, 2.2, 19);
+                    ctx.fillRect(Math.min(xWide, xIn), 45.5, 9, 2.5);
+                    ctx.fillStyle = lite;
+                    ctx.fillRect((dir < 0) ? 15.8 : 46.2, 19, 2, 18);
+                }
+                ctx.fillStyle = dark;
+                ctx.fillRect(31.3, TOP, 1.4, 5);
+                sheen(TOP + 2.5, 20, 30.5, 2.2);
+                sheen(TOP + 2.5, 33.5, 44, 2.2);
+
+            } else if (hairId === 'wavy') {
+                // Side-parted wave fringe + continuous S-wave sidelocks to y=48
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 16.5);
+                ctx.lineTo(15, 11);
+                ctx.quadraticCurveTo(15, TOP, 21, TOP);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 11);
+                ctx.lineTo(49, 16.5);
+                ctx.bezierCurveTo(41, 17.5, 33, 12.5, 25, 13.5);
+                ctx.quadraticCurveTo(20, 16.5, 15, 16.5);
+                ctx.closePath(); ctx.fill();
+                for (const dir of [-1, 1]) {
+                    const xEdge = (dir < 0) ? 14.5 : 49.5;
+                    const xIn = (dir < 0) ? 21 : 43;
+                    // Solid undulating ribbon so addSpriteOutline stays outside
+                    ctx.fillStyle = base;
+                    ctx.beginPath();
+                    ctx.moveTo(xEdge, 12);
+                    ctx.lineTo(xIn, 12);
+                    ctx.lineTo(xIn, 46);
+                    ctx.quadraticCurveTo(xEdge + dir * 2, 50, xEdge + dir * 3.5, 46);
+                    ctx.bezierCurveTo(xEdge + dir * 1, 41, xEdge + dir * 4.5, 35, xEdge + dir * 2.5, 30);
+                    ctx.quadraticCurveTo(xEdge, EAR_BOTTOM, xEdge, 25);
+                    ctx.closePath(); ctx.fill();
+                    // S-wave highlight & shadow bands across the ribbon
+                    const lx = (dir < 0) ? 14.8 : 44.8;
+                    for (const [wy, c] of [[18, lite], [24, dark], [30, lite], [36, dark], [42, lite]]) {
+                        ctx.fillStyle = c;
+                        ctx.fillRect(lx, wy, 4.2, 2.4);
+                    }
+                }
+                sheen(TOP + 2.5, 24, 44, 2.2);
+
+            } else if (hairId === 'curly') {
+                // Bubbly cluster of 3D ringlet curls on the crown + cascading
+                // ringlet clusters framing the sides down to y=44
+                crownArch(16, 15, 16, 0.5, base);
+                sideLock(-1, 12, 41, 5, 1, base);
+                sideLock(1, 12, 41, 5, 1, base);
+                const curls = [
+                    [25, 8.5, 4.5, base], [30, 8, 4.8, base], [34, 8, 4.8, base], [39, 8.5, 4.5, base],
+                    [22, 13, 3.8, base], [27, 13.5, 3.8, base], [32, 13, 4, base], [37, 13.5, 3.8, base], [42, 13, 3.8, base],
+                    [17, 15, 3, base], [16.8, 20, 3, dark], [17, 25, 3.2, base],
+                    [47, 15, 3, base], [47.2, 20, 3, dark], [47, 25, 3.2, base],
+                    [14.5, 30, 4.5, base], [17, 35, 4.5, mid], [14.5, 39, 4.2, dark], [16.5, 42, 3.5, base],
+                    [49.5, 30, 4.5, base], [47, 35, 4.5, mid], [49.5, 39, 4.2, dark], [47.5, 42, 3.5, base],
+                    [26, 7, 2.3, lite], [32, 6.5, 2.6, lite], [38, 7, 2.3, lite],
+                    [23, 13.5, 2, dark], [41, 13.5, 2, dark]
+                ];
+                for (const [cx, cy, r, c] of curls) {
+                    ctx.fillStyle = c;
+                    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+                }
+
+            } else if (hairId === 'afro') {
+                // Big iconic cloud puff rising to y=-2 with fluffy scalloped
+                // perimeter and a clean rounded forehead arch at y=15
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.ellipse(32, 10, 17, 11, 0, Math.PI, 0);
+                ctx.lineTo(49, 23);
+                ctx.lineTo(44.5, 23);
+                ctx.lineTo(44.5, 15.2);
+                ctx.quadraticCurveTo(32, 14.2, 19.5, 15.2);
+                ctx.lineTo(19.5, 23);
+                ctx.lineTo(15, 23);
+                ctx.closePath(); ctx.fill();
+                for (const [cx, cy, r] of [
+                    [26, 3, 4.8], [32, 1.5, 5.5], [38, 3, 4.8],
+                    [17, 15, 3], [47, 15, 3], [17, 20, 3], [47, 20, 3]
+                ]) {
+                    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+                }
+                sheen(4.5, 23, 41, 3);
+                ctx.strokeStyle = dark; ctx.lineWidth = 1.2;
+                ctx.beginPath(); ctx.arc(26, 9, 2.5, 0.5, 4); ctx.stroke();
+                ctx.beginPath(); ctx.arc(38, 9, 2.5, 0.5, 4); ctx.stroke();
+
+            } else if (hairId === 'ponytail') {
+                // Sleek pulled-back crown with arched hairline, temple wisps,
+                // and a connected high ponytail arch rising from the crown
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(25, 9);
+                ctx.quadraticCurveTo(26, 2, 32, 2);
+                ctx.quadraticCurveTo(38, 2, 39, 9);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.beginPath(); ctx.ellipse(32, 4.2, 3.5, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#d4af37';
+                ctx.fillRect(26.5, 6.5, 11, 1.8); // gold hair tie at crown
+                crownArch(16, 13.2, 16, 0.5, base);
+                sideLock(-1, 12, 23, 3.8, 0.5, base);
+                sideLock(1, 12, 23, 3.8, 0.5, base);
+                sheen(TOP + 2.5, 21, 43, 2.2);
+
+            } else if (hairId === 'pigtails' || hairId === 'twintails') {
+                const isTwin = (hairId === 'twintails');
+                // Parted bangs (twintails get an anime center V-lock)
+                crownArch(16, 13.5, 16, 0.5, base);
+                if (isTwin) {
+                    ctx.fillStyle = base;
+                    ctx.beginPath();
+                    ctx.moveTo(29, 13); ctx.lineTo(32, 17); ctx.lineTo(35, 13);
+                    ctx.closePath(); ctx.fill();
+                } else {
+                    ctx.fillStyle = dark;
+                    ctx.fillRect(31.3, TOP, 1.4, 6);
+                }
+                sheen(TOP + 2, 21, 43, 2.2);
+                // Continuous sidelock -> side-tail silhouette so addSpriteOutline
+                // wraps the outer edge without putting a black line at y=27
+                const tailBot = isTwin ? 50 : 42;
+                for (const dir of [-1, 1]) {
+                    const xIn = (dir < 0) ? 21 : 43;
+                    const xEdge = (dir < 0) ? 14.5 : 49.5;
+                    ctx.fillStyle = base;
+                    ctx.beginPath();
+                    ctx.moveTo(xIn, 12);
+                    ctx.lineTo(xEdge, 12);
+                    ctx.lineTo(xEdge, EAR_BOTTOM);
+                    ctx.quadraticCurveTo(xEdge + dir * 7, 30, xEdge + dir * 6, tailBot - 3);
+                    ctx.quadraticCurveTo(xEdge + dir * 3, tailBot + 1, xEdge + dir * 1, tailBot);
+                    ctx.quadraticCurveTo(xIn, tailBot - 4, xIn, 28);
+                    ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = lite;
+                    ctx.beginPath();
+                    ctx.ellipse(xEdge + dir * 2, 34, 1.8, isTwin ? 5.5 : 3.5, dir * 0.18, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Ribbon/tie band
+                    ctx.fillStyle = '#d4af37';
+                    ctx.fillRect((dir < 0) ? 14.8 : 44.8, 25.8, 4.4, 1.8);
+                }
+
+            } else if (hairId === 'bun') {
+                // Big round shaded bun on top + wrap band + parted crown & wisps
+                ctx.fillStyle = base;
+                ctx.beginPath(); ctx.arc(32, 2.5, 7, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.beginPath(); ctx.arc(29.8, 0.2, 2.4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = dark;
+                ctx.fillRect(25.5, 6.8, 13, 2); // hairband at bun base
+                crownArch(16, 13.5, 16, 0.5, base);
+                sideLock(-1, 12, 25, 3.8, 0.8, base);
+                sideLock(1, 12, 25, 3.8, 0.8, base);
+                sheen(TOP + 2.5, 21, 43, 2);
+
+            } else if (hairId === 'topknot') {
+                // Shaved fade temples + gold tie + fanned samurai topknot brush
+                ctx.save();
+                ctx.globalAlpha = 0.32;
+                sideLock(-1, 12, 21, 3.8, 0.5, dark);
+                sideLock(1, 12, 21, 3.8, 0.5, dark);
+                ctx.restore();
+                crownArch(14.2, 13.2, 14.2, 2, base);
+                ctx.fillStyle = '#d4af37';
+                ctx.fillRect(27.5, 5.5, 9, 2);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(28, 6); ctx.lineTo(24, -2); ctx.lineTo(29, 0);
+                ctx.lineTo(32, -3); ctx.lineTo(35, 0); ctx.lineTo(40, -2);
+                ctx.lineTo(36, 6); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = lite;
+                ctx.fillRect(30.5, -1, 3, 5);
+                sheen(TOP + 2, 23, 41, 2);
+
+            } else if (hairId === 'braid') {
+                // Swept side-parted crown + continuous woven plait over right shoulder
+                crownArch(15.5, 14, 16.5, 0.5, base);
+                sideLock(-1, 12, 23, 4, 0.8, base);
+                ctx.fillStyle = dark;
+                ctx.fillRect(24, TOP, 1.5, 5.5);
+                sheen(TOP + 2.5, 26, 44, 2.2);
+                // Continuous right-side backing strip from temple through tassel
+                ctx.fillStyle = dark;
+                ctx.beginPath();
+                ctx.moveTo(43, 12);
+                ctx.lineTo(49.5, 12);
+                ctx.lineTo(49.5, EAR_BOTTOM);
+                ctx.lineTo(52, 29);
+                ctx.lineTo(51.5, 50);
+                ctx.lineTo(48.5, 52);
+                ctx.lineTo(43, 50);
+                ctx.lineTo(43, 12);
+                ctx.closePath(); ctx.fill();
+                // Woven braid links on top of the backing strip
+                for (let by = 22, step = 0; by <= 42; by += 3.6, step++) {
+                    ctx.fillStyle = (step % 2 === 0) ? base : mid;
+                    ctx.beginPath(); ctx.ellipse(46.2, by + 1.5, 2.8, 2.3, 0.3, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = (step % 2 === 0) ? mid : lite;
+                    ctx.beginPath(); ctx.ellipse(49.2, by + 3, 2.8, 2.3, -0.3, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.fillStyle = '#d4af37';
+                ctx.fillRect(45, 45.2, 6, 1.6);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(45.5, 46.8); ctx.lineTo(44.8, 50.5); ctx.lineTo(48.2, 52); ctx.lineTo(51.5, 50.5); ctx.lineTo(50.5, 46.8);
+                ctx.closePath(); ctx.fill();
+
+            } else if (hairId === 'dreads') {
+                // Rooted loc crown + dark headband + solid-core rope dreadlocks
+                // with gold cuffs hanging down both sides (never under the eyes!)
+                crownArch(15, 14, 15, 0.5, base);
+                ctx.fillStyle = dark;
+                ctx.fillRect(XL + 1, 12.2, XR - XL - 2, 2); // headband
+                sheen(TOP + 1.5, 21, 43, 2);
+                for (const dir of [-1, 1]) {
+                    const xIn = (dir < 0) ? 14.5 : 43;
+                    const xOuter = (dir < 0) ? 11.2 : 48.8;
+                    const segX = (dir < 0) ? 15 : 45;
+                    // Solid core connecting inner & outer locs + sealing torso
+                    ctx.fillStyle = dark;
+                    ctx.fillRect(xIn, 14, 6.5, 30);
+                    ctx.fillRect(xOuter, EAR_BOTTOM, 4, 19);
+                    for (let y = 14, step = 0; y < 42; y += 4.5, step++) {
+                        ctx.fillStyle = (step % 2 === 0) ? base : mid;
+                        ctx.fillRect(segX, y, 4, 3.4);
+                    }
+                    for (let y = EAR_BOTTOM, step = 0; y < 44; y += 4.5, step++) {
+                        ctx.fillStyle = (step % 2 === 0) ? mid : base;
+                        ctx.fillRect(xOuter + 0.4, y, 3.2, 3.4);
+                    }
+                    ctx.fillStyle = '#d4af37';
+                    ctx.fillRect(segX, 39.5, 4, 1.5);
+                    ctx.fillRect(xOuter + 0.4, 41.5, 3.2, 1.5);
+                }
+
+            } else if (hairId === 'shaggy') {
+                // Feathered layered shag with choppy bangs + flared kick-out
+                // layers down both sides
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 16);
+                ctx.lineTo(15, 11);
+                ctx.quadraticCurveTo(15, TOP, 21, TOP);
+                ctx.lineTo(27, 6); ctx.lineTo(32, 7.5); ctx.lineTo(37, 6);
+                ctx.lineTo(43, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 11);
+                ctx.lineTo(49, 16);
+                // Choppy feathered fringe
+                ctx.lineTo(42, 17); ctx.lineTo(39, 14.5);
+                ctx.lineTo(34, 17); ctx.lineTo(31, 14.2);
+                ctx.lineTo(26, 17); ctx.lineTo(22, 14.5);
+                ctx.closePath(); ctx.fill();
+                sideLock(-1, 11, 34, 5, 0, base);
+                sideLock(1, 11, 34, 5, 0, base);
+                // Flared feathered kick-outs below the ears
+                for (const dir of [-1, 1]) {
+                    const rx = (dir < 0) ? 20.5 : 43.5;
+                    ctx.fillStyle = base;
+                    ctx.beginPath();
+                    ctx.moveTo(rx, 26);
+                    ctx.lineTo(rx + dir * 9.5, 31); ctx.lineTo(rx + dir * 5.5, 31.5);
+                    ctx.lineTo(rx + dir * 10.5, 37); ctx.lineTo(rx + dir * 4.5, 37.5);
+                    ctx.lineTo(rx + dir * 7.5, 42); ctx.lineTo(rx, 39);
+                    ctx.closePath(); ctx.fill();
+                }
+                sheen(TOP + 2.5, 21, 43, 2.5);
+
+            } else if (hairId === 'mullet') {
+                // Short spiky business-in-the-front crop + wild flared party-in-
+                // the-back mane visible below the ears on both sides
+                for (const dir of [-1, 1]) {
+                    const rx = (dir < 0) ? 20.5 : 43.5;
+                    ctx.fillStyle = dark;
+                    ctx.beginPath();
+                    ctx.moveTo(rx, 26);
+                    ctx.lineTo(rx + dir * 10, 33); ctx.lineTo(rx + dir * 6, 34);
+                    ctx.lineTo(rx + dir * 11, 42); ctx.lineTo(rx + dir * 6, 42);
+                    ctx.lineTo(rx + dir * 9, 48); ctx.lineTo(rx, 44);
+                    ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = base;
+                    ctx.beginPath();
+                    ctx.moveTo(rx, 26);
+                    ctx.lineTo(rx + dir * 8, 32); ctx.lineTo(rx + dir * 5, 33);
+                    ctx.lineTo(rx + dir * 9, 40); ctx.lineTo(rx + dir * 3, 43);
+                    ctx.closePath(); ctx.fill();
+                }
+                // Short cropped front with mini spikes
+                sideLock(-1, 11, 20, 3.8, 0.5, base);
+                sideLock(1, 11, 20, 3.8, 0.5, base);
+                ctx.fillStyle = base;
+                ctx.beginPath();
+                ctx.moveTo(15, 14);
+                ctx.lineTo(15, 11);
+                ctx.quadraticCurveTo(15, TOP, 22, TOP);
+                ctx.lineTo(27, 5.5); ctx.lineTo(31, 7.5);
+                ctx.lineTo(34, 5);   ctx.lineTo(38, 7.5);
+                ctx.lineTo(42, TOP);
+                ctx.quadraticCurveTo(49, TOP, 49, 11);
+                ctx.lineTo(49, 14);
+                ctx.lineTo(41, 15.2); ctx.lineTo(36, 13.5);
+                ctx.lineTo(31, 15.2); ctx.lineTo(25, 13.5);
+                ctx.closePath(); ctx.fill();
+                sheen(TOP + 2, 22, 42, 2);
+
+            } else {
+                crownArch(16, 14.5, 16, 0.5, base);
+                sheen();
+            }
+        }, 20, 44, EAR_BOTTOM);
     }
 }
 
