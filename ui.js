@@ -15329,6 +15329,32 @@ function updateHostPanel() {
         };
         adminDiv.appendChild(btnPortal);
 
+        const btnPond = document.createElement('button');
+        btnPond.className = 'btn-lg';
+        btnPond.style.background = 'var(--p-face-3)';
+        btnPond.style.marginTop = '5px';
+        btnPond.innerText = "Teleport to Random Pond";
+        btnPond.onclick = () => {
+            if (window.Ocean) {
+                try {
+                    const lay = window.Ocean.layout();
+                    if (lay && lay.ponds && lay.ponds.length > 0) {
+                        const p = lay.ponds[Math.floor(Math.random() * lay.ponds.length)];
+                        if (player) {
+                            player.position.set(p.x, getTerrainHeight ? getTerrainHeight(p.x, p.z) : 0, p.z);
+                            camera.position.set(p.x, player.position.y + 3, p.z + 6);
+                            showToast(`Teleported to ${p.type === 'dark' ? 'Dark' : 'Light'} Pond`);
+                        }
+                    } else {
+                        showToast("No ocean ponds found");
+                    }
+                } catch(e) { showToast("Error teleporting to pond"); }
+            } else {
+                showToast("No ocean ponds found");
+            }
+        };
+        adminDiv.appendChild(btnPond);
+
         container.appendChild(adminDiv);
     }
 
