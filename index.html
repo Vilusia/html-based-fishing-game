@@ -306,6 +306,46 @@
             animation: toast-in 0.12s steps(3);
         }
 
+        /* Achievements get a gold, slightly larger card so they stand out from
+           ordinary gameplay toasts (fish caught, money, etc.). */
+        .toast.toast-achievement {
+            color: #ffd700;
+            font-weight: 700;
+            font-size: 19px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Small dot pinned to the Progress button when new content is waiting. */
+        #btn-progress {
+            position: relative;
+        }
+
+        #btn-progress .progress-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            min-width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ffd700;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+            animation: badge-pulse 1.4s ease-in-out infinite;
+        }
+
+        @keyframes badge-pulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.3);
+                opacity: 0.7;
+            }
+        }
+
         @keyframes toast-in {
             from {
                 transform: translateY(6px);
@@ -3410,13 +3450,13 @@
 
     <script src="icons.js?v=6"></script>
     <script src="worldgen.js?v=8"></script>
-    <script src="core.js?v=12.71"></script>
-    <script src="fish.js?v=12.40"></script>
+    <script src="core.js?v=12.72"></script>
+    <script src="fish.js?v=12.41"></script>
     <script src="character3d.js?v=5"></script>
     <script src="networking.js?v=12.31"></script>
-    <script src="audio.js?v=12.32"></script>
-    <script src="progression.js?v=4"></script>
-    <script src="ui.js?v=12.72"></script>
+    <script src="audio.js?v=12.33"></script>
+    <script src="progression.js?v=5"></script>
+    <script src="ui.js?v=12.73"></script>
     <script src="props.js?v=12.34"></script>
     <script src="level-loader.js?v=4"></script>
 

@@ -494,6 +494,11 @@ function ensureProgression() {
     }
     if (!Array.isArray(saveState.quests.completed)) saveState.quests.completed = [];
     if (typeof saveState.quests.index !== 'number') saveState.quests.index = 0;
+    if (!saveState.quests.completedAt || typeof saveState.quests.completedAt !== 'object') {
+        saveState.quests.completedAt = {};
+    }
+    if (typeof saveState.progressViewedAt !== 'number') saveState.progressViewedAt = 0;
+    if (typeof saveState.fisherHinted !== 'boolean') saveState.fisherHinted = false;
 }
 
 // Returns the list of achievement ids that just became complete.
@@ -515,9 +520,13 @@ function checkAchievements(silent) {
     if (unlocked.length && !silent) {
         unlocked.forEach(id => {
             const def = ACHIEVEMENTS.find(a => a.id === id);
-            if (def) showToast('Achievement: ' + def.name, 'success');
+            if (def) showToast('★ ' + def.name, 'achievement');
         });
-        if (typeof Sound !== 'undefined' && Sound.sell) { try { Sound.sell(); } catch (e) { } }
+        // Prefer the dedicated fanfare; fall back to the sell chime.
+        if (typeof Sound !== 'undefined') {
+            if (typeof Sound.achievement === 'function') { try { Sound.achievement(); } catch (e) { } }
+            else if (Sound.sell) { try { Sound.sell(); } catch (e) { } }
+        }
     }
     return unlocked;
 }
@@ -541,6 +550,8 @@ function checkQuests(silent) {
     saveState.quests.completed.push(q.id);
     saveState.quests.index += 1;
     saveState.money = (Number(saveState.money) || 0) + q.reward;
+    if (!saveState.quests.completedAt || typeof saveState.quests.completedAt !== 'object') saveState.quests.completedAt = {};
+    saveState.quests.completedAt[q.id] = Date.now();
     if (!silent) {
         showToast('Quest complete: ' + q.name + ' (+$' + q.reward + ')', 'success');
         if (typeof Sound !== 'undefined' && Sound.sell) { try { Sound.sell(); } catch (e) { } }
@@ -826,9 +837,50 @@ function renderProgressionPanel() {
 // Cheap refresh used by the gameplay hooks: only repaints when the panel is
 // actually open, so we never pay for hidden DOM work during a cast.
 function refreshProgressionUI() {
+    updateProgressBadge();
     const overlay = document.getElementById('progress-overlay');
     if (!overlay || overlay.style.display !== 'flex') return;
     renderProgressionPanel();
+}
+
+// True when there is something new for the player to look at: an unclaimed
+// bounty, or an achievement/quest unlocked since they last opened the panel.
+function progressionHasNews() {
+    try {
+        ensureProgression();
+        ensureBounties();
+        const claimable = saveState.bounties.items.some(b => b.claimed && !b.claimed_paid);
+        if (claimable) return true;
+        if (Number(saveState.progressViewedAt) || 0) {
+            const since = Number(saveState.progressViewedAt) || 0;
+            const ach = Object.keys(saveState.achievements || {}).some(id => {
+                const rec = saveState.achievements[id];
+                return rec && rec.unlocked && (rec.at || 0) > since;
+            });
+            if (ach) return true;
+            const q = QUESTS.slice(0, saveState.quests.index).some(def => def.id && (saveState.quests.completedAt && (saveState.quests.completedAt[def.id] || 0) > since));
+            if (q) return true;
+        }
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
+
+// Paints (or clears) the little gold dot on the Progress button.
+function updateProgressBadge() {
+    const btn = document.getElementById('btn-progress');
+    if (!btn) return;
+    const want = progressionHasNews();
+    const has = !!btn.querySelector('.progress-badge');
+    if (want && !has) {
+        const dot = document.createElement('span');
+        dot.className = 'progress-badge';
+        btn.appendChild(dot);
+    } else if (!want && has) {
+        const dot = btn.querySelector('.progress-badge');
+        if (dot) dot.remove();
+    }
 }
 
 window.setProgressTab = function (tab) {
@@ -848,6 +900,10 @@ window.toggleProgress = function () {
         checkAchievements(false);
         checkQuests(false);
         renderProgressionPanel();
+        // Opening the panel counts as "seeing" everything in it.
+        saveState.progressViewedAt = Date.now();
+        if (typeof saveGame === 'function') saveGame();
+        updateProgressBadge();
     }
 };
 

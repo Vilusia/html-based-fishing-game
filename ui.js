@@ -3130,6 +3130,10 @@ function startGame() {
     if (!isMobile) document.getElementById('chat-ui').style.display = 'flex';
     Music.init();
     initChatPool();
+    // One-time nudge toward the quest-giver, plus the Progress badge in case
+    // there is already something waiting (unclaimed bounty, etc.).
+    if (typeof maybeShowFisherHint === 'function') maybeShowFisherHint();
+    if (typeof updateProgressBadge === 'function') updateProgressBadge();
 } // Called after lobby
 
 function sendChatMessage(text) {
@@ -9439,7 +9443,7 @@ function releaseCast() {
         );
         if (distPond < window.pondCollider.radius) {
             fishingZone = 'pond';
-        } else if (distDarkPond < 14) {
+        } else if (distDarkPond < 20) {
             fishingZone = 'pond'; // Dark pond uses same fish pool
         } else {
             // Check River
@@ -9993,7 +9997,19 @@ function updateMinigameUI(dt) {
         stopFishing(false, "It got away!");
     }
 }
-function showToast(t) { const d = document.createElement('div'); d.className = 'toast'; d.innerText = t; document.getElementById('notification-area').appendChild(d); setTimeout(() => d.remove(), 3000); }
+function showToast(t, kind) {
+    const d = document.createElement('div');
+    d.className = 'toast' + (kind ? ' toast-' + kind : '');
+    d.innerText = t;
+    const area = document.getElementById('notification-area');
+    if (!area) return;
+    area.appendChild(d);
+    // Achievement cards linger a beat longer and hold at most 3 at once so a
+    // lucky multi-unlock doesn't bury the screen.
+    const life = kind === 'achievement' ? 4200 : 3000;
+    setTimeout(() => d.remove(), life);
+    while (area.children.length > 3) area.removeChild(area.firstChild);
+}
 
 // --- GHOST/HAUNTING MECHANIC ---
 // --- GHOST/HAUNTING MECHANIC ---
@@ -12233,6 +12249,35 @@ window.talkToFisher = function () {
     const tip = FISHER_TIPS[fisherTipIndex % FISHER_TIPS.length];
     fisherTipIndex++;
     showToast(tip);
+    // Once the player actually talks to him, they've found the quest chain.
+    if (saveState.fisherHinted !== true) {
+        saveState.fisherHinted = true;
+        if (typeof saveGame === 'function') saveGame();
+    }
+    // First chat also opens the quest list so the chain is discoverable.
+    if (saveState.quests && saveState.quests.completed.length === 0 &&
+        typeof window.setProgressTab === 'function' && typeof window.toggleProgress === 'function') {
+        const overlay = document.getElementById('progress-overlay');
+        if (overlay && overlay.style.display !== 'flex') {
+            window.setProgressTab('quests');
+            window.toggleProgress();
+        }
+    }
+}
+
+// One-time nudge toward the Old Fisher so new players find the quest chain.
+// Runs after the lobby closes; the flag lives in the save so it fires once.
+function maybeShowFisherHint() {
+    try {
+        ensureProgression();
+        if (saveState.fisherHinted === true) return;
+        if (saveState.quests && saveState.quests.completed.length > 0) return;
+        saveState.fisherHinted = true;
+        setTimeout(() => {
+            showToast('New here? Find the Old Fisher by the lake — press E near him.', 'achievement');
+        }, 2500);
+        if (typeof saveGame === 'function') saveGame();
+    } catch (e) { }
 }
 
 window.showTutorialTab = function (tabName) {

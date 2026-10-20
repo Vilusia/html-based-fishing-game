@@ -629,10 +629,12 @@ function resolveCatchZone() {
         if (fishingZoneCategory === 'lightpond' || fishingZoneCategory === 'darkpond') {
             return fishingZoneCategory;
         }
+        // Keep this radius in step with the dark-pond cast check in releaseCast()
+        // so a cast visually inside the dark pond is always labelled darkpond.
         const distToDarkPond = Math.sqrt(
             Math.pow(player.position.x - 60, 2) + Math.pow(player.position.z - 50, 2)
         );
-        return distToDarkPond < 30 ? 'darkpond' : 'lightpond';
+        return distToDarkPond < 20 ? 'darkpond' : 'lightpond';
     }
     return fishingZone;
 }

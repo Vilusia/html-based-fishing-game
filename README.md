@@ -186,6 +186,18 @@ there so a fresh save and an upgraded save look alike.
 `SAVE_VERSION` (`core.js`) is the schema version and is independent of
 `GAME_VERSION`, so a routine content update doesn't force a migration.
 
+#### Cache-busting pins (why "my game didn't update")
+
+Browsers cache `index.html` itself, so editing a `.js` file does not reach
+players until the matching `<script src="...?v=N">` token changes. Run
+
+```powershell
+.\bump-pins.ps1        # bumps only the pins for files changed vs. git HEAD
+```
+
+before pushing any script change, then hard-refresh once (`Ctrl+Shift+R`).
+Use `-All` to bump every pin, or `-Only ui.js` for a single file.
+
 - `loadSave()` reads the stored `saveVersion` and calls `migrateSave(from)`.
 - `migrateSave()` is **additive only** — it fills in or repairs fields newer code
   expects and never discards player data.

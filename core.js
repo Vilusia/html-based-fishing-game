@@ -466,7 +466,9 @@ const DEFAULT_SAVE_STATE = {
     saveVersion: 2,
     achievements: {},       // { [id]: { unlocked: true, at: ts } }
     bounties: { day: '', items: [] },
-    quests: { index: 0, completed: [] },
+    quests: { index: 0, completed: [], completedAt: {} },
+    progressViewedAt: 0,    // ts of the last time the Progress panel was opened
+    fisherHinted: false,    // shown the "talk to the Old Fisher" nudge yet?
     propsPlaced: 0,         // Lifetime prop placements (props themselves aren't saved)
 
     // Debug

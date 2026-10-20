@@ -197,6 +197,22 @@ const Sound = {
         g2.connect(sfxGain);
         o2.start(now + 0.1);
         o2.stop(now + 0.3);
+    },
+    // Rising three-note fanfare for achievement unlocks.
+    achievement: () => {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime;
+        const notes = [659.25, 830.61, 987.77]; // E5, G#5, B5
+        notes.forEach((freq, i) => {
+            const { osc, gain } = createOscGain(freq);
+            const t = now + i * 0.12;
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.01, t + 0.35);
+            gain.connect(sfxGain);
+            osc.start(t);
+            osc.stop(t + 0.35);
+        });
     }
 };
 
