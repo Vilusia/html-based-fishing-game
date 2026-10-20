@@ -284,15 +284,16 @@
                     const p = lay.ponds[i];
                     const pdx = x - p.x, pdz = z - p.z;
                     const pd = Math.sqrt(pdx * pdx + pdz * pdz);
-                    if (pd < p.radius) {
-                        return -0.03; // Flat pond bottom/surface level
+                    if (pd < p.radius * 0.95) {
+                        return -0.05; // Flat pond level
                     }
-                    if (pd < p.radius * 1.15) {
-                        const blend = (pd - p.radius) / (p.radius * 0.15);
-                        // Blend from pond level up to island height
-                        const pondH = -0.03;
-                        const baseH = (d < shelf) ? (floor + ((isl.peak * isl.squash) - floor) * ((1 - Math.cos((1 - (d/shelf)) * Math.PI)) / 2)) : floor;
-                        return pondH * (1 - blend) + baseH * blend;
+                    if (pd < p.radius * 1.5) {
+                        const blend = (pd - p.radius * 0.95) / (p.radius * 0.55);
+                        const pondH = -0.05;
+                        const t2 = Math.min(d / shelf, 1);
+                        const dome2 = (d < shelf) ? ((1 - Math.cos((1 - t2) * Math.PI)) / 2) : 0;
+                        const baseH = floor + ((isl.peak * isl.squash) - floor) * dome2;
+                        return pondH * (1 - Math.min(blend, 1)) + baseH * Math.min(blend, 1);
                     }
                 }
             }
@@ -576,17 +577,16 @@
                     opacity: 0.9,
                     roughness: 0.2
                 });
-                const pm = new THREE.Mesh(new THREE.CircleGeometry(p.radius, 32), mat);
+                const pm = new THREE.Mesh(new THREE.CircleGeometry(p.radius * 0.92, 32), mat);
                 pm.rotation.x = -Math.PI / 2;
-                // Place slightly above flattened terrain
-                // Get terrain height at pond position
-                let py = 0.05;
-                if (typeof getTerrainHeight === 'function') {
-                    py = getTerrainHeight(p.x, p.z) + 0.12;
+                // Get terrain height at pond position - should be flattened
+                let py = -0.03;
+                if (typeof islandHeight === 'function') {
+                    py = islandHeight(p.island, p.x, p.z) + 0.06;
                 } else if (typeof window.getTerrainHeight === 'function') {
-                    py = window.getTerrainHeight(p.x, p.z) + 0.12;
+                    py = window.getTerrainHeight(p.x, p.z) + 0.06;
                 }
-                pm.position.set(p.x, Math.max(0.05, py), p.z);
+                pm.position.set(p.x, py, p.z);
                 pm.receiveShadow = true;
                 group.add(pm);
                 if (!out.ponds) out.ponds = [];
