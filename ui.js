@@ -11516,45 +11516,164 @@ function renderCookingUI() {
     });
 }
 
-// Cooks every raw fish of one species. Returns how many were cooked.
+let cookingMini = {
+    active: false,
+    dir: 1,
+    pos: 0,
+    speed: 0.6,
+    zoneLeft: 30,
+    zoneWidth: 40,
+    items: [],
+    results: [],
+    currentIdx: 0,
+    onComplete: null,
+    loopId: null
+};
+
+function updateCookingMinigameUI() {
+    const ui = document.getElementById('cooking-minigame-ui');
+    const zone = document.getElementById('cooking-mini-zone');
+    const bar = document.getElementById('cooking-mini-bar');
+    const title = document.getElementById('cooking-mini-title');
+    
+    if (ui) ui.style.display = cookingMini.active ? 'flex' : 'none';
+    if (zone) {
+        zone.style.left = cookingMini.zoneLeft + '%';
+        zone.style.width = cookingMini.zoneWidth + '%';
+    }
+    if (bar) bar.style.left = cookingMini.pos + '%';
+    if (title && cookingMini.items[cookingMini.currentIdx]) {
+        title.textContent = `Cook ${cookingMini.items[cookingMini.currentIdx].name} (${cookingMini.currentIdx + 1}/${cookingMini.items.length})`;
+    }
+}
+
+function startCookingMinigame(items) {
+    if (cookingMini.active || items.length === 0) return;
+    cookingMini.active = true;
+    cookingMini.items = items.slice();
+    cookingMini.results = [];
+    cookingMini.currentIdx = 0;
+    cookingMini.pos = 0;
+    cookingMini.dir = 1;
+    
+    const lvl = getSkillLevel ? getSkillLevel('cooking') : 1;
+    // Difficulty scaling: higher level = easier, rarer fish = harder
+    const firstFish = items[0].f;
+    const rarity = firstFish.rarity || 'Common';
+    
+    let baseSpeed = 0.8;
+    if (rarity === 'Uncommon') baseSpeed = 0.9;
+    else if (rarity === 'Rare') baseSpeed = 1.1;
+    else if (rarity === 'Epic') baseSpeed = 1.4;
+    else if (rarity === 'Legendary') baseSpeed = 1.8;
+    
+    // Cooking level reduces difficulty
+    cookingMini.speed = Math.max(0.25, baseSpeed - (lvl * 0.015));
+    cookingMini.zoneWidth = Math.min(65, 20 + (lvl * 0.5));
+    cookingMini.zoneLeft = 50 - cookingMini.zoneWidth / 2;
+    
+    updateCookingMinigameUI();
+    if (document.pointerLockElement) document.exitPointerLock();
+    
+    const loop = () => {
+        if (!cookingMini.active) {
+            if (cookingMini.loopId) cancelAnimationFrame(cookingMini.loopId);
+            cookingMini.loopId = null;
+            return;
+        }
+        cookingMini.pos += cookingMini.dir * cookingMini.speed * 3;
+        if (cookingMini.pos >= 94) { cookingMini.pos = 94; cookingMini.dir = -1; }
+        if (cookingMini.pos <= 0) { cookingMini.pos = 0; cookingMini.dir = 1; }
+        updateCookingMinigameUI();
+        cookingMini.loopId = requestAnimationFrame(loop);
+    };
+    if (cookingMini.loopId) cancelAnimationFrame(cookingMini.loopId);
+    loop();
+}
+
+window.cancelCookingMinigame = function() {
+    cookingMini.active = false;
+    if (cookingMini.loopId) { cancelAnimationFrame(cookingMini.loopId); cookingMini.loopId = null; }
+    updateCookingMinigameUI();
+    renderCookingUI();
+};
+
+window.doCookingHit = function() {
+    if (!cookingMini.active) return;
+    const inZone = cookingMini.pos >= cookingMini.zoneLeft && cookingMini.pos <= cookingMini.zoneLeft + cookingMini.zoneWidth;
+    cookingMini.results.push(inZone);
+    
+    cookingMini.currentIdx++;
+    if (cookingMini.currentIdx >= cookingMini.items.length) {
+        // Done cooking all
+        cookingMini.active = false;
+        if (cookingMini.loopId) { cancelAnimationFrame(cookingMini.loopId); cookingMini.loopId = null; }
+        updateCookingMinigameUI();
+        
+        // Process results
+        const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
+        let rawXP = 0, count = 0, burnt = 0;
+        cookingMini.items.forEach((item, k) => {
+            const good = cookingMini.results[k];
+            const isBurnt = !good;
+            if (isBurnt) burnt++;
+            inv[item.idx] = makeCookedFish(item.f, isBurnt);
+            rawXP += 6 + Math.round(Number(item.f.price || item.f.value || 10) / 12);
+            count++;
+        });
+        if (count > 0) {
+            addSkillXP('cooking', rawXP);
+            Sound.sell();
+            saveGame();
+            updateUI();
+            renderCookingUI();
+            showToast(`Cooked ${count} fish (${burnt} burnt, +${rawXP} Cooking XP)`, 'success');
+        }
+    } else {
+        cookingMini.pos = 0;
+        cookingMini.dir = 1;
+        updateCookingMinigameUI();
+    }
+};
+
+document.addEventListener('keydown', (e) => {
+    if (cookingMini.active) {
+        if (e.code === 'Space' || e.key === ' ') {
+            e.preventDefault();
+            window.doCookingHit();
+        }
+        if (e.key === 'Escape') {
+            window.cancelCookingMinigame();
+        }
+    }
+});
+
+document.addEventListener('mousedown', (e) => {
+    if (cookingMini.active) {
+        window.doCookingHit();
+    }
+});
+
+// Cooks every raw fish of one species
 function cookFishByName(name) {
     const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
-    let rawXP = 0, count = 0;
+    const items = [];
     inv.forEach((f, i) => {
-        if (!isCookableFish(f) || f.name !== name) return;
-        const burnt = Math.random() < cookingBurnChance();
-        inv[i] = makeCookedFish(f, burnt);
-        rawXP += 6 + Math.round(Number(f.price || f.value || 10) / 12);
-        count++;
+        if (isCookableFish(f) && f.name === name) items.push({idx: i, f: f});
     });
-    if (count > 0) {
-        addSkillXP('cooking', rawXP);
-        Sound.sell();
-        saveGame();
-        updateUI();
-        showToast(`Cooked ${count} × ${name} (+${rawXP} Cooking XP)`, 'success');
-    }
-    return count;
+    if (items.length === 0) return 0;
+    startCookingMinigame(items);
+    return items.length;
 }
 
 window.cookAllFish = function () {
     const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
-    let rawXP = 0, count = 0, burnt = 0;
+    const items = [];
     inv.forEach((f, i) => {
-        if (!isCookableFish(f)) return;
-        const isBurnt = Math.random() < cookingBurnChance();
-        if (isBurnt) burnt++;
-        inv[i] = makeCookedFish(f, isBurnt);
-        rawXP += 6 + Math.round(Number(f.price || f.value || 10) / 12);
-        count++;
+        if (isCookableFish(f)) items.push({idx: i, f: f});
     });
-    if (count === 0) { showToast('No raw fish to cook!'); return; }
-    addSkillXP('cooking', rawXP);
-    Sound.sell();
-    saveGame();
-    updateUI();
-    renderCookingUI();
-    showToast(`Cooked ${count} fish (${burnt} burnt, +${rawXP} Cooking XP)`, 'success');
+    if (items.length === 0) { showToast('No raw fish to cook!'); return; }
+    startCookingMinigame(items);
 };
 
 

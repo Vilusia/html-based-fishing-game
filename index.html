@@ -3415,6 +3415,19 @@
                 <div id="minigame-progress-fill"></div>
             </div>
         </div>
+
+        <div id="cooking-minigame-ui" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; z-index:5000; pointer-events:auto;">
+            <div style="background:var(--p-face); border:3px solid var(--p-line); padding:20px; max-width:320px; width:90%; text-align:center; box-shadow:0 4px 0 rgba(0,0,0,0.6);">
+                <div style="font-family:var(--font-display); font-size:12px; color:var(--p-sand); margin-bottom:8px;">COOKING</div>
+                <div id="cooking-mini-title" style="color:var(--p-text); margin-bottom:12px;">Cooking Fish</div>
+                <div style="background:var(--p-sunken); border:2px solid var(--p-line); height:24px; position:relative; margin-bottom:10px;">
+                    <div id="cooking-mini-zone" style="position:absolute; left:30%; width:40%; height:100%; background:rgba(100,255,100,0.4); border:1px solid rgba(150,255,150,0.8);"></div>
+                    <div id="cooking-mini-bar" style="position:absolute; left:0%; width:6px; height:100%; background:#fff; box-shadow:0 0 4px #fff;"></div>
+                </div>
+                <div id="cooking-mini-hint" style="font-size:14px; color:var(--p-text-dim); margin-bottom:12px;">Press SPACE or CLICK when in the green zone!</div>
+                <button class="btn-sm" onclick="window.cancelCookingMinigame && window.cancelCookingMinigame()">CANCEL</button>
+            </div>
+        </div>
         <div id="mobile-controls">
             <div id="mobile-toggles">
                 <div id="mic-toggle-mobile" class="toggle-btn">🔇</div>
@@ -3480,7 +3493,7 @@
     <script src="networking.js?v=12.31"></script>
     <script src="audio.js?v=12.33"></script>
     <script src="progression.js?v=5"></script>
-    <script src="ui.js?v=12.92"></script>
+    <script src="ui.js?v=12.93"></script>
     <script src="props.js?v=12.34"></script>
     <script src="level-loader.js?v=4"></script>
 
