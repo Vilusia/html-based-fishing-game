@@ -2039,6 +2039,26 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
     if (typeof isInVoid !== 'undefined' && isInVoid) return 0;
     if (typeof isInLavaWorld !== 'undefined' && isInLavaWorld) return 0;
 
+    // Flatten terrain around ocean island ponds so they sit nicely in the land
+    if (window.Ocean) {
+        try {
+            const lay = window.Ocean.layout();
+            if (lay && lay.ponds) {
+                for (let i = 0; i < lay.ponds.length; i++) {
+                    const p = lay.ponds[i];
+                    const pdx = x - p.x, pdz = z - p.z;
+                    const pd = Math.sqrt(pdx * pdx + pdz * pdz);
+                    if (pd < p.radius + 6) {
+                        if (pd < p.radius * 1.3) {
+                            const base = window.Ocean.heightAt ? window.Ocean.heightAt(x, z) : 0;
+                            if (base > -1) return Math.min(base, -0.05);
+                        }
+                    }
+                }
+            }
+        } catch (e) { /* ignore */ }
+    }
+
     // --- CUSTOM LEVEL MODE ---
     // A level built in editor.html fully replaces the procedural island, so the
     // whole playing surface comes straight from the level's height grid. Past
@@ -9785,10 +9805,24 @@ function releaseCast() {
             Math.pow(targetPos.x - 60, 2) +
             Math.pow(targetPos.z - 50, 2)
         );
+        // Check ocean island ponds
+        let inOceanPond = false;
+        if (window.Ocean) {
+            try {
+                const lay = window.Ocean.layout();
+                if (lay && lay.ponds) {
+                    for (let i = 0; i < lay.ponds.length; i++) {
+                        const p = lay.ponds[i];
+                        const dp = Math.sqrt(Math.pow(targetPos.x - p.x, 2) + Math.pow(targetPos.z - p.z, 2));
+                        if (dp < p.radius) { inOceanPond = true; break; }
+                    }
+                }
+            } catch(e){}
+        }
         if (distPond < window.pondCollider.radius) {
             fishingZone = 'pond';
-        } else if (distDarkPond < 20) {
-            fishingZone = 'pond'; // Dark pond uses same fish pool
+        } else if (distDarkPond < 20 || inOceanPond) {
+            fishingZone = 'pond';
         } else {
             // Check River
             let inRiver = false;
@@ -10932,6 +10966,20 @@ function animate() {
                     Math.pow(markerPos.z - 50, 2)
                 );
                 if (distDarkPond < 14) validCast = true;
+
+                // Check ocean island ponds
+                if (window.Ocean) {
+                    try {
+                        const lay = window.Ocean.layout();
+                        if (lay && lay.ponds) {
+                            for (let i = 0; i < lay.ponds.length; i++) {
+                                const p = lay.ponds[i];
+                                const dp = Math.sqrt(Math.pow(markerPos.x - p.x, 2) + Math.pow(markerPos.z - p.z, 2));
+                                if (dp < p.radius) { validCast = true; break; }
+                            }
+                        }
+                    } catch(e){}
+                }
 
                 // Check river
                 if (window.riverColliders) {

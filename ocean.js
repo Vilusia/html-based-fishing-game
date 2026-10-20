@@ -175,8 +175,30 @@
             tryPlace(radius, false);
         }
 
+        // Place ponds on some islands (light and dark) so players can fish them
+        const ponds = [];
+        const pondRand = mulberry32(xmur3(SEED + ":ponds")());
+        // Try to place 1-2 light ponds and 1-2 dark ponds on suitable islands
+        const pondCandidates = islands.filter(i => i.radius >= 18 && i.radius <= 70).sort((a,b) => b.radius - a.radius);
+        let lightPlaced = 0, darkPlaced = 0;
+        for (let i = 0; i < pondCandidates.length && (lightPlaced < 2 || darkPlaced < 2); i++) {
+            const isl = pondCandidates[i];
+            // Pick position near center-ish but not dead center
+            const pa = pondRand() * Math.PI * 2;
+            const pd = pondRand() * isl.radius * 0.35;
+            const px = isl.x + Math.cos(pa) * pd;
+            const pz = isl.z + Math.sin(pa) * pd;
+            const type = (darkPlaced < lightPlaced || pondRand() < 0.5) && darkPlaced < 2 ? 'dark' : 'light';
+            if (type === 'light' && lightPlaced >= 2) continue;
+            if (type === 'dark' && darkPlaced >= 2) continue;
+            const pr = type === 'dark' ? 8 + pondRand() * 4 : 6 + pondRand() * 3;
+            ponds.push({ x: px, z: pz, radius: pr, type: type, island: isl });
+            if (type === 'light') lightPlaced++; else darkPlaced++;
+        }
+
         _layout = {
             islands: islands,
+            ponds: ponds,
             ring: ring,
             // Quick lookup grid so heightAt only tests nearby islands. Bucket is
             // roughly the largest island footprint (shelf + widest ellipse axis).
@@ -391,10 +413,23 @@
         const rand = mulberry32(isl.seed);
         const sea = (typeof OCEAN_LEVEL === "number") ? OCEAN_LEVEL : -3;
 
+        // Check if this island has a pond nearby
+        let hasPondNearby = false;
+        if (window.Ocean) {
+            try {
+                const lay = window.Ocean.layout();
+                if (lay && lay.ponds) {
+                    for (let pi = 0; pi < lay.ponds.length; pi++) {
+                        if (Math.hypot(lay.ponds[pi].x - isl.x, lay.ponds[pi].z - isl.z) < isl.radius + 5) { hasPondNearby = true; break; }
+                    }
+                }
+            } catch(e){}
+        }
+
         // Trees - more on bigger islands, sparser on tiny ones
         const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6D4C41, roughness: 1.0 });
         const leafTex = WG.createLeafTexture();
-        const treeCount = Math.round(isl.radius * 0.45);
+        const treeCount = hasPondNearby ? Math.round(isl.radius * 0.2) : Math.round(isl.radius * 0.45);
         for (let i = 0; i < treeCount; i++) {
             const a = rand() * Math.PI * 2;
             const d = rand() * isl.radius * (0.6 + rand() * 0.3);
@@ -402,6 +437,20 @@
             const z = isl.z + Math.sin(a) * d;
             const h = heightAt(x, z);
             if (h < sea + 0.5) continue;
+            // Avoid pond area
+            if (hasPondNearby && window.Ocean) {
+                try {
+                    const lay = window.Ocean.layout();
+                    if (lay && lay.ponds) {
+                        let inPond = false;
+                        for (let pi = 0; pi < lay.ponds.length; pi++) {
+                            const pp = lay.ponds[pi];
+                            if (Math.hypot(x - pp.x, z - pp.z) < pp.radius + 3) { inPond = true; break; }
+                        }
+                        if (inPond) continue;
+                    }
+                } catch(e){}
+            }
 
             const leafMat = new THREE.MeshStandardMaterial({
                 map: leafTex, color: 0x88CC88, roughness: 0.8, flatShading: true
@@ -418,7 +467,7 @@
         }
 
         // Rocks. Block movement like trees do on ocean islands.
-        const rockCount = Math.round(isl.radius * 0.28);
+        const rockCount = hasPondNearby ? Math.round(isl.radius * 0.12) : Math.round(isl.radius * 0.28);
         for (let i = 0; i < rockCount; i++) {
             const a = rand() * Math.PI * 2;
             const d = rand() * isl.radius * 0.95;
@@ -426,6 +475,19 @@
             const z = isl.z + Math.sin(a) * d;
             const h = heightAt(x, z);
             if (h < sea + 0.35) continue;
+            if (hasPondNearby && window.Ocean) {
+                try {
+                    const lay = window.Ocean.layout();
+                    if (lay && lay.ponds) {
+                        let inPond = false;
+                        for (let pi = 0; pi < lay.ponds.length; pi++) {
+                            const pp = lay.ponds[pi];
+                            if (Math.hypot(x - pp.x, z - pp.z) < pp.radius + 3) { inPond = true; break; }
+                        }
+                        if (inPond) continue;
+                    }
+                } catch(e){}
+            }
             const rScale = 0.4 + rand() * 2.6;
             const r = WG.createRockMesh(rScale);
             r.position.set(x, h + 0.15, z);
@@ -471,11 +533,34 @@
         const group = new THREE.Group();
         group.name = "oceanIslands";
 
-        const out = { group: group, trees: [], colliders: [], islands: lay.islands.slice() };
+        const out = { group: group, trees: [], colliders: [], islands: lay.islands.slice(), ponds: lay.ponds ? lay.ponds.slice() : [] };
 
         for (const isl of lay.islands) {
             group.add(buildIslandMesh(isl));
             if (opts.decorate !== false) decorateIsland(scene, group, isl, out);
+        }
+
+        // Add pond meshes if any
+        if (lay.ponds) {
+            const pondTex = window.createNoiseTexture ? window.createNoiseTexture(64, 64, '#3a9a9a', '#2a7a7a', 0.04, 77) : null;
+            const darkTex = window.createNoiseTexture ? window.createNoiseTexture(64, 64, '#1a2a3a', '#0a1a2a', 0.04, 99) : null;
+            lay.ponds.forEach(p => {
+                const tex = p.type === 'dark' ? darkTex : pondTex;
+                const mat = new THREE.MeshStandardMaterial({
+                    map: tex || null,
+                    color: p.type === 'dark' ? 0x446688 : 0xaaddee,
+                    transparent: true,
+                    opacity: 0.9,
+                    roughness: 0.2
+                });
+                const pm = new THREE.Mesh(new THREE.CircleGeometry(p.radius, 32), mat);
+                pm.rotation.x = -Math.PI / 2;
+                pm.position.set(p.x, 0.12, p.z);
+                pm.receiveShadow = true;
+                group.add(pm);
+                if (!out.ponds) out.ponds = [];
+                out.ponds.push({ x: p.x, z: p.z, radius: p.radius, type: p.type });
+            });
         }
 
         scene.add(group);
@@ -508,12 +593,14 @@
             if (!ok) continue;
             const stretch = 0.55 + rand() * 0.9;
             islands.push({
-                x: x, z: z, radius: radius,
-                xScale: stretch,
-                zScale: 1 / Math.max(0.4, stretch),
-                rotation: rand() * Math.PI,
-                peak: 1.8 + rand() * 7.0,
-                squash: 0.55 + rand() * 0.75,
+                x: x,
+                z: z,
+                radius: radius,
+                xScale: xScale,
+                zScale: zScale,
+                rotation: rotation,
+                peak: 1.8 + Math.pow(rand(), 0.8) * 6.5,
+                squash: 0.6 + rand() * 0.5,
                 seed: Math.floor(rand() * 1e9),
                 hasProp: rand() < 0.3,
                 hasCave: rand() < 0.2
