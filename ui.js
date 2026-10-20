@@ -2048,8 +2048,8 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
                     const p = lay.ponds[i];
                     const pdx = x - p.x, pdz = z - p.z;
                     const pd = Math.sqrt(pdx * pdx + pdz * pdz);
-                    if (pd < p.radius * 2.0) {
-                        return -0.08;
+                    if (pd < p.radius * 1.5) {
+                        return -0.02;
                     }
                 }
             }

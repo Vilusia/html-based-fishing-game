@@ -556,8 +556,14 @@
                 const pm = new THREE.Mesh(new THREE.CircleGeometry(p.radius, 32), mat);
                 pm.rotation.x = -Math.PI / 2;
                 // Place slightly above flattened terrain
-                const py = typeof getTerrainHeight === 'function' ? Math.max(0.08, getTerrainHeight(p.x, p.z) + 0.15) : 0.12;
-                pm.position.set(p.x, py, p.z);
+                // Get terrain height at pond position
+                let py = 0.05;
+                if (typeof getTerrainHeight === 'function') {
+                    py = getTerrainHeight(p.x, p.z) + 0.12;
+                } else if (typeof window.getTerrainHeight === 'function') {
+                    py = window.getTerrainHeight(p.x, p.z) + 0.12;
+                }
+                pm.position.set(p.x, Math.max(0.05, py), p.z);
                 pm.receiveShadow = true;
                 group.add(pm);
                 if (!out.ponds) out.ponds = [];
