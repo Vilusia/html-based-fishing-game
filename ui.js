@@ -87,7 +87,7 @@ function waterSurfaceAt(x, z) {
     }
 
     // Open ocean (and the shallows around generated islands): anywhere the sea
-    // bed sits below the ocean surface is water. No radius gate — the home
+    // bed sits below the ocean surface is water. No radius gate â€” the home
     // island's beach slope drops below sea level well before its edge.
     const bed = getTerrainHeight(x, z);
     if (bed < OCEAN_LEVEL - 0.001) return OCEAN_LEVEL;
@@ -376,7 +376,7 @@ function updateMerchantUI(container) {
                 ${boatBtn}
             </div>
 
-            <button class="close-x-btn" onclick="document.getElementById('merchant-ui').style.display='none'">×</button>
+            <button class="close-x-btn" onclick="document.getElementById('merchant-ui').style.display='none'">Ã—</button>
         </div>
     `;
 }
@@ -859,14 +859,14 @@ function toggleMic() {
 function updateMicUI() {
     const el = document.getElementById('mic-status');
     const mobEl = document.getElementById('mic-toggle-mobile');
-    const txt = isMicMuted ? '🔇' : '🎤';
+    const txt = isMicMuted ? 'ðŸ”‡' : 'ðŸŽ¤';
     const col = isMicMuted ? 'var(--p-bad)' : 'var(--p-good)';
     if (localStream) {
         if (el) { el.innerText = txt; el.style.color = col; }
         if (mobEl) { mobEl.innerText = txt; mobEl.style.color = col; }
     } else {
-        if (el) { el.innerText = '🚫'; el.style.color = 'var(--p-text-mute)'; }
-        if (mobEl) { mobEl.innerText = '🚫'; mobEl.style.color = 'var(--p-text-mute)'; }
+        if (el) { el.innerText = 'ðŸš«'; el.style.color = 'var(--p-text-mute)'; }
+        if (mobEl) { mobEl.innerText = 'ðŸš«'; mobEl.style.color = 'var(--p-text-mute)'; }
     }
 }
 
@@ -1154,7 +1154,7 @@ function hostGame() {
         // Handle "zombie" connections if a player reconnects without the old connection closing properly.
         // If this player is already in the list, it means their old connection died ungracefully.
         if (clientConns[conn.peer]) {
-            console.log(`♻️ Replacing stale connection for ${conn.peer}`);
+            console.log(`â™»ï¸ Replacing stale connection for ${conn.peer}`);
             try {
                 clientConns[conn.peer].close();
             } catch (e) { console.warn("Could not close old conn", e); }
@@ -1194,7 +1194,7 @@ function hostGame() {
         conn.deviceID = incomingDeviceID;
         clientConns[conn.peer] = conn;
 
-        // Hand over the level for this room — including an explicit "none", so a
+        // Hand over the level for this room â€” including an explicit "none", so a
         // player who arrives with their own level drops it and everybody sees
         // the same world. The client reloads with ?custom=1 to build it.
         const sendLevel = () => {
@@ -1322,7 +1322,7 @@ function joinGame() {
             // If fatal error, try to destroy and recreate after delay
             if (err.type === 'peer-unavailable' || err.type === 'network') {
                 // Only worth reconnecting when the signaling link is actually
-                // down — otherwise PeerJS throws out of this callback.
+                // down â€” otherwise PeerJS throws out of this callback.
                 setTimeout(() => {
                     try {
                         if (peer && !peer.destroyed && peer.disconnected) peer.reconnect();
@@ -1740,7 +1740,7 @@ async function refreshServerBrowser() {
         return;
     }
     if (!container.dataset.ready) {
-        container.innerHTML = '<div style="padding:10px;">Loading servers…</div>';
+        container.innerHTML = '<div style="padding:10px;">Loading serversâ€¦</div>';
     }
 
     let servers;
@@ -1825,7 +1825,7 @@ function buildServerRow(s) {
     if (s.host) bits.push('by ' + String(s.host).slice(0, 16));
     if (s.room || s.peerId) bits.push('code ' + String(s.room || s.peerId).slice(0, 24));
     if (parseInt(s.age, 10) >= 60) bits.push('up ' + Math.floor(s.age / 60) + 'm');
-    meta.textContent = bits.join(' · ');
+    meta.textContent = bits.join(' Â· ');
 
     info.appendChild(title);
     info.appendChild(meta);
@@ -2279,7 +2279,7 @@ function spawnCustomLevelFlowers(level) {
     const floristryXP = (saveState.skills && saveState.skills.floristry) ? saveState.skills.floristry.xp : 0;
     const floristryLevel = getLevelFromXP(floristryXP);
 
-    // Aim for the island's flower density: about one flower per ~560 world units².
+    // Aim for the island's flower density: about one flower per ~560 world unitsÂ².
     const cell = level.size / level.grid;
     const landCells = (typeof LV.countLand === "function") ? LV.countLand(level) : level.grid * level.grid * 0.5;
     const target = Math.max(4, Math.min(80, Math.round((landCells * cell * cell) / 560)));
@@ -2651,7 +2651,7 @@ function handleDataFromClient(clientId, data) {
             if (!data.payload || !data.payload.pos) return;
             if (isNaN(data.payload.pos.x) || isNaN(data.payload.pos.y) || isNaN(data.payload.pos.z)) return;
 
-            // Boundary Check — the world now includes the open ocean up to
+            // Boundary Check â€” the world now includes the open ocean up to
             // WORLD_RADIUS (plus the custom-level apron), so accept those too.
             const oceanLimit = (typeof WORLD_RADIUS === 'number' ? WORLD_RADIUS : 1000) + 60;
             const isIsland = Math.abs(data.payload.pos.x) < oceanLimit && Math.abs(data.payload.pos.z) < oceanLimit;
@@ -4155,7 +4155,7 @@ function setupThreeJS() {
 
     // Stars System (visible at night).
     // The dome is a shell centred on the *camera* (see the sky update in the
-    // day/night tick), so it surrounds the player everywhere in the world —
+    // day/night tick), so it surrounds the player everywhere in the world â€”
     // including out in the open ocean. STAR_RADIUS sits inside the camera's far
     // plane so the stars never clip.
     const starCount = 500;
@@ -4394,7 +4394,7 @@ function setupThreeJS() {
     // --- RIVER (From waterfall toward east) ---
     // River defined as a series of connected segments.
     // NOTE: Use overlapping discs along the spline instead of wide planes.
-    // This removes the visible rectangular “patch” artifacts seen in the video.
+    // This removes the visible rectangular â€œpatchâ€ artifacts seen in the video.
     // --- DARK POND (South-East) ---
     const darkPondTex = createNoiseTexture(64, 64, '#1a2a3a', '#0a1a2a', 0.04, 99);
     const dpRadius = 14;
@@ -4679,12 +4679,12 @@ function createNPCs() {
     scene.add(npcFisher);
 
     // Add Icons
-    addIcon(npcLavaKeeper, '🌋');
+    addIcon(npcLavaKeeper, 'ðŸŒ‹');
     addIcon(npcMerchant, '$');
-    addIcon(npcStylist, '👕');
-    addIcon(npcBait, '🪱');
-    addIcon(npcTutorial, '❓');
-    addIcon(npcFisher, '🎣');
+    addIcon(npcStylist, 'ðŸ‘•');
+    addIcon(npcBait, 'ðŸª±');
+    addIcon(npcTutorial, 'â“');
+    addIcon(npcFisher, 'ðŸŽ£');
 
     // --- LAVA WORLD NPCs (Fixed Height) ---
     // Moved Y from -2.5 to 0 so they stand ON the floor
@@ -4710,8 +4710,8 @@ function createNPCs() {
 
     // Add Icons for Lava Versions
     addIcon(npcLavaMerchant, '$');
-    addIcon(npcLavaStylist, '👕');
-    addIcon(npcLavaBait, '🪱');
+    addIcon(npcLavaStylist, 'ðŸ‘•');
+    addIcon(npcLavaBait, 'ðŸª±');
 
     // --- CUSTOM LEVEL OVERRIDES ---
     // Move the NPCs to wherever the level editor placed them.
@@ -5373,153 +5373,6 @@ function shadeColor(color, percent) {
     return "#" + (0x1000000 + (Math.round((t - R) * p) + R) * 0x10000 + (Math.round((t - G) * p) + G) * 0x100 + (Math.round((t - B) * p) + B)).toString(16).slice(1);
 }
 
-// Draw ears based on selected type
-// Draw ears based on selected type
-function drawEars(ctx, earId, col, bellyCol, back) {
-    ctx.fillStyle = col;
-    const shadow = shadeColor(col, -0.2);
-    const highlight = shadeColor(col, 0.2);
-
-    if (earId === 'cat') {
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(14, -2); ctx.lineTo(26, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(50, -2); ctx.lineTo(38, 10); ctx.fill();
-
-        if (!back) {
-            ctx.fillStyle = shadow; // Inner ear
-            ctx.beginPath(); ctx.moveTo(16, 8); ctx.lineTo(16, 2); ctx.lineTo(22, 8); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(48, 8); ctx.lineTo(48, 2); ctx.lineTo(42, 8); ctx.fill();
-        }
-    }
-    else if (earId === 'bunny') {
-        ctx.fillStyle = col;
-        // Bigger rabbit ears
-        ctx.beginPath(); ctx.ellipse(22, 0, 6, 14, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.ellipse(42, 0, 6, 14, 0, 0, Math.PI * 2); ctx.fill();
-
-        if (!back) {
-            ctx.fillStyle = bellyCol; // Pink inner
-            ctx.beginPath(); ctx.ellipse(22, 0, 3.5, 9, 0, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.ellipse(42, 0, 3.5, 9, 0, 0, Math.PI * 2); ctx.fill();
-        }
-    }
-    else if (earId === 'dog') {
-        ctx.fillStyle = col;
-        // Floppy ears
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, 12); ctx.lineTo(10, 20); ctx.lineTo(18, 20); ctx.lineTo(20, 12); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, 12); ctx.lineTo(54, 20); ctx.lineTo(46, 20); ctx.lineTo(44, 12); ctx.fill();
-        // Shadow underneath
-        ctx.fillStyle = shadow;
-        ctx.fillRect(10, 20, 8, 2); ctx.fillRect(46, 20, 8, 2);
-    }
-    else if (earId === 'bear') {
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.arc(14, 8, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 8, 6, 0, Math.PI * 2); ctx.fill();
-
-        if (!back) {
-            ctx.fillStyle = shadow;
-            ctx.beginPath(); ctx.arc(14, 8, 3, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(50, 8, 3, 0, Math.PI * 2); ctx.fill();
-        }
-    }
-    else if (earId === 'fox') {
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, -5); ctx.lineTo(24, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, -5); ctx.lineTo(40, 10); ctx.fill();
-        // Black tips
-        ctx.fillStyle = '#222';
-        ctx.beginPath(); ctx.moveTo(11, 2); ctx.lineTo(10, -5); ctx.lineTo(17, 2); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(53, 2); ctx.lineTo(54, -5); ctx.lineTo(47, 2); ctx.fill();
-    }
-    else if (earId === 'pig') {
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(8, 8); ctx.lineTo(18, 16); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 12); ctx.lineTo(56, 8); ctx.lineTo(46, 16); ctx.fill();
-    }
-    else if (earId === 'dragon') {
-        ctx.fillStyle = col; // Horns usually
-        ctx.beginPath(); ctx.moveTo(18, 10); ctx.lineTo(14, -4); ctx.lineTo(24, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(46, 10); ctx.lineTo(50, -4); ctx.lineTo(40, 10); ctx.fill();
-        // Ridges
-        ctx.fillStyle = shadow;
-        ctx.fillRect(16, 2, 4, 1); ctx.fillRect(44, 2, 4, 1);
-        ctx.fillRect(15, -1, 4, 1); ctx.fillRect(45, -1, 4, 1);
-    }
-    else if (earId === 'mouse') {
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.arc(14, 6, 9, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(50, 6, 9, 0, Math.PI * 2); ctx.fill();
-        if (!back) {
-            ctx.fillStyle = bellyCol;
-            ctx.beginPath(); ctx.arc(14, 6, 5, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(50, 6, 5, 0, Math.PI * 2); ctx.fill();
-        }
-    }
-    else if (earId === 'raccoon') {
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, 0); ctx.lineTo(24, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, 0); ctx.lineTo(40, 10); ctx.fill();
-        ctx.fillStyle = '#eee';
-        ctx.fillRect(13, 10, 4, -4); ctx.fillRect(47, 10, 4, -4); // White edge
-    }
-    else if (earId === 'koala') {
-        ctx.fillStyle = '#888';
-        ctx.beginPath(); ctx.arc(12, 14, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(52, 14, 7, 0, Math.PI * 2); ctx.fill();
-        if (!back) {
-            ctx.fillStyle = '#fff'; // Fluffy hair inside
-            ctx.beginPath(); ctx.arc(12, 14, 4, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(52, 14, 4, 0, Math.PI * 2); ctx.fill();
-        }
-    }
-    else if (earId === 'cow') {
-        // Horns
-        ctx.fillStyle = '#eee';
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, 0); ctx.lineTo(18, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, 0); ctx.lineTo(46, 10); ctx.fill();
-        // Ears below horns
-        ctx.fillStyle = col;
-        ctx.ellipse(8, 16, 6, 3, 0.4, 0, Math.PI * 2); ctx.fill();
-        ctx.ellipse(56, 16, 6, 3, -0.4, 0, Math.PI * 2); ctx.fill();
-    }
-    else if (earId === 'monkey') {
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.arc(10, 20, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(54, 20, 5, 0, Math.PI * 2); ctx.fill();
-        if (!back) {
-            ctx.fillStyle = shadow;
-            ctx.beginPath(); ctx.arc(10, 20, 3, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(54, 20, 3, 0, Math.PI * 2); ctx.fill();
-        }
-    }
-    else if (earId === 'protogen') {
-        // Robotic angular ears
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, -6); ctx.lineTo(24, 10); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, -6); ctx.lineTo(40, 10); ctx.closePath(); ctx.fill();
-        // Glow Accent
-        ctx.fillStyle = '#00ffff';
-        ctx.fillRect(10, 0, 2, 8); ctx.fillRect(52, 0, 2, 8);
-    }
-    // New types maintained with simple improvements
-    else if (earId === 'wolf') {
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.moveTo(12, 10); ctx.lineTo(8, -4); ctx.lineTo(22, 10); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(52, 10); ctx.lineTo(56, -4); ctx.lineTo(42, 10); ctx.fill();
-        if (!back) {
-            ctx.fillStyle = bellyCol;
-            ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(12, 2); ctx.lineTo(20, 10); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(52, 2); ctx.lineTo(44, 10); ctx.fill();
-        }
-    }
-    else if (earId === 'deer') {
-        ctx.fillStyle = '#8B4513';
-        ctx.fillRect(16, 2, 3, 10); ctx.fillRect(45, 2, 3, 10);
-        ctx.fillRect(12, 0, 8, 3); ctx.fillRect(44, 0, 8, 3); // Branch
-        ctx.fillRect(10, -4, 3, 6); ctx.fillRect(51, -4, 3, 6); // Points
-    }
-}
-
 function createToolTexture(type) {
     const c = document.createElement('canvas');
     c.width = 64; c.height = 64;
@@ -5677,10 +5530,18 @@ function shadeColor(color, percent) {
     return "#" + (0x1000000 + (Math.round((t - R) * p) + R) * 0x10000 + (Math.round((t - G) * p) + G) * 0x100 + (Math.round((t - B) * p) + B)).toString(16).slice(1);
 }
 
-// Draw ears based on selected type
-// Draw ears based on selected type
+// Draw ears based on selected type.
+// Ears must match the *top* of the head, which drawBody() paints with a
+// top-lit gradient: shadeColor(col, 0.26) at the crown fading into `col`. A
+// flat `col` here left a visible seam along the head/ear join, so the ear
+// base uses that same crown highlight.
 function drawEars(ctx, earId, col, bellyCol, back) {
-    ctx.fillStyle = col;
+    const crownLit = shadeColor(col, 0.26); // must match drawBody's `light`
+    const earGrad = ctx.createLinearGradient(0, -8, 0, 16);
+    earGrad.addColorStop(0, crownLit);
+    earGrad.addColorStop(0.55, col);
+    earGrad.addColorStop(1, col);
+    ctx.fillStyle = earGrad;
     const shadow = shadeColor(col, -0.2);
     const highlight = shadeColor(col, 0.2);
 
@@ -5695,7 +5556,7 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         }
     }
     else if (earId === 'bunny') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         // Bigger rabbit ears
         ctx.beginPath(); ctx.ellipse(22, 0, 6, 14, 0, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.ellipse(42, 0, 6, 14, 0, 0, Math.PI * 2); ctx.fill();
@@ -5707,7 +5568,7 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         }
     }
     else if (earId === 'dog') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         // Floppy ears
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, 12); ctx.lineTo(10, 20); ctx.lineTo(18, 20); ctx.lineTo(20, 12); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, 12); ctx.lineTo(54, 20); ctx.lineTo(46, 20); ctx.lineTo(44, 12); ctx.fill();
@@ -5716,7 +5577,7 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         ctx.fillRect(10, 20, 8, 2); ctx.fillRect(46, 20, 8, 2);
     }
     else if (earId === 'bear') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.arc(14, 8, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(50, 8, 6, 0, Math.PI * 2); ctx.fill();
 
@@ -5727,7 +5588,7 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         }
     }
     else if (earId === 'fox') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, -5); ctx.lineTo(24, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, -5); ctx.lineTo(40, 10); ctx.fill();
         // Black tips
@@ -5736,7 +5597,7 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         ctx.beginPath(); ctx.moveTo(53, 2); ctx.lineTo(54, -5); ctx.lineTo(47, 2); ctx.fill();
     }
     else if (earId === 'pig') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.moveTo(14, 12); ctx.lineTo(8, 8); ctx.lineTo(18, 16); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 12); ctx.lineTo(56, 8); ctx.lineTo(46, 16); ctx.fill();
     }
@@ -5750,7 +5611,7 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         ctx.fillRect(15, -1, 4, 1); ctx.fillRect(45, -1, 4, 1);
     }
     else if (earId === 'mouse') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.arc(14, 6, 9, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(50, 6, 9, 0, Math.PI * 2); ctx.fill();
         if (!back) {
@@ -5760,7 +5621,7 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         }
     }
     else if (earId === 'raccoon') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(10, 0); ctx.lineTo(24, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(54, 0); ctx.lineTo(40, 10); ctx.fill();
         ctx.fillStyle = '#eee';
@@ -5782,12 +5643,12 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, 0); ctx.lineTo(18, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, 0); ctx.lineTo(46, 10); ctx.fill();
         // Ears below horns
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.ellipse(8, 16, 6, 3, 0.4, 0, Math.PI * 2); ctx.fill();
         ctx.ellipse(56, 16, 6, 3, -0.4, 0, Math.PI * 2); ctx.fill();
     }
     else if (earId === 'monkey') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.arc(10, 20, 5, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(54, 20, 5, 0, Math.PI * 2); ctx.fill();
         if (!back) {
@@ -5798,7 +5659,7 @@ function drawEars(ctx, earId, col, bellyCol, back) {
     }
     else if (earId === 'protogen') {
         // Robotic angular ears
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, -6); ctx.lineTo(24, 10); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, -6); ctx.lineTo(40, 10); ctx.closePath(); ctx.fill();
         // Glow Accent
@@ -5807,7 +5668,7 @@ function drawEars(ctx, earId, col, bellyCol, back) {
     }
     // New types maintained with simple improvements
     else if (earId === 'wolf') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.moveTo(12, 10); ctx.lineTo(8, -4); ctx.lineTo(22, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(52, 10); ctx.lineTo(56, -4); ctx.lineTo(42, 10); ctx.fill();
         if (!back) {
@@ -5823,12 +5684,12 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         ctx.fillRect(10, -4, 3, 6); ctx.fillRect(51, -4, 3, 6); // Points
     }
     else if (earId === 'owl' || earId === 'squirrel') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.moveTo(16, 10); ctx.lineTo(14, -2); ctx.lineTo(22, 10); ctx.fill();
         ctx.beginPath(); ctx.moveTo(48, 10); ctx.lineTo(50, -2); ctx.lineTo(42, 10); ctx.fill();
     }
     else if (earId === 'bat') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.moveTo(10, 14); ctx.lineTo(6, -6); ctx.lineTo(26, 14); ctx.fill();
         ctx.beginPath(); ctx.moveTo(54, 14); ctx.lineTo(58, -6); ctx.lineTo(38, 14); ctx.fill();
         if (!back) {
@@ -5838,12 +5699,12 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         }
     }
     else if (earId === 'shark') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.moveTo(14, 14); ctx.lineTo(18, 0); ctx.lineTo(22, 14); ctx.fill();
         ctx.beginPath(); ctx.moveTo(42, 14); ctx.lineTo(46, 0); ctx.lineTo(50, 14); ctx.fill();
     }
     else if (earId === 'tiger' || earId === 'leopard') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.arc(16, 8, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(48, 8, 6, 0, Math.PI * 2); ctx.fill();
         if (!back) {
@@ -5853,22 +5714,22 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         }
     }
     else if (earId === 'rhino') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.arc(14, 12, 4, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(50, 12, 4, 0, Math.PI * 2); ctx.fill();
     }
     else if (earId === 'elephant') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.ellipse(8, 20, 10, 14, 0, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.ellipse(56, 20, 10, 14, 0, 0, Math.PI * 2); ctx.fill();
     }
     else if (earId === 'hippo' || earId === 'otter' || earId === 'beaver' || earId === 'ferret') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.beginPath(); ctx.arc(14, 8, 4, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(50, 8, 4, 0, Math.PI * 2); ctx.fill();
     }
     else if (earId === 'giraffe' || earId === 'zebra') {
-        ctx.fillStyle = col;
+        ctx.fillStyle = earGrad;
         ctx.fillRect(16, 0, 4, 12); ctx.fillRect(44, 0, 4, 12);
     }
     else if (earId === 'panda' || earId === 'skunk' || earId === 'red_panda' || earId === 'chipmunk' || earId === 'hamster' || earId === 'chinchilla') {
@@ -7535,7 +7396,7 @@ function drawShirt(ctx, shirtId, isBack, bodyColor) {
             ctx.fillStyle = bodyColor;
             ctx.beginPath(); ctx.ellipse(32, 34, 5, 3, 0, 0, Math.PI); ctx.fill();
             // Emblem graphic
-            if (shirt.symbol === '🍌') {
+            if (shirt.symbol === 'ðŸŒ') {
                 // Crisp Nano Banana graphic print
                 ctx.fillStyle = '#ffe135';
                 ctx.beginPath();
@@ -10376,12 +10237,12 @@ function updateMinigameUI(dt) {
         minigame.progress += catchRate;
         barEl.style.backgroundColor = 'rgba(100, 255, 100, 0.8)';
         barEl.style.border = '2px solid #aaffaa';
-        fishEl.innerText = '🐟';
+        fishEl.innerText = 'ðŸŸ';
     } else {
         minigame.progress -= drainRate;
         barEl.style.backgroundColor = 'rgba(150, 255, 100, 0.3)';
         barEl.style.border = '2px solid #88aa88';
-        fishEl.innerText = '🐡';
+        fishEl.innerText = 'ðŸ¡';
     }
 
     minigame.progress = Math.max(0, Math.min(100, minigame.progress));
@@ -11478,7 +11339,7 @@ function renderCookingUI() {
     const lvl = getSkillLevel('cooking');
     const head = document.createElement('div');
     head.style.cssText = 'font-size:14px;color:var(--p-text-mute);';
-    head.textContent = `Cooking level ${lvl} · burn chance ${Math.round(cookingBurnChance() * 100)}%`;
+    head.textContent = `Cooking level ${lvl} Â· burn chance ${Math.round(cookingBurnChance() * 100)}%`;
     list.appendChild(head);
 
     const idxs = cookableIndexes();
@@ -11504,8 +11365,8 @@ function renderCookingUI() {
         const row = document.createElement('div');
         row.style.cssText = 'background:var(--p-face-2);border:2px solid var(--p-line);padding:10px;display:flex;justify-content:space-between;align-items:center;';
         const info = document.createElement('div');
-        info.innerHTML = `<div style="font-weight:bold;">${window.PX ? PX.icon('fish', 15) + ' ' : ''}${escapeHTML(name)} ×${g.count}</div>` +
-            `<div style="font-size:13px;color:var(--p-text-dim);margin-top:2px;">Raw $${base} → Meal ~$${meal}</div>`;
+        info.innerHTML = `<div style="font-weight:bold;">${window.PX ? PX.icon('fish', 15) + ' ' : ''}${escapeHTML(name)} Ã—${g.count}</div>` +
+            `<div style="font-size:13px;color:var(--p-text-dim);margin-top:2px;">Raw $${base} â†’ Meal ~$${meal}</div>`;
         const btn = document.createElement('button');
         btn.className = 'btn-sm btn-green';
         btn.textContent = 'COOK';
@@ -11726,7 +11587,7 @@ function updateHotbarVisuals() {
             iconEl.innerHTML = (window.PX && PX.has(toolId)) ? PX.icon(toolId, 30) : (tool ? tool.icon : '?');
             slotEl.style.opacity = 1;
         } else {
-            iconEl.innerHTML = window.PX ? PX.icon('lock', 30) : '🔒';
+            iconEl.innerHTML = window.PX ? PX.icon('lock', 30) : 'ðŸ”’';
             slotEl.style.opacity = 0.5;
         }
 
@@ -11799,7 +11660,7 @@ function selectTool(index) {
         if (!alreadyActive) showToast("Axe Equipped! Hold Click to chop.");
     } else if (toolId === 'pickaxe') {
         equipPickaxe();
-        // NOTE: do NOT hide the pickaxe here — it has to stay in hand while
+        // NOTE: do NOT hide the pickaxe here â€” it has to stay in hand while
         // mining. (It used to be hidden right after being equipped, so the
         // pickaxe only ever appeared the first time it was selected.)
         if (!alreadyActive) showToast("Pickaxe Equipped! Hold Click to mine.");
@@ -12982,7 +12843,7 @@ let fisherTipIndex = 0;
 const FISHER_TIPS = [
     "Old Fisher: Been casting on this lake nigh on forty years. Patience, lad, patience.",
     "Old Fisher: Fish bite better when it rains, I swear it.",
-    "Old Fisher: Try the ponds at dusk — different stock lurks in the dark water.",
+    "Old Fisher: Try the ponds at dusk â€” different stock lurks in the dark water.",
     "Old Fisher: A bigger reel window means a bigger catch. Don't fight the line.",
     "Old Fisher: Sell your haul to the Merchant east of the lake. He pays fair... mostly.",
     "Old Fisher: There's rarer water out past the shore. Row out if you're brave."
@@ -13016,7 +12877,7 @@ function maybeShowFisherHint() {
         if (saveState.quests && saveState.quests.completed.length > 0) return;
         saveState.fisherHinted = true;
         setTimeout(() => {
-            showToast('New here? Find the Old Fisher by the lake — press E near him.', 'achievement');
+            showToast('New here? Find the Old Fisher by the lake â€” press E near him.', 'achievement');
         }, 2500);
         if (typeof saveGame === 'function') saveGame();
     } catch (e) { }
@@ -13691,7 +13552,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             const btnDel = document.createElement('button');
             btnDel.className = 'btn-sm btn-danger';
             btnDel.style.padding = '2px 8px';
-            btnDel.innerText = '×';
+            btnDel.innerText = 'Ã—';
             btnDel.onclick = () => deleteOutfit(outfit.id);
 
             row.appendChild(btnLoad);
@@ -15250,7 +15111,7 @@ function setSailBoatVisible(on) {
 window.toggleSailing = function () {
     if (isInVoid || isInLavaWorld) { showToast("Can't sail here."); return; }
     if (!saveState.hasBoat) {
-        showToast('You need a Rowboat first — buy one from the Merchant!');
+        showToast('You need a Rowboat first â€” buy one from the Merchant!');
         return;
     }
 
@@ -15421,8 +15282,8 @@ function updateHostPanel() {
         const note = document.createElement('div');
         note.style.cssText = 'font-size:14px;color:var(--p-text-mute);';
         note.textContent = lobbyIsPublic()
-            ? 'Listed in the server browser · ' + lobbyPlayerCount() + ' in lobby'
-            : 'Private — join with room code ' + (currentRoomId || '—');
+            ? 'Listed in the server browser Â· ' + lobbyPlayerCount() + ' in lobby'
+            : 'Private â€” join with room code ' + (currentRoomId || 'â€”');
 
         nameDiv.appendChild(label);
         nameDiv.appendChild(input);

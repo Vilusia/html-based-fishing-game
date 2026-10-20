@@ -3477,25 +3477,45 @@
          Point this at the machine running "Master Server Code/master_server.py".
          Override by setting window.MASTER_SERVER_URL before this tag. -->
     <script>
-        window.MASTER_SERVER_URL = window.MASTER_SERVER_URL || (
-            (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '')
-                ? 'http://localhost:8081'
-                : 'http://204.12.227.121:8081'
-        );
+        // An HTTPS page cannot fetch a plain-HTTP URL (mixed content is blocked
+        // by every modern browser), so choose the scheme to match how the site
+        // is served. Override explicitly with window.MASTER_SERVER_URL before
+        // this tag to use your own reverse proxy / tunnel domain instead.
+        (function () {
+            var isLocal = location.hostname === 'localhost'
+                || location.hostname === '127.0.0.1'
+                || location.hostname === '';
+            if (isLocal) {
+                window.MASTER_SERVER_URL = window.MASTER_SERVER_URL || 'http://localhost:8081';
+                return;
+            }
+            // Set this to your HTTPS master-server URL (e.g. a Caddy/nginx
+            // reverse proxy or a Cloudflare tunnel). Falls back to the IP.
+            // Quick tunnel URL — CHANGES every time cloudflared restarts.
+            // Swap this for the permanent named tunnel (e.g.
+            // https://master.gaywebfishing.org) once DNS has propagated.
+            var HTTPS_MASTER = window.MASTER_SERVER_URL || 'https://describing-admission-democratic-appears.trycloudflare.com';
+            // When the page itself is http://, talk to the IP directly (its
+            // cert won't match, but http pages aren't blocked by mixed content).
+            window.MASTER_SERVER_URL = (location.protocol === 'https:')
+                ? HTTPS_MASTER
+                : 'http://204.12.227.121:8081';
+            console.log('[master] directory server:', window.MASTER_SERVER_URL);
+        })();
     </script>
 
-    <script src="icons.js?v=7"></script>
-    <script src="worldgen.js?v=8"></script>
-    <script src="ocean.js?v=17"></script>
-    <script src="core.js?v=12.73"></script>
-    <script src="fish.js?v=12.45"></script>
-    <script src="character3d.js?v=5"></script>
-    <script src="networking.js?v=12.31"></script>
-    <script src="audio.js?v=12.33"></script>
-    <script src="progression.js?v=5"></script>
-    <script src="ui.js?v=12.94"></script>
-    <script src="props.js?v=12.34"></script>
-    <script src="level-loader.js?v=4"></script>
+    <script src="icons.js?v=8"></script>
+    <script src="worldgen.js?v=9"></script>
+    <script src="ocean.js?v=18"></script>
+    <script src="core.js?v=12.74"></script>
+    <script src="fish.js?v=12.46"></script>
+    <script src="character3d.js?v=6"></script>
+    <script src="networking.js?v=12.32"></script>
+    <script src="audio.js?v=12.34"></script>
+    <script src="progression.js?v=6"></script>
+    <script src="ui.js?v=12.96"></script>
+    <script src="props.js?v=12.35"></script>
+    <script src="level-loader.js?v=5"></script>
 
     <!-- Start Open Web Analytics Tracker -->
     <script type="text/javascript">
