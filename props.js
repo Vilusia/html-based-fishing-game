@@ -1006,12 +1006,16 @@ function createTwitchPlayer(entry) {
     }
     if (!window.Twitch || !window.Twitch.Player) return;
     try {
+        // Twitch exact-matches the `parent` value against the embedding origin,
+        // INCLUDING a non-default port. Passing only the hostname breaks the
+        // player on http://localhost:8137 (it loads but never starts), so send
+        // the full host first and the bare hostname as a fallback.
+        const parentList = [location.host];
+        if (location.hostname !== location.host) parentList.push(location.hostname);
         const opts = {
             width: 576,
             height: 324,
-            // Twitch requires the embedding page's domain. works for localhost
-            // and the live site; the value is exact-matched by Twitch.
-            parent: [location.hostname],
+            parent: parentList,
             autoplay: true,
             muted: true
         };
