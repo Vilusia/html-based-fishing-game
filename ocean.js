@@ -613,61 +613,75 @@
         const islands = [];
         const target = 18;
         let attempts = 0;
-        while (islands.length < target && attempts < target * 60) {
+
+        // Shared placer: try to drop one island of `radius`, enforcing the
+        // apron bounds and separation. Returns true on success.
+        const placeOne = (radius) => {
+            for (let a = 0; a < 120; a++) {
+                const angle = rand() * Math.PI * 2;
+                const t = Math.pow(rand(), 0.7);
+                const dist = inner + t * (outer - inner);
+                const x = Math.cos(angle) * dist;
+                const z = Math.sin(angle) * dist;
+                if (dist + radius * 1.4 > outer) continue;
+                if (dist - radius < inner) continue;   // keep big islands off the authored map
+                let ok = true;
+                for (const o of islands) {
+                    if (Math.hypot(x - o.x, z - o.z) < radius + o.radius + MIN_SEPARATION) { ok = false; break; }
+                }
+                if (!ok) continue;
+                // Shape variation, same scheme as layout(): each island gets an
+                // elliptical stretch (xScale/zScale) plus a rotation. These MUST
+                // be declared here - referencing them without defining them threw
+                // a ReferenceError that aborted setupThreeJS() and left the MAKE
+                // LOBBY button unwired on custom-level pages.
+                const shapeType = rand();
+                let stretch, xScale, zScale;
+                if (shapeType < 0.25) {
+                    stretch = 0.35 + rand() * 0.25;
+                    xScale = stretch;
+                    zScale = 1 / Math.max(0.25, stretch * (1.2 + rand() * 0.6));
+                } else if (shapeType < 0.5) {
+                    stretch = 1.4 + rand() * 0.8;
+                    xScale = stretch;
+                    zScale = 1 / Math.max(0.4, stretch / (1.1 + rand() * 0.5));
+                } else if (shapeType < 0.7) {
+                    xScale = 0.5 + rand() * 1.4;
+                    zScale = 0.5 + rand() * 1.4;
+                } else {
+                    stretch = 0.45 + rand() * 1.1;
+                    xScale = stretch;
+                    zScale = 1 / Math.max(0.3, stretch);
+                }
+                islands.push({
+                    x: x,
+                    z: z,
+                    radius: radius,
+                    xScale: xScale,
+                    zScale: zScale,
+                    rotation: rand() * Math.PI * 2,
+                    peak: MIN_PEAK + Math.pow(rand(), 0.8) * (MAX_PEAK - MIN_PEAK),
+                    squash: 0.4 + rand() * 0.95,
+                    seed: Math.floor(rand() * 1e9),
+                    hasProp: rand() < 0.4,
+                    hasCave: rand() < 0.3
+                });
+                return true;
+            }
+            return false;
+        };
+
+        // Pass 1: a few landmark-sized islands first, like the default ocean,
+        // so the apron has real "big island" destinations.
+        for (let i = 0; i < 4 && islands.length < 4; i++) {
+            placeOne(LANDMARK_RADIUS + rand() * (MAX_RADIUS - LANDMARK_RADIUS));
+        }
+
+        // Pass 2: the rest - the same long-tail size mix as the default map.
+        while (islands.length < target && attempts < target * 120) {
             attempts++;
-            const radius = 9 + rand() * rand() * 40;
-            const angle = rand() * Math.PI * 2;
-            const t = Math.pow(rand(), 0.7);
-            const dist = inner + t * (outer - inner);
-            const x = Math.cos(angle) * dist;
-            const z = Math.sin(angle) * dist;
-            if (dist + radius * 1.4 > outer) continue;
-            let ok = true;
-            for (const o of islands) {
-                if (Math.hypot(x - o.x, z - o.z) < radius + o.radius + 34) { ok = false; break; }
-            }
-            if (!ok) continue;
-            // Shape variation, same scheme as layout(): each island gets an
-            // elliptical stretch (xScale/zScale) plus a rotation. These MUST be
-            // declared here - referencing them without defining them threw a
-            // ReferenceError that aborted setupThreeJS() and left the MAKE
-            // LOBBY button unwired on custom-level pages.
-            const shapeType = rand();
-            let stretch, xScale, zScale;
-            if (shapeType < 0.25) {
-                // Very long and thin
-                stretch = 0.35 + rand() * 0.25;
-                xScale = stretch;
-                zScale = 1 / Math.max(0.25, stretch * (1.2 + rand() * 0.6));
-            } else if (shapeType < 0.5) {
-                // Wide and stubby
-                stretch = 1.4 + rand() * 0.8;
-                xScale = stretch;
-                zScale = 1 / Math.max(0.4, stretch / (1.1 + rand() * 0.5));
-            } else if (shapeType < 0.7) {
-                // Lumpy/irregular - asymmetric
-                xScale = 0.5 + rand() * 1.4;
-                zScale = 0.5 + rand() * 1.4;
-            } else {
-                // Classic ellipse
-                stretch = 0.45 + rand() * 1.1;
-                xScale = stretch;
-                zScale = 1 / Math.max(0.3, stretch);
-            }
-            const rotation = rand() * Math.PI * 2;
-            islands.push({
-                x: x,
-                z: z,
-                radius: radius,
-                xScale: xScale,
-                zScale: zScale,
-                rotation: rotation,
-                peak: 1.8 + Math.pow(rand(), 0.8) * 6.5,
-                squash: 0.6 + rand() * 0.5,
-                seed: Math.floor(rand() * 1e9),
-                hasProp: rand() < 0.3,
-                hasCave: rand() < 0.2
-            });
+            const radius = MIN_RADIUS + (rand() * rand()) * (MAX_RADIUS - MIN_RADIUS);
+            placeOne(radius);
         }
         return { islands: islands, inner: inner, outer: outer };
     }
