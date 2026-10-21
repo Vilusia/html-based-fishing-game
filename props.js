@@ -733,31 +733,66 @@ function spawnPropMesh(data) {
     else if (data.type === 'screen') {
         // YouTube Screen: a chunky jumbotron on legs. The actual video is a
         // real DOM iframe rendered by CSS3DRenderer (attachYtVideo below), so
-        // the WebGL mesh is just the housing + a dark panel behind the video.
-        const housing = new THREE.MeshStandardMaterial({ color: 0x24262e, roughness: 0.7 });
-        const trimMat = new THREE.MeshStandardMaterial({ color: 0x44485c, roughness: 0.5 });
+        // the WebGL mesh is the housing, bezel, stand and speaker towers.
+        // Shared geometry constants (also used by the video overlay so the
+        // picture sits exactly inside the bezel):
+        //   panel centre y = SCREEN_Y, visible video = SCREEN_W x SCREEN_H.
+        const SCREEN_Y = 3.55, SCREEN_W = 6.3, SCREEN_H = 3.545;
 
-        // Housom frame around a 16:9 panel (panel ~5.6 x 3.15 units).
-        const panel = new THREE.Mesh(new THREE.BoxGeometry(7.0, 4.0, 0.22), housing);
-        panel.position.y = 3.9;
-        const screenPlane = new THREE.Mesh(new THREE.PlaneGeometry(6.75, 3.8), new THREE.MeshBasicMaterial({ color: 0x050505 }));
-        screenPlane.position.set(0, 3.9, 0.12);
+        const housing = new THREE.MeshStandardMaterial({ color: 0x1d2027, roughness: 0.75 });
+        const bezelMat = new THREE.MeshStandardMaterial({ color: 0x3b4152, roughness: 0.45, metalness: 0.25 });
+        const metalMat = new THREE.MeshStandardMaterial({ color: 0x4a5062, roughness: 0.4, metalness: 0.4 });
+        const speakerMat = new THREE.MeshStandardMaterial({ color: 0x24272f, roughness: 0.8 });
+        const coneMat = new THREE.MeshStandardMaterial({ color: 0x101216, roughness: 0.9 });
 
-        // Two speaker pylons with grills.
+        // Outer bezel (slightly larger, lighter trim) with the dark panel inset.
+        const bezel = new THREE.Mesh(new THREE.BoxGeometry(SCREEN_W + 0.5, SCREEN_H + 0.5, 0.18), bezelMat);
+        bezel.position.set(0, SCREEN_Y, 0.02);
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(SCREEN_W + 0.16, SCREEN_H + 0.16, 0.24), housing);
+        panel.position.set(0, SCREEN_Y, 0);
+
+        // Dark backing where the video sits (the iframe draws over this).
+        const screenPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(SCREEN_W, SCREEN_H),
+            new THREE.MeshBasicMaterial({ color: 0x050608 })
+        );
+        screenPlane.position.set(0, SCREEN_Y, 0.14);
+
+        g.add(bezel, panel, screenPlane);
+
+        // Floor-standing speaker towers, flush with the panel's lower corners.
         for (const s of [-1, 1]) {
-            const spk = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.4, 0.5), trimMat);
-            spk.position.set(s * 3.95, 1.0, 0);
-            g.add(spk);
+            const tower = new THREE.Mesh(new THREE.BoxGeometry(0.78, 2.35, 0.62), speakerMat);
+            tower.position.set(s * (SCREEN_W / 2 + 0.62), 1.175, 0);
+            const cap = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.1, 0.68), bezelMat);
+            cap.position.set(tower.position.x, 2.36, 0);
+            const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 12), coneMat);
+            cone.rotation.x = Math.PI / 2;
+            cone.position.set(tower.position.x, 1.6, 0.34);
+            const cone2 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 10), coneMat);
+            cone2.rotation.x = Math.PI / 2;
+            cone2.position.set(tower.position.x, 0.95, 0.34);
+            g.add(tower, cap, cone, cone2);
         }
 
-        // Stand feet.
+        // Central stand: two legs plus a crossbar, meeting the panel's bottom.
+        const legH = SCREEN_Y - SCREEN_H / 2 + 0.25;   // reaches into the panel
         for (const s of [-1, 1]) {
-            const foot = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.4), housing);
-            foot.position.set(s * 1.4, 0.8, 0);
-            g.add(foot);
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.26, legH, 0.26), metalMat);
+            leg.position.set(s * 1.55, legH / 2, 0);
+            g.add(leg);
         }
+        const cross = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.14, 0.18), metalMat);
+        cross.position.set(0, 0.34, 0);
+        g.add(cross);
 
-        g.add(panel, screenPlane);
+        // Bezel accent strip along the bottom (reads well at night).
+        const strip = new THREE.Mesh(
+            new THREE.BoxGeometry(SCREEN_W + 0.3, 0.07, 0.04),
+            new THREE.MeshBasicMaterial({ color: 0x8b5cf6 })
+        );
+        strip.position.set(0, SCREEN_Y - SCREEN_H / 2 - 0.2, 0.16);
+        g.add(strip);
 
         // Wire up the video (no-op if CSS3DRenderer/YouTube API unavailable).
         attachYtVideo(data, g);
@@ -925,7 +960,8 @@ function attachYtVideo(data, group) {
     }
 
     const cssObj = new THREE.CSS3DObject(shell);
-    cssObj.scale.set(0.01055, 0.01055, 1); // 640px -> ~6.75 world units wide (16:9)
+    // 640px wide shell mapped to SCREEN_W (6.3) world units.
+    cssObj.scale.set(0.009844, 0.009844, 1);
     if (cssScene) cssScene.add(cssObj);
     else ytOverlay.appendChild(shell); // fallback: at least keep it mountable
 
@@ -1092,7 +1128,7 @@ window.tickYtScreens = function () {
             // Panel sits relative to the housing mesh's world transform.
             e.cssObj.position.set(
                 e.mesh.position.x,
-                e.mesh.position.y + 3.935,
+                e.mesh.position.y + 3.55,
                 e.mesh.position.z
             );
             e.cssObj.rotation.y = e.mesh.rotation.y + Math.PI; // iframe faces the front (canvas plane faces +Z)
@@ -1118,7 +1154,7 @@ function updateScreenOcclusion(e) {
 
     const cam = camera.position;
     const SX = e.mesh.position.x, SZ = e.mesh.position.z;
-    const sy = e.mesh.position.y + 3.935;
+    const sy = e.mesh.position.y + 3.55;
     // Ray-plane: screen plane faces the camera.
     const Svx = SX - cam.x, Svy = sy - cam.y, Svz = SZ - cam.z;
     const Slen = Math.sqrt(Svx * Svx + Svy * Svy + Svz * Svz);
@@ -1130,8 +1166,8 @@ function updateScreenOcclusion(e) {
     // Screen right vector from its placement yaw, and px-per-world on the plane.
     const rot = e.mesh.rotation.y;
     const rx = Math.cos(rot), rz = -Math.sin(rot);
-    const PXW = 320 / 3.375;   // shell half-width in px / world half-width
-    const PXH = 180 / 1.9;     // shell half-height in px / world half-height
+    const PXW = 320 / 3.15;    // shell half-width in px / world half-width (SCREEN_W/2)
+    const PXH = 180 / 1.7725;  // shell half-height in px / world half-height
 
     const occluders = [];
     const consider = (m, key) => {
