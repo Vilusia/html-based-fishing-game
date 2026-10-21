@@ -2769,6 +2769,24 @@ function handleDataFromClient(clientId, data) {
             if (isHost) broadcastToClients(data);
             applyYtSync(data);
 
+        } else if (data.type === 'ytChange') {
+            // A placer swapped the video on their screen. Validate, update the
+            // stored record (so late joiners get the new video via allProps),
+            // then relay. Hosts may also change any screen.
+            const vid = (typeof data.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.videoId))
+                ? data.videoId : null;
+            if (!vid) return;
+            const startedAt = (typeof data.startedAt === 'number' && isFinite(data.startedAt))
+                ? data.startedAt : Date.now();
+            const rec = activeProps.find(p => p.id === data.propId);
+            if (!rec) return;                      // unknown screen: ignore
+            if (rec.owner !== clientId && !isHost) return; // only the placer (or host) may change it
+            rec.videoId = vid;
+            rec.startedAt = startedAt;
+            const clean = { type: 'ytChange', propId: rec.id, videoId: vid, startedAt: startedAt, placer: data.placer || '' };
+            broadcastToClients(clean);
+            applyYtChange(clean);
+
         } else if (data.type === 'undoProp') {
             // P2P HOST: Handle Undo Request
             const ownerProps = activeProps.filter(p => p.owner === clientId);
@@ -2948,6 +2966,8 @@ function handleDataFromHost(data) {
     // Video heartbeat relayed by the host (either from the placer client, or
     // broadcast by theHost when theHost is the placer).
     else if (data.type === 'ytSync') applyYtSync(data);
+    // The placer swapped the screen's video.
+    else if (data.type === 'ytChange') applyYtChange(data);
 }
 
 function broadcastPlayerList() {
@@ -10443,6 +10463,7 @@ function setupInputs() {
             else if (interactTarget === 'bait') toggleBaitShop();
             else if (interactTarget === 'tutorial') toggleTutorial();
             else if (interactTarget === 'fisher') talkToFisher();
+            else if (interactTarget === 'ytscreen' && typeof window.changeScreenVideo === 'function') window.changeScreenVideo(interactScreenId);
             else if (interactTarget === 'lava_keeper') {
                 if (saveState.lavaUnlocked) {
                     enterLavaWorld();
@@ -10726,6 +10747,7 @@ function setupInputs() {
         else if (interactTarget === 'bait') toggleBaitShop();
         else if (interactTarget === 'tutorial') toggleTutorial();
         else if (interactTarget === 'fisher') talkToFisher();
+        else if (interactTarget === 'ytscreen' && typeof window.changeScreenVideo === 'function') window.changeScreenVideo(interactScreenId);
 
         // --- ADDED LAVA KEEPER CHECK FOR MOBILE ---
         else if (interactTarget === 'lava_keeper') {
@@ -12337,6 +12359,32 @@ function animate() {
                         // Actually, prompts are recreated/reset every frame: prompt.style.display = 'none';
                         break;
                     }
+                }
+            }
+        }
+
+        // --- YOUTUBE SCREEN PROMPT ---
+        // Standing near a screen offers to swap its video (placer or host only;
+        // ownership is re-checked inside changeScreenVideo()).
+        if (prompt.style.display === 'none' && !isInVoid && !isInLavaWorld) {
+            const me = String(typeof myDeviceID !== 'undefined' && myDeviceID ? myDeviceID : '');
+            let bestId = null, bestD = 4.2;
+            for (const pid in props) {
+                const m = props[pid];
+                const pd = m && m.userData && m.userData.propData;
+                if (!pd || pd.type !== 'screen') continue;
+                const d = player.position.distanceTo(m.position);
+                if (d < bestD) { bestD = d; bestId = pid; }
+            }
+            if (bestId) {
+                const pd = props[bestId].userData.propData;
+                const canEdit = String(pd.placer || '') === me || (typeof isHost !== 'undefined' && isHost);
+                if (canEdit) {
+                    interactTarget = 'ytscreen';
+                    interactScreenId = bestId;
+                    prompt.innerText = 'PRESS E TO CHANGE VIDEO';
+                    prompt.style.display = 'block';
+                    if (btn) btn.innerText = "CHANGE";
                 }
             }
         }

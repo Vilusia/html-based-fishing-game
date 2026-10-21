@@ -778,6 +778,9 @@ function spawnPropMesh(data) {
 
     scene.add(mesh);
     props[data.id] = mesh;
+    // Keep the authoritative record on the mesh so interactions (e.g. changing
+    // a YouTube Screen's video) can find the prop's data and its placer.
+    mesh.userData.propData = data;
 
     if (typeof broadcastSound === 'function') {
         broadcastSound('footstep', 0);
@@ -1093,6 +1096,87 @@ window.tickYtSync = function (e, id) {
     if (isFinite(cur) && Math.abs(target - cur) > 1.2) {
         try { e.player.seekTo(Math.max(0, target), true); } catch (err) { }
     }
+};
+
+// ===========================================================================
+// SCREEN: CHANGE VIDEO
+// ---------------------------------------------------------------------------
+// The placer (or the host) can swap the video on an existing screen. Everyone
+// re-mounts in the same shell with a fresh shared anchor, so sync restarts
+// cleanly. Late joiners are covered because the prop record (and myProps /
+// activeProps on the host) is updated with the new videoId + startedAt.
+// ===========================================================================
+window.changeScreenVideo = function (propId) {
+    const mesh = props[propId];
+    const pd = mesh && mesh.userData && mesh.userData.propData;
+    if (!pd || pd.type !== 'screen') return;
+
+    const me = String(typeof myDeviceID !== 'undefined' && myDeviceID ? myDeviceID : '');
+    const isPlacer = String(pd.placer || '') === me;
+    const hostAllowed = (typeof isHost !== 'undefined' && isHost);
+    if (!isPlacer && !hostAllowed) {
+        showToast('Only the player who placed this screen can change it.', 'error');
+        return;
+    }
+
+    const url = window.prompt('Paste a new YouTube URL for this screen:', '');
+    if (!url) return;
+    const videoId = ytParseVideoId(String(url).trim());
+    if (!videoId) { showToast('That does not look like a YouTube URL.', 'error'); return; }
+
+    const msg = {
+        type: 'ytChange',
+        propId: propId,
+        videoId: videoId,
+        startedAt: Date.now(),
+        placer: me
+    };
+
+    // Update our own record first, then tell the room.
+    pd.videoId = videoId;
+    pd.startedAt = msg.startedAt;
+    window.applyYtChange(msg);
+
+    if (typeof isHost !== 'undefined' && isHost) {
+        if (myProps.some(p => p.id === propId)) {
+            const rec = myProps.find(p => p.id === propId);
+            rec.videoId = videoId; rec.startedAt = msg.startedAt;
+        }
+        broadcastToClients(msg);
+    } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
+        hostConn.send(msg);
+    }
+};
+
+// Receiver side: swap the video in place (shell + CSS3D object are reused).
+window.applyYtChange = function (data) {
+    if (!data || data.type !== 'ytChange' || !data.propId) return;
+    const id = data.propId;
+    const e = ytPlayers[id];
+    if (!e) return; // no screen with this id here
+
+    // Tear down the old player but keep the shell in the DOM.
+    try { if (e.player && e.player.destroy) e.player.destroy(); } catch (err) { }
+    e.player = null;
+    const shell = e.cssObj && e.cssObj.element ? e.cssObj.element : null;
+    if (shell) {
+        shell.innerHTML = '';
+        const frameEl = document.createElement('div');
+        frameEl.style.width = '100%';
+        frameEl.style.height = '100%';
+        frameEl.style.pointerEvents = 'none';
+        shell.appendChild(frameEl);
+        e.frameEl = frameEl;
+    }
+    e.data = {
+        videoId: data.videoId,
+        startedAt: data.startedAt || Date.now(),
+        placer: data.placer || (e.data && e.data.placer) || ''
+    };
+    e.syncAt = null;
+    e.syncRecvAt = null;
+    if (ytApiReady) createYtPlayer(e);
+    else ytPlayerQueue.push(() => createYtPlayer(e));
 };
 
 // --- HOOK NETWORKING ---
