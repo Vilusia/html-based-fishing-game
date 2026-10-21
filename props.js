@@ -742,15 +742,15 @@ function spawnPropMesh(data) {
         const trimMat = new THREE.MeshStandardMaterial({ color: 0x44485c, roughness: 0.5 });
 
         // Housom frame around a 16:9 panel (panel ~5.6 x 3.15 units).
-        const panel = new THREE.Mesh(new THREE.BoxGeometry(5.9, 3.45, 0.22), housing);
-        panel.position.y = 3.4;
-        const screenPlane = new THREE.Mesh(new THREE.PlaneGeometry(5.7, 3.25), new THREE.MeshBasicMaterial({ color: 0x050505 }));
-        screenPlane.position.set(0, 3.4, 0.12);
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(7.0, 4.0, 0.22), housing);
+        panel.position.y = 3.9;
+        const screenPlane = new THREE.Mesh(new THREE.PlaneGeometry(6.75, 3.8), new THREE.MeshBasicMaterial({ color: 0x050505 }));
+        screenPlane.position.set(0, 3.9, 0.12);
 
         // Two speaker pylons with grills.
         for (const s of [-1, 1]) {
             const spk = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.4, 0.5), trimMat);
-            spk.position.set(s * 3.3, 1.0, 0);
+            spk.position.set(s * 3.95, 1.0, 0);
             g.add(spk);
         }
 
@@ -938,8 +938,8 @@ function attachYtVideo(data, group) {
     if (!cssRenderer && window.initCssScene) window.initCssScene();
 
     const shell = document.createElement('div');
-    shell.style.width = '576px';
-    shell.style.height = '324px';
+    shell.style.width = '640px';
+    shell.style.height = '360px';
     shell.style.background = '#050505';
     shell.style.pointerEvents = 'none';
     shell.style.overflow = 'hidden';
@@ -965,7 +965,7 @@ function attachYtVideo(data, group) {
     }
 
     const cssObj = new THREE.CSS3DObject(shell);
-    cssObj.scale.set(0.0098, 0.0098, 1); // 576px -> ~5.65 world units wide (1.56:1)
+    cssObj.scale.set(0.01055, 0.01055, 1); // 640px -> ~6.75 world units wide (16:9)
     if (cssScene) cssScene.add(cssObj);
     else ytOverlay.appendChild(shell); // fallback: at least keep it mountable
 
@@ -987,14 +987,44 @@ function attachYtVideo(data, group) {
         syncRecvAt: null,
         retried: false
     };
+    // Twitch's autoplay validator refuses players that are not visibly laid
+    // out when constructed ("style visibility" requirement), so the player is
+    // created lazily from tickYtScreens() once the screen is actually on
+    // camera. Creating it at spawn time (often off-screen) is what produced
+    // the console error "Autoplay disabled ... style visibility".
     ytPlayers[data.id] = entry;
     if (isTwitch) {
-        loadTwitchApi(() => createTwitchPlayer(entry));
+        registerScreenForLazyTwitch(entry);
     } else if (ytApiReady) {
         createYtPlayer(entry);
     } else {
         ytPlayerQueue.push(() => createYtPlayer(entry));
     }
+}
+
+// Create the Twitch player the first time its screen is on camera, so the
+// embed's visibility check passes and autoplay is permitted.
+function registerScreenForLazyTwitch(entry) {
+    entry._twAwaitingCreate = true;
+}
+
+function maybeCreateTwitchPlayer(entry) {
+    if (!entry || !entry._twAwaitingCreate || entry.player) return;
+    if (!entry.mesh || typeof camera === 'undefined' || !camera) return;
+    if (document.visibilityState !== 'visible') return; // hidden tab: wait
+    // Project the panel centre; require it to be inside the viewport.
+    const v = new THREE.Vector3(
+        entry.mesh.position.x,
+        entry.mesh.position.y + 3.9,
+        entry.mesh.position.z
+    );
+    const dist = camera.position.distanceTo(v);
+    if (dist > 7.5) return;                   // too far: iframe renders below Twitch's minimum size
+    v.project(camera);
+    if (!(v.z > -1 && v.z < 1)) return;        // behind the camera
+    if (Math.abs(v.x) > 0.95 || Math.abs(v.y) > 0.95) return; // outside the view
+    entry._twAwaitingCreate = false;
+    loadTwitchApi(() => createTwitchPlayer(entry));
 }
 
 // Mount a Twitch embed. Channels have no meaningful timeline (live), so no
@@ -1014,8 +1044,8 @@ function createTwitchPlayer(entry) {
         if (location.hostname !== location.host) parentList.push(location.hostname);
         console.info('[screen] twitch parent:', parentList.join(' , '), '| origin:', location.origin);
         const opts = {
-            width: 576,
-            height: 324,
+            width: 640,
+            height: 360,
             parent: parentList,
             autoplay: true,
             muted: true
@@ -1123,7 +1153,14 @@ window.twScreenNeedsStart = function (propId) {
 // wants to click the player instead.
 window.startScreenPlayback = function (propId) {
     const e = ytPlayers[propId];
-    if (!e || !e.player) return;
+    if (!e) return;
+    // Player may not exist yet (created lazily once on camera).
+    if (!e.player && e._twAwaitingCreate) {
+        maybeCreateTwitchPlayer(e);
+        setTwitchBadge(e, 'STARTING...');
+        return;
+    }
+    if (!e.player) return;
     try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) { }
     try {
         if (e.provider === 'twitch') {
@@ -1148,8 +1185,8 @@ function createYtPlayer(entry) {
         const startSec = Math.max(0, Math.floor((Date.now() - entry.data.startedAt) / 1000));
         entry.player = new YT.Player(entry.frameEl, {
             videoId: entry.data.videoId,
-            width: '576',
-            height: '324',
+            width: '640',
+            height: '360',
             playerVars: {
                 autoplay: 1,
                 // Browsers block UNMUTED autoplay in cross-origin iframes, which
@@ -1244,11 +1281,13 @@ window.tickYtScreens = function () {
     for (const id in ytPlayers) {
         const e = ytPlayers[id];
         if (!e.mesh) continue;
+        // Twitch: construct the player only once the screen is on camera.
+        if (e._twAwaitingCreate) maybeCreateTwitchPlayer(e);
         if (e.cssObj) {
             // Panel sits relative to the housing mesh's world transform.
             e.cssObj.position.set(
                 e.mesh.position.x,
-                e.mesh.position.y + 3.435,
+                e.mesh.position.y + 3.935,
                 e.mesh.position.z
             );
             e.cssObj.rotation.y = e.mesh.rotation.y + Math.PI; // iframe faces the front (canvas plane faces +Z)
@@ -1482,7 +1521,9 @@ window.applyYtChange = function (data) {
     e._twLastT = null;
     if (shell) shell.style.pointerEvents = 'none';
     if (provider === 'twitch') {
-        loadTwitchApi(() => createTwitchPlayer(e));
+        // Recreate lazily: Twitch denies autoplay to players constructed while
+        // off camera, so wait until the screen is on screen again.
+        e._twAwaitingCreate = true;
     } else if (ytApiReady) {
         createYtPlayer(e);
     } else {
