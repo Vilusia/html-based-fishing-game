@@ -1130,10 +1130,13 @@ window.updateYtAudio = function (e) {
         dist = player.position.distanceTo(e.mesh.position);
     }
     const vol = Math.pow(Math.max(0, 1 - dist / MAX_VOICE_DISTANCE), 1.5);
-    // Personal ceiling from the Audio Mixer ("Video Screens" slider).
-    const ceiling = (typeof saveState !== 'undefined' && typeof saveState.screenVolume === 'number' && isFinite(saveState.screenVolume))
-        ? saveState.screenVolume : 1;
-    const volInt = Math.round(vol * ceiling * 100);
+    // Personal ceilings. YouTube audio lives in its own iframe and therefore
+    // bypasses the game's WebAudio master gain, so both the Master slider and
+    // the "Video Screens" slider are applied here by hand.
+    const num = (v, d) => (typeof v === 'number' && isFinite(v)) ? v : d;
+    const master = (typeof saveState !== 'undefined') ? num(saveState.masterVolume, 1) : 1;
+    const screen = (typeof saveState !== 'undefined') ? num(saveState.screenVolume, 1) : 1;
+    const volInt = Math.round(vol * Math.max(0, Math.min(1, master * screen)) * 100);
     const p = e.player;
 
     // YouTube
