@@ -1130,7 +1130,10 @@ window.updateYtAudio = function (e) {
         dist = player.position.distanceTo(e.mesh.position);
     }
     const vol = Math.pow(Math.max(0, 1 - dist / MAX_VOICE_DISTANCE), 1.5);
-    const volInt = Math.round(vol * 100);
+    // Personal ceiling from the Audio Mixer ("Video Screens" slider).
+    const ceiling = (typeof saveState !== 'undefined' && typeof saveState.screenVolume === 'number' && isFinite(saveState.screenVolume))
+        ? saveState.screenVolume : 1;
+    const volInt = Math.round(vol * ceiling * 100);
     const p = e.player;
 
     // YouTube

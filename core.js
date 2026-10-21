@@ -18,7 +18,7 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v12.116";
+const GAME_VERSION = "v12.117";
 
 // Save-file schema version. Bump whenever a change can't be read by older
 // code, and add a matching step in migrateSave() (ui.js). Kept separate from
@@ -458,6 +458,9 @@ const DEFAULT_SAVE_STATE = {
     sfxVolume: 1.0,
     midiVolume: 1.0,
     voiceVolume: 1.0,
+    // Volume multiplier for YouTube Screen props (proximity controls the
+    // rest; this is the user's personal ceiling for them).
+    screenVolume: 1.0,
     autoReelLevel: 0,
     clickPowerLevel: 0,
     hasGuitar: false,

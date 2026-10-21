@@ -13749,6 +13749,8 @@ function loadSave() {
     const sfxS = document.getElementById('sfx-slider'); if (sfxS) sfxS.value = saveState.sfxVolume;
     const midS = document.getElementById('midi-slider'); if (midS) midS.value = saveState.midiVolume;
     const vocS = document.getElementById('voice-slider'); if (vocS) vocS.value = saveState.voiceVolume;
+    const scrS = document.getElementById('screen-slider');
+    if (scrS) scrS.value = (typeof saveState.screenVolume === 'number') ? saveState.screenVolume : 1;
 
     myData.name = saveState.displayName;
     myData.color = saveState.catColor;
@@ -14355,6 +14357,15 @@ window.changeVoiceVolume = function (val) {
     saveState.voiceVolume = parseFloat(val);
 
 
+    saveGame();
+}
+
+// Personal volume ceiling for YouTube Screen props. Proximity still scales the
+// player's volume down as you walk away; this multiplies the result, so 0
+// silences every screen without touching anyone else's mix.
+window.changeScreenVolume = function (val) {
+    saveState.screenVolume = parseFloat(val);
+    if (!isFinite(saveState.screenVolume)) saveState.screenVolume = 1;
     saveGame();
 }
 
