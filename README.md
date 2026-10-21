@@ -22,6 +22,24 @@ Then visit <http://localhost:8000/>.
 The game needs a static origin (not `file://`) because it uses WebRTC, WebAudio,
 and `localStorage`.
 
+### Live deployment
+
+| What | Where | How |
+| --- | --- | --- |
+| Game page | `https://play.htmlfishing.com` (repo files at the **root**) | Cloudflare-tunnel ingress → the folder these files are copied to |
+| Lobby directory | `https://master.gaywebfishing.org` → `localhost:8081` | Same tunnel, separate ingress rule; blueprints `Master Server Code/master_server.py` |
+
+- Deployment is a manual file copy to the tunnel target folder — pushing to
+  git does not update the live site. Bump cache pins (`bump-pins.ps1`) before
+  copying any edited `.js`/`index.html`, then hard-refresh once.
+- `core.js`'s domain guard accepts anything on `gaywebfishing.org` or
+  `htmlfishing.com` (substring match, all subdomains included).
+- Steps for the new `play.htmlfishing.com` host: in Cloudflare, add the DNS
+  record as a tunnel route (wildcard or per-subdomain CNAMEs resolved through
+  the same tunnel), and add the ingress rule
+  `play.htmlfishing.com → http://localhost:PORT` alongside
+  `master.gaywebfishing.org → http://localhost:8081`.
+
 ---
 
 ## Architecture

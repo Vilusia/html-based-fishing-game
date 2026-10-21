@@ -3625,6 +3625,8 @@
             }
             // Permanent HTTPS master-server URL, served by a named Cloudflare
             // tunnel that forwards to the local master server (port 8081).
+            // The game page itself lives at https://play.htmlfishing.com
+            // (served from the repo root via the same tunnel).
             var HTTPS_MASTER = window.MASTER_SERVER_URL || 'https://master.gaywebfishing.org';
             // When the page itself is http://, talk to the IP directly (its
             // cert won't match, but http pages aren't blocked by mixed content).
@@ -3638,7 +3640,7 @@
     <script src="icons.js?v=10"></script>
     <script src="worldgen.js?v=11"></script>
     <script src="ocean.js?v=21"></script>
-    <script src="core.js?v=12.76"></script>
+    <script src="core.js?v=12.77"></script>
     <script src="fish.js?v=12.49"></script>
     <script src="character3d.js?v=8"></script>
     <script src="networking.js?v=12.34"></script>

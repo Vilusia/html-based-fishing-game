@@ -1,8 +1,9 @@
 
 (function () {
-    // Replace 'your-website.com' with your actual domain (e.g., 'itch.io')
-    // Keep 'localhost' and '127.0.0.1' so you can still test it on your computer
-    var allowedDomains = ["gaywebfishing.org", "localhost", "127.0.0.1"];
+    // Play domains. Substring matching covers every subdomain of both roots.
+    // The game is served at https://play.htmlfishing.com (root); the lobby
+    // directory is https://master.gaywebfishing.org.
+    var allowedDomains = ["gaywebfishing.org", "htmlfishing.com", "localhost", "127.0.0.1"];
 
     // Check if the current domain is in the allowed list
     var currentDomain = window.location.hostname;
