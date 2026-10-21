@@ -2622,35 +2622,38 @@ function handleDataFromClient(clientId, data) {
 
     // Initialize user in rate limiter if missing
     if (!rateLimits[clientId]) {
-        rateLimits[clientId] = { lastGeneral: 0, lastChat: 0, lastSound: 0, lastAnim: 0 };
+        rateLimits[clientId] = { lastGeneral: 0 };
     }
 
     const userLimit = rateLimits[clientId];
 
-    // Global Packet Flood Protection (DoS prevention)
-    // Exclude 'chat' from general limit since it has its own specific limit
-    if (data.type !== 'chat' && now - userLimit.lastGeneral < SPAM_THRESHOLDS.general) {
+    // Per-type packet budgets. A single shared flood budget used to be
+    // consumed by the client's 50ms 'update' ticks, so any one-shot message
+    // arriving inside that window was silently dropped — the visible glitch:
+    // non-host players needed several clicks on a prop before it appeared.
+    // Each type now has its own budget, so nothing competes for one
+    // allowance; unknown types still share the general flood budget.
+    // (Values come from SPAM_THRESHOLDS in audio.js where they exist.)
+    const TYPE_BUDGETS = {
+        chat: SPAM_THRESHOLDS.chat,       // 500ms
+        sound: SPAM_THRESHOLDS.sound,     // 200ms
+        anim: SPAM_THRESHOLDS.anim,       // 300ms
+        punch_hit: SPAM_THRESHOLDS.anim,  // 300ms
+        update: 40,                       // clients tick at 50ms; still flood-proof
+        placeProp: 250,                   // capped at 10 props per owner on top
+        undoProp: 300
+    };
+    const budgetMs = TYPE_BUDGETS[data.type];
+    if (budgetMs !== undefined) {
+        const key = 'budget_' + data.type;
+        if (now - (userLimit[key] || 0) < budgetMs) return; // dropped: too fast for this type
+        userLimit[key] = now;
+    }
+    else if (now - userLimit.lastGeneral < SPAM_THRESHOLDS.general) {
         return; // Silently drop packets if they are spamming raw data too fast
     }
-    userLimit.lastGeneral = now;
-
-    // Specific Action Limits
-    if (data.type === 'chat') {
-        if (now - userLimit.lastChat < SPAM_THRESHOLDS.chat) return;
-        userLimit.lastChat = now;
-    }
-    else if (data.type === 'sound') {
-        if (now - userLimit.lastSound < SPAM_THRESHOLDS.sound) return;
-        userLimit.lastSound = now;
-    }
-    else if (data.type === 'anim') {
-        if (now - userLimit.lastAnim < SPAM_THRESHOLDS.anim) return;
-        userLimit.lastAnim = now;
-    }
-    else if (data.type === 'punch_hit') {
-        if (!userLimit.lastPunch) userLimit.lastPunch = 0;
-        if (now - userLimit.lastPunch < SPAM_THRESHOLDS.anim) return;
-        userLimit.lastPunch = now;
+    else {
+        userLimit.lastGeneral = now;
     }
     // ----------------------------------------
 
