@@ -1012,6 +1012,7 @@ function createTwitchPlayer(entry) {
         // the full host first and the bare hostname as a fallback.
         const parentList = [location.host];
         if (location.hostname !== location.host) parentList.push(location.hostname);
+        console.info('[screen] twitch parent:', parentList.join(' , '), '| origin:', location.origin);
         const opts = {
             width: 576,
             height: 324,
