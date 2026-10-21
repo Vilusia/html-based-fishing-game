@@ -1106,60 +1106,100 @@ window.tickYtScreens = function () {
     }
 };
 
-// Fade the video out when a player is between the camera and the screen plane.
+// Draw the player OVER the screen: the video is a DOM layer above WebGL, so a
+// character between the camera and the screen would be hidden behind it. For
+// every player on that line we project their sprite onto the screen plane and
+// stamp a faithful clone of their character art onto the video. The video
+// keeps playing underneath - no hiding, no fading.
 function updateScreenOcclusion(e) {
     if (!e.mesh || !e.cssObj || !e.cssObj.element) return;
     if (typeof camera === 'undefined' || !camera || !camera.position) return;
-    const el = e.cssObj.element;
+    const shell = e.cssObj.element;
 
     const cam = camera.position;
     const SX = e.mesh.position.x, SZ = e.mesh.position.z;
     const sy = e.mesh.position.y + 3.935;
-    const tx = SX - cam.x, tz = SZ - cam.z;
-    const dS = Math.hypot(tx, tz);
-    if (dS < 1) return;
-    const nx = tx / dS, nz = tz / dS;   // unit camera -> screen
+    // Ray-plane: screen plane faces the camera.
+    const Svx = SX - cam.x, Svy = sy - cam.y, Svz = SZ - cam.z;
+    const Slen = Math.sqrt(Svx * Svx + Svy * Svy + Svz * Svz);
+    if (Slen < 0.5) return;
+    // Plane normal (vertical screen => normal is horizontal).
+    const n = { x: Svx / Slen, y: 0, z: Svz / Slen };
+    const SdotN = Svx * n.x + Svz * n.z;
 
-    // Screen right vector (horizontal), from its placement yaw.
+    // Screen right vector from its placement yaw, and px-per-world on the plane.
     const rot = e.mesh.rotation.y;
     const rx = Math.cos(rot), rz = -Math.sin(rot);
+    const PXW = 320 / 3.375;   // shell half-width in px / world half-width
+    const PXH = 180 / 1.9;     // shell half-height in px / world half-height
 
-    const W = 3.5, H = 2.0, MIN_D = 0.25, AT_SCREEN = 1.5;
-
-    const inFront = (px, py, pz) => {
-        // Distance along the view axis from the camera to the player vs screen.
-        const dP = (px - cam.x) * nx + (pz - cam.z) * nz;
-        if (dP < MIN_D || dP >= dS) return false;   // must be in front of the screen
-        // Only hide when the player is standing RIGHT at the screen plane, not
-        // merely somewhere on the camera->screen line (in third-person the
-        // player's own character is always on that line, which made the video
-        // invisible during normal viewing).
-        if (dS - dP > AT_SCREEN) return false;
-        const lateral = (px - SX) * rx + (pz - SZ) * rz;
-        if (Math.abs(lateral) > W) return false;
-        // Player body (ground level ~1.5 up to just above the screen top).
-        if (py - sy > H) return false;
-        if (py - sy < -5.5) return false;
-        return true;
+    const occluders = [];
+    const consider = (m, key) => {
+        if (!m || m.visible === false) return;
+        const sp = m.getObjectByName ? m.getObjectByName('playerSprite') : null;
+        if (!sp) return;
+        const dx = m.position.x - cam.x, dy = m.position.y - cam.y, dz = m.position.z - cam.z;
+        const denom = dx * n.x + dz * n.z;
+        if (denom <= 0.05) return;              // not heading to the plane
+        // t = distance to plane / distance to player (>1 when the player is
+        // closer than the screen, i.e. between camera and plane).
+        const t = SdotN / denom;
+        if (t < 1.02 || t > 20) return;
+        const worldH = (sp.scale && sp.scale.y) ? sp.scale.y : 2.2;
+        // Feet/head rays hit the plane here:
+        const feetPlaneY = cam.y + dy * t;
+        const headPlaneY = cam.y + (dy + worldH) * t;
+        const TfX = cam.x + dx * t, TfZ = cam.z + dz * t;
+        const lateral = (TfX - SX) * rx + (TfZ - SZ) * rz;
+        // Only require an in-front line position and a lateral position on the
+        // screen; vertical placement is handled by the projection itself (the
+        // clone is clipped to the screen by the shell's overflow).
+        if (Math.abs(lateral) > 4.2) return;
+        occluders.push({ key, sp, t, feetPlaneY, headPlaneY, lateral });
     };
 
-    let hide = false;
-    if (typeof player !== 'undefined' && player && player.visible !== false) {
-        hide = inFront(player.position.x, player.position.y, player.position.z);
-    }
-    if (!hide && typeof otherPlayers === 'object') {
+    if (typeof player !== 'undefined' && player) consider(player, 'self');
+    if (typeof otherPlayers === 'object') {
         for (const pid in otherPlayers) {
             const m = otherPlayers[pid] && otherPlayers[pid].mesh;
-            if (!m) continue;
-            if (inFront(m.position.x, m.position.y, m.position.z)) { hide = true; break; }
+            if (m) consider(m, pid);
         }
     }
-    // Smooth fade so the swap isn't a hard pop.
-    const target = hide ? 0 : 1;
-    const cur = parseFloat(el.style.opacity);
-    const now = isFinite(cur) ? cur : 1;
-    const next = now + (target - now) * 0.3;
-    el.style.opacity = String(Math.abs(next - target) < 0.02 ? target : next);
+
+    // Manage the overlay <img> per occluder.
+    if (!e.overlayImgs) e.overlayImgs = {};
+    const wanted = new Set(occluders.map(o => o.key));
+    for (const k in e.overlayImgs) {
+        if (!wanted.has(k)) { e.overlayImgs[k].remove(); delete e.overlayImgs[k]; }
+        else continue;
+    }
+    for (const o of occluders) {
+        let img = e.overlayImgs[o.key];
+        if (!img) {
+            img = document.createElement('img');
+            img.style.position = 'absolute';
+            img.style.transform = 'translateX(-50%)';
+            img.style.imageRendering = 'pixelated';
+            img.style.pointerEvents = 'none';
+            img.style.zIndex = '9';
+            shell.appendChild(img);
+            e.overlayImgs[o.key] = img;
+        }
+
+        const aspect = (o.sp.scale && o.sp.scale.y) ? (o.sp.scale.x / o.sp.scale.y) : 1;
+        const pxH = (o.headPlaneY - o.feetPlaneY) * PXH;   // projected world height
+        img.style.height = pxH + 'px';
+        img.style.width = (pxH * aspect) + 'px';
+        img.style.left = (320 + o.lateral * PXW) + 'px';
+        img.style.top = (180 + (sy - o.headPlaneY) * PXH) + 'px';
+        const src = o.sp.material && o.sp.material.map && o.sp.material.map.image;
+        if (!src) continue;
+        // Refresh the sprite art no more than 4x/sec per player.
+        if (img.__src !== src || Date.now() - (img.__ts || 0) > 250) {
+            try { img.src = src.toDataURL('image/png'); } catch (err) { continue; }
+            img.__src = src; img.__ts = Date.now();
+        }
+    }
 }
 
 // Browsers refuse to unmute cross-origin media before any user interaction.
