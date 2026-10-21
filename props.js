@@ -108,21 +108,21 @@ function placeProp(type) {
         return;
     }
 
-    // --- YOUTUBE SCREEN: prompt for the video BEFORE the cooldown is armed ---
-    let videoId = null;
+    // --- SCREEN: prompt for the source BEFORE the cooldown is armed ---
+    let src = null;
     if (type === 'screen') {
-        // Room-wide cap: each YouTube embed is its own iframe (heavy), so limit
-        // how many screens a room may show at once.
+        // Room-wide cap: each embed is its own iframe (heavy), so limit how
+        // many screens a room may show at once.
         const ytCount = Object.keys(ytPlayers).length;
         if (ytCount >= MAX_YT_SCREENS) {
             showToast('This room already has ' + MAX_YT_SCREENS + ' screens.', 'error');
             return;
         }
-        const url = window.prompt('Paste a YouTube video URL to play on the screen:', '');
+        const url = window.prompt('Paste a YouTube or Twitch URL to play on the screen:', '');
         if (!url) return; // cancelled
-        videoId = ytParseVideoId(String(url).trim());
-        if (!videoId) {
-            showToast('That does not look like a YouTube URL.', 'error');
+        src = parseScreenSource(String(url).trim());
+        if (!src) {
+            showToast('That does not look like a YouTube or Twitch URL.', 'error');
             return;
         }
     }
@@ -143,8 +143,11 @@ function placeProp(type) {
         x,
         z,
         rot, // Include rotation in prop data
-        // Video fields (null for every other prop type)
-        videoId: videoId,
+        // Source fields (null for every other prop type)
+        provider: src ? src.provider : null,
+        videoId: src && src.provider === 'youtube' ? src.id : null,
+        twitchId: src && src.provider === 'twitch' ? src.id : null,
+        twitchKind: src && src.provider === 'twitch' ? src.kind : null,
         startedAt: startedAt,
         placer: String(myDeviceID || ''),
         timestamp: Date.now()
@@ -154,23 +157,26 @@ function placeProp(type) {
         spawnPropMesh(propData);
         myProps.push(propData);
         broadcastToClients({ type: 'propPlaced', prop: propData });
-        if (videoId) startYtSyncLoop(propData);
+        if (src) startYtSyncLoop(propData);
     } else if (hostConn && hostConn.open) {
         hostConn.send({
             type: 'placeProp',
             propType: type,
             // The host relays our id back in propPlaced so ALL records across
-            // the room share one id (this keeps the video sync key stable).
+            // the room share one id (this keeps the sync key stable).
             propId: propData.id,
             x,
             z,
             rot, // Send rotation to host
-            // Video fields for the host to carry into the record it relays
-            videoId: videoId,
+            // Source fields for the host to carry into the record it relays
+            provider: propData.provider,
+            videoId: propData.videoId,
+            twitchId: propData.twitchId,
+            twitchKind: propData.twitchKind,
             startedAt: startedAt,
             placer: String(myDeviceID || '')
         });
-        if (videoId) startYtSyncLoop(propData);
+        if (src) startYtSyncLoop(propData);
     }
 
     // Progression: count placements for the "Decorator" achievement. Props
@@ -845,6 +851,56 @@ function ytParseVideoId(input) {
     return null;
 }
 
+// Resolve a pasted URL to a screen source:
+//   { provider: 'youtube', id: '<11 chars>' }
+//   { provider: 'twitch', kind: 'channel', id: '<name>' }
+//   { provider: 'twitch', kind: 'vod',     id: '<numeric id>' }
+function parseScreenSource(input) {
+    if (!input) return null;
+    const raw = String(input).trim();
+
+    // YouTube first (its ids are 11 chars and unambiguous).
+    const yt = ytParseVideoId(raw);
+    if (yt) return { provider: 'youtube', id: yt };
+
+    // Twitch VOD: twitch.tv/videos/123456789 (checked before channel matching)
+    let m = raw.match(/(?:twitch\.tv\/videos\/|player\.twitch\.tv\/?\?[^#]*\bvideo=)(\d{4,})/);
+    if (m) return { provider: 'twitch', kind: 'vod', id: m[1] };
+
+    // Twitch channel: twitch.tv/<name>, player.twitch.tv/?channel=<name>
+    m = raw.match(/(?:twitch\.tv\/|player\.twitch\.tv\/?\?[^#]*\bchannel=)([A-Za-z0-9_]{2,25})(?:[/?#]|$)/);
+    if (m) return { provider: 'twitch', kind: 'channel', id: m[1] };
+    // Bare channel name (letters/underscores only, 3..25) so "shroud" works.
+    if (/^[A-Za-z0-9_]{3,25}$/.test(raw) && !/^[A-Za-z0-9_-]{11}$/.test(raw)) {
+        return { provider: 'twitch', kind: 'channel', id: raw };
+    }
+    return null;
+}
+
+// Lazily load the Twitch Embed JS (v1 is the stable, versioned endpoint).
+let twitchApiState = 'idle'; // idle | loading | ready | failed
+const twitchQueue = [];
+function loadTwitchApi(cb) {
+    if (twitchApiState === 'ready' && window.Twitch && window.Twitch.Player) { cb(); return; }
+    if (twitchApiState === 'failed') return;
+    twitchQueue.push(cb);
+    if (twitchApiState === 'loading') return;
+    twitchApiState = 'loading';
+    const s = document.createElement('script');
+    s.src = 'https://player.twitch.tv/js/embed/v1.js';
+    s.async = true;
+    s.onload = () => {
+        twitchApiState = 'ready';
+        while (twitchQueue.length) { try { twitchQueue.shift()(); } catch (e) { } }
+    };
+    s.onerror = () => {
+        twitchApiState = 'failed';
+        console.warn('[screen] Twitch embed script failed to load');
+        twitchQueue.length = 0;
+    };
+    document.head.appendChild(s);
+}
+
 // One-time renderer init, called from setupThreeJS() when the game world is
 // built. No-op when the example renderer did not load (offline CDN etc).
 window.initCssScene = function () {
@@ -865,11 +921,13 @@ window.initCssScene = function () {
 
 // Wire the video element + CSS3D object for a screen prop.
 function attachYtVideo(data, group) {
-    if (!data.videoId) return;
+    const isTwitch = data.provider === 'twitch';
+    if (!isTwitch && !data.videoId) return;
+    if (isTwitch && !data.twitchId) return;
     if (typeof THREE.CSS3DObject === 'undefined') {
         // The examples renderer did not load (CDN blocked). Without it there is
         // no way to show the video in-scene; the housing still spawns.
-        console.warn('[yt] CSS3DRenderer missing — screen stays black');
+        console.warn('[screen] CSS3DRenderer missing — screen stays black');
         return;
     }
 
@@ -911,8 +969,16 @@ function attachYtVideo(data, group) {
     else ytOverlay.appendChild(shell); // fallback: at least keep it mountable
 
     const entry = {
-        data: { videoId: data.videoId, startedAt: data.startedAt || Date.now(), placer: data.placer || '' },
+        data: {
+            provider: isTwitch ? 'twitch' : 'youtube',
+            videoId: data.videoId || null,
+            twitchId: data.twitchId || null,
+            twitchKind: data.twitchKind || null,
+            startedAt: data.startedAt || Date.now(),
+            placer: data.placer || ''
+        },
         player: null,
+        provider: isTwitch ? 'twitch' : 'youtube',
         cssObj: cssObj,
         frameEl: frameEl,
         mesh: group,
@@ -921,8 +987,46 @@ function attachYtVideo(data, group) {
         retried: false
     };
     ytPlayers[data.id] = entry;
-    if (ytApiReady) createYtPlayer(entry);
-    else ytPlayerQueue.push(() => createYtPlayer(entry));
+    if (isTwitch) {
+        loadTwitchApi(() => createTwitchPlayer(entry));
+    } else if (ytApiReady) {
+        createYtPlayer(entry);
+    } else {
+        ytPlayerQueue.push(() => createYtPlayer(entry));
+    }
+}
+
+// Mount a Twitch embed. Channels have no meaningful timeline (live), so no
+// seeking; VODs are anchored like YouTube videos.
+function createTwitchPlayer(entry) {
+    if (!entry || !entry.frameEl || !entry.frameEl.isConnected) {
+        setTimeout(() => { if (ytPlayers[Object.keys(ytPlayers).find(k => ytPlayers[k] === entry)]) createTwitchPlayer(entry); }, 250);
+        return;
+    }
+    if (!window.Twitch || !window.Twitch.Player) return;
+    try {
+        const opts = {
+            width: 576,
+            height: 324,
+            // Twitch requires the embedding page's domain. works for localhost
+            // and the live site; the value is exact-matched by Twitch.
+            parent: [location.hostname],
+            autoplay: true,
+            muted: true
+        };
+        if (entry.data.twitchKind === 'vod') opts.video = entry.data.twitchId;
+        else opts.channel = entry.data.twitchId;
+        const p = new Twitch.Player(entry.frameEl, opts);
+        entry.player = p;
+        try { p.setMuted(true); } catch (e) { }
+        // Twitch's player exposes play/pause via the player object.
+        if (p.addEventListener) {
+            p.addEventListener(Twitch.Player.READY, () => { try { p.play(); } catch (e) { } });
+            p.addEventListener(Twitch.Player.PLAYBACK_BLOCKED, () => { try { p.setMuted(true); p.play(); } catch (e) { } });
+        }
+    } catch (err) {
+        console.warn('[screen] Twitch player failed:', err && err.message);
+    }
 }
 
 // Mount the actual YouTube player. Passed the DOM ELEMENT (not an id) so it
@@ -982,8 +1086,10 @@ function createYtPlayer(entry) {
 
 // Heartbeat the placer runs for each screen it placed. Broadcasts either
 // directly (host) or up to the host, which relays (see handleDataFromClient).
+// Live Twitch channels have no timeline to sync, so they skip the heartbeat.
 function startYtSyncLoop(propData) {
     if (ytSyncLoops[propData.id]) return;
+    if (propData.provider === 'twitch' && propData.twitchKind !== 'vod') return;
     ytSyncLoops[propData.id] = setInterval(() => {
         if (typeof isHost === 'undefined' && typeof player === 'undefined') return;
         const e = ytPlayers[propData.id];
@@ -1051,9 +1157,14 @@ window.tickYtScreens = function () {
 ['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
     document.addEventListener(ev, () => {
         for (const id in ytPlayers) {
-            const p = ytPlayers[id] && ytPlayers[id].player;
+            const entry = ytPlayers[id];
+            const p = entry && entry.player;
             try {
-                if (p && p.isMuted && p.isMuted()) {
+                if (!p) continue;
+                if (entry.provider === 'twitch') {
+                    if (p.getMuted && p.getMuted()) p.setMuted(false);
+                    if (p.play) p.play();
+                } else if (p.isMuted && p.isMuted()) {
                     p.unMute();
                     p.playVideo && p.playVideo();
                 }
@@ -1062,7 +1173,8 @@ window.tickYtScreens = function () {
     }, true);
 });
 
-window.updateYtAudio = function (e) {    if (!e.player || !e.player.setVolume) return;
+window.updateYtAudio = function (e) {
+    if (!e.player) return;
     let dist = 999;
     if (typeof camera !== 'undefined' && camera && typeof camera.position !== 'undefined') {
         dist = camera.position.distanceTo(e.mesh.position);
@@ -1071,19 +1183,57 @@ window.updateYtAudio = function (e) {    if (!e.player || !e.player.setVolume) r
     }
     const vol = Math.pow(Math.max(0, 1 - dist / MAX_VOICE_DISTANCE), 1.5);
     const volInt = Math.round(vol * 100);
+    const p = e.player;
+
+    // Twitch's embed API takes 0..1 volumes and setMuted booleans.
+    if (e.provider === 'twitch') {
+        try {
+            if (vol > 0.02) {
+                if (p.getMuted && p.getMuted()) { p.setMuted(false); }
+                if (p.setVolume) p.setVolume(vol);
+            } else if (!p.getMuted || !p.getMuted()) {
+                if (p.setMuted) p.setMuted(true);
+            }
+        } catch (err) { }
+        return;
+    }
+
+    // YouTube
+    if (!p.setVolume) return;
     try {
         if (volInt > 1) {
-            if (e.player.isMuted && e.player.isMuted()) e.player.unMute();
-            e.player.setVolume(volInt);
-        } else if (!e.player.isMuted || e.player.isMuted() === false) {
-            e.player.mute();
+            if (p.isMuted && p.isMuted()) p.unMute();
+            p.setVolume(volInt);
+        } else if (!p.isMuted || p.isMuted() === false) {
+            p.mute();
         }
     } catch (err) { }
 };
 
 // Resync a drifted player (>= 1.2s off the anchor).
 window.tickYtSync = function (e, id) {
-    if (!e.player || !e.player.getCurrentTime || typeof camera === 'undefined') return;
+    if (!e.player || typeof camera === 'undefined') return;
+
+    if (e.provider === 'twitch') {
+        try {
+            // Live channels have no timeline: just make sure they are playing.
+            if (e.data.twitchKind !== 'vod') {
+                if (e.player.isPaused && e.player.isPaused()) e.player.play();
+                return;
+            }
+            // VOD: anchor + seek, like YouTube.
+            const target = (e.syncAt !== null && e.syncRecvAt)
+                ? e.syncAt + (Date.now() - e.syncRecvAt) / 1000
+                : Math.max(0, (Date.now() - e.data.startedAt) / 1000);
+            const cur = e.player.getCurrentTime ? e.player.getCurrentTime() : NaN;
+            if (isFinite(cur) && isFinite(target) && Math.abs(target - cur) > 2.5 && e.player.seek) {
+                e.player.seek(target);
+            }
+        } catch (err) { }
+        return;
+    }
+
+    if (!e.player.getCurrentTime) return;
     let target;
     if (e.syncAt !== null && e.syncRecvAt) {
         target = e.syncAt + (Date.now() - e.syncRecvAt) / 1000;
@@ -1119,28 +1269,38 @@ window.changeScreenVideo = function (propId) {
         return;
     }
 
-    const url = window.prompt('Paste a new YouTube URL for this screen:', '');
+    const url = window.prompt('Paste a new YouTube or Twitch URL for this screen:', '');
     if (!url) return;
-    const videoId = ytParseVideoId(String(url).trim());
-    if (!videoId) { showToast('That does not look like a YouTube URL.', 'error'); return; }
+    const src = parseScreenSource(String(url).trim());
+    if (!src) { showToast('That does not look like a YouTube or Twitch URL.', 'error'); return; }
 
     const msg = {
         type: 'ytChange',
         propId: propId,
-        videoId: videoId,
+        provider: src.provider,
+        videoId: src.provider === 'youtube' ? src.id : null,
+        twitchId: src.provider === 'twitch' ? src.id : null,
+        twitchKind: src.provider === 'twitch' ? src.kind : null,
         startedAt: Date.now(),
         placer: me
     };
 
     // Update our own record first, then tell the room.
-    pd.videoId = videoId;
+    pd.provider = msg.provider;
+    pd.videoId = msg.videoId;
+    pd.twitchId = msg.twitchId;
+    pd.twitchKind = msg.twitchKind;
     pd.startedAt = msg.startedAt;
     window.applyYtChange(msg);
 
     if (typeof isHost !== 'undefined' && isHost) {
         if (myProps.some(p => p.id === propId)) {
             const rec = myProps.find(p => p.id === propId);
-            rec.videoId = videoId; rec.startedAt = msg.startedAt;
+            rec.provider = msg.provider;
+            rec.videoId = msg.videoId;
+            rec.twitchId = msg.twitchId;
+            rec.twitchKind = msg.twitchKind;
+            rec.startedAt = msg.startedAt;
         }
         broadcastToClients(msg);
     } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
@@ -1155,6 +1315,7 @@ window.applyYtChange = function (data) {
     const e = ytPlayers[id];
     if (!e) return; // no screen with this id here
 
+    const provider = data.provider === 'twitch' ? 'twitch' : 'youtube';
     // Tear down the old player but keep the shell in the DOM.
     try { if (e.player && e.player.destroy) e.player.destroy(); } catch (err) { }
     e.player = null;
@@ -1168,15 +1329,24 @@ window.applyYtChange = function (data) {
         shell.appendChild(frameEl);
         e.frameEl = frameEl;
     }
+    e.provider = provider;
     e.data = {
-        videoId: data.videoId,
+        provider: provider,
+        videoId: data.videoId || null,
+        twitchId: data.twitchId || null,
+        twitchKind: data.twitchKind || null,
         startedAt: data.startedAt || Date.now(),
         placer: data.placer || (e.data && e.data.placer) || ''
     };
     e.syncAt = null;
     e.syncRecvAt = null;
-    if (ytApiReady) createYtPlayer(e);
-    else ytPlayerQueue.push(() => createYtPlayer(e));
+    if (provider === 'twitch') {
+        loadTwitchApi(() => createTwitchPlayer(e));
+    } else if (ytApiReady) {
+        createYtPlayer(e);
+    } else {
+        ytPlayerQueue.push(() => createYtPlayer(e));
+    }
 };
 
 // --- HOOK NETWORKING ---

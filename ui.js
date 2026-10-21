@@ -2737,8 +2737,15 @@ function handleDataFromClient(clientId, data) {
                 removePropFromWorld(oldest.id); // Remove visually on host
             }
 
-            // Keep the placer's prop id exactly as sent, so the video/sync keys
-            // (and undoNo history) are consistent across every peer's records.
+            // Keep the placer's prop id exactly as sent, so the sync keys (and
+            // undo history) are consistent across every peer's records.
+            const srcProvider = (data.provider === 'twitch') ? 'twitch'
+                : (data.provider === 'youtube') ? 'youtube' : null;
+            const ytId = (typeof data.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.videoId))
+                ? data.videoId : null;
+            const twId = (typeof data.twitchId === 'string' && (/^[A-Za-z0-9_]{2,25}$/.test(data.twitchId) || /^\d{4,}$/.test(data.twitchId)))
+                ? data.twitchId : null;
+            const twKind = (data.twitchKind === 'vod') ? 'vod' : 'channel';
             const newProp = {
                 id: (typeof data.propId === 'string' && data.propId.length <= 40)
                     ? data.propId
@@ -2750,9 +2757,12 @@ function handleDataFromClient(clientId, data) {
                 // to mesh.rotation.y = their OWN player rotation and the prop
                 // faces a different way on each player's screen.
                 rot: (typeof data.rot === 'number' && isFinite(data.rot)) ? data.rot : 0,
-                // Video fields (undefined for every other prop type)
-                videoId: (typeof data.videoId === 'string' && data.videoId.length === 11)
-                    ? data.videoId : null,
+                // Screen source (null for every other prop type)
+                provider: (srcProvider === 'twitch' && twId) ? 'twitch'
+                    : (srcProvider === 'youtube' && ytId) ? 'youtube' : null,
+                videoId: ytId,
+                twitchId: (srcProvider === 'twitch') ? twId : null,
+                twitchKind: (srcProvider === 'twitch' && twId) ? twKind : null,
                 startedAt: (typeof data.startedAt === 'number') ? data.startedAt : Date.now(),
                 placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : '',
                 owner: clientId,
@@ -2773,17 +2783,34 @@ function handleDataFromClient(clientId, data) {
             // A placer swapped the video on their screen. Validate, update the
             // stored record (so late joiners get the new video via allProps),
             // then relay. Hosts may also change any screen.
+            const provider = (data.provider === 'twitch') ? 'twitch' : 'youtube';
             const vid = (typeof data.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.videoId))
                 ? data.videoId : null;
-            if (!vid) return;
+            const twId = (typeof data.twitchId === 'string' && (/^[A-Za-z0-9_]{2,25}$/.test(data.twitchId) || /^\d{4,}$/.test(data.twitchId)))
+                ? data.twitchId : null;
+            const twKind = (data.twitchKind === 'vod') ? 'vod' : 'channel';
+            if (provider === 'youtube' && !vid) return;
+            if (provider === 'twitch' && !twId) return;
             const startedAt = (typeof data.startedAt === 'number' && isFinite(data.startedAt))
                 ? data.startedAt : Date.now();
             const rec = activeProps.find(p => p.id === data.propId);
             if (!rec) return;                      // unknown screen: ignore
             if (rec.owner !== clientId && !isHost) return; // only the placer (or host) may change it
-            rec.videoId = vid;
+            rec.provider = provider;
+            rec.videoId = provider === 'youtube' ? vid : null;
+            rec.twitchId = provider === 'twitch' ? twId : null;
+            rec.twitchKind = provider === 'twitch' ? twKind : null;
             rec.startedAt = startedAt;
-            const clean = { type: 'ytChange', propId: rec.id, videoId: vid, startedAt: startedAt, placer: data.placer || '' };
+            const clean = {
+                type: 'ytChange',
+                propId: rec.id,
+                provider: provider,
+                videoId: provider === 'youtube' ? vid : null,
+                twitchId: provider === 'twitch' ? twId : null,
+                twitchKind: provider === 'twitch' ? twKind : null,
+                startedAt: startedAt,
+                placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : ''
+            };
             broadcastToClients(clean);
             applyYtChange(clean);
 
