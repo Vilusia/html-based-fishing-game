@@ -4791,6 +4791,11 @@ function setupThreeJS() {
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
+        // Keep the CSS3D overlay (YouTube Screen prop) in step with the canvas
+        // so the video stays pinned to its housing after a window resize.
+        if (typeof cssRenderer !== 'undefined' && cssRenderer && typeof cssRenderer.setSize === 'function') {
+            cssRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
     });
 }
 
