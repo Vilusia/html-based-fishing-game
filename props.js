@@ -1102,7 +1102,34 @@ function setTwitchBadge(entry, text) {
     } else {
         badge.textContent = text;
     }
+    entry._twBadgeShown = true;
 }
+
+// True when a screen exists but its stream has not started (badge showing).
+window.twScreenNeedsStart = function (propId) {
+    const e = ytPlayers[propId];
+    if (!e || e.provider !== 'twitch') return false;
+    return !(e._twProgressAt && (Date.now() - e._twProgressAt) < 2000);
+};
+
+// Start a paused screen's stream from a KEYBOARD gesture (E). A keypress in the
+// top document counts as user activation, so the embed's play() is allowed even
+// though its own click gate was blocked. Also frees the mouse in case the user
+// wants to click the player instead.
+window.startScreenPlayback = function (propId) {
+    const e = ytPlayers[propId];
+    if (!e || !e.player) return;
+    try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) { }
+    try {
+        if (e.provider === 'twitch') {
+            e.player.setMuted(true);
+            e.player.play();
+        } else {
+            e.player.playVideo();
+        }
+    } catch (err) { }
+    setTwitchBadge(e, 'STARTING...');
+};
 
 // Mount the actual YouTube player. Passed the DOM ELEMENT (not an id) so it
 // works even when the CSS3D overlay restructures the tree.
@@ -1314,6 +1341,10 @@ window.tickYtSync = function (e, id) {
                     if (!e._twBadgeShown && document.visibilityState === 'visible') {
                         setTwitchBadge(e, 'CLICK SCREEN TO PLAY');
                         e._twBadgeShown = true;
+                        // Pointer lock routes ALL mouse input to the canvas, so
+                        // the player would be unclickable while the camera is
+                        // locked. Free the mouse once so a click can land.
+                        try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) { }
                     }
                 } else if (e._twBadgeShown) {
                     setTwitchBadge(e, null);

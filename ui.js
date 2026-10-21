@@ -10491,6 +10491,7 @@ function setupInputs() {
             else if (interactTarget === 'tutorial') toggleTutorial();
             else if (interactTarget === 'fisher') talkToFisher();
             else if (interactTarget === 'ytscreen' && typeof window.changeScreenVideo === 'function') window.changeScreenVideo(interactScreenId);
+            else if (interactTarget === 'twstart' && typeof window.startScreenPlayback === 'function') window.startScreenPlayback(interactScreenId);
             else if (interactTarget === 'lava_keeper') {
                 if (saveState.lavaUnlocked) {
                     enterLavaWorld();
@@ -10775,6 +10776,7 @@ function setupInputs() {
         else if (interactTarget === 'tutorial') toggleTutorial();
         else if (interactTarget === 'fisher') talkToFisher();
         else if (interactTarget === 'ytscreen' && typeof window.changeScreenVideo === 'function') window.changeScreenVideo(interactScreenId);
+        else if (interactTarget === 'twstart' && typeof window.startScreenPlayback === 'function') window.startScreenPlayback(interactScreenId);
 
         // --- ADDED LAVA KEEPER CHECK FOR MOBILE ---
         else if (interactTarget === 'lava_keeper') {
@@ -12406,7 +12408,15 @@ function animate() {
             if (bestId) {
                 const pd = props[bestId].userData.propData;
                 const canEdit = String(pd.placer || '') === me || (typeof isHost !== 'undefined' && isHost);
-                if (canEdit) {
+                // A stalled Twitch stream takes priority: ANY player nearby can
+                // start it with E (a keypress is valid user activation).
+                if (pd.provider === 'twitch' && window.twScreenNeedsStart && window.twScreenNeedsStart(bestId)) {
+                    interactTarget = 'twstart';
+                    interactScreenId = bestId;
+                    prompt.innerText = 'PRESS E TO START STREAM';
+                    prompt.style.display = 'block';
+                    if (btn) btn.innerText = "PLAY";
+                } else if (canEdit) {
                     interactTarget = 'ytscreen';
                     interactScreenId = bestId;
                     prompt.innerText = 'PRESS E TO CHANGE VIDEO';
