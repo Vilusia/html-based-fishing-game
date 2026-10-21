@@ -1099,8 +1099,63 @@ window.tickYtScreens = function () {
         }
         try { window.updateYtAudio(e); } catch (err) { }
         try { window.tickYtSync(e, id); } catch (err) { }
+        // Occlusion: the video is a DOM overlay drawn above the WebGL scene,
+        // so hide it while any player stands in front of the screen and their
+        // character should be visible in front of it.
+        try { updateScreenOcclusion(e); } catch (err) { }
     }
 };
+
+// Fade the video out when a player is between the camera and the screen plane.
+function updateScreenOcclusion(e) {
+    if (!e.mesh || !e.cssObj || !e.cssObj.element) return;
+    if (typeof camera === 'undefined' || !camera || !camera.position) return;
+    const el = e.cssObj.element;
+
+    const cam = camera.position;
+    const SX = e.mesh.position.x, SZ = e.mesh.position.z;
+    const sy = e.mesh.position.y + 3.935;
+    const tx = SX - cam.x, tz = SZ - cam.z;
+    const dS = Math.hypot(tx, tz);
+    if (dS < 1) return;
+    const nx = tx / dS, nz = tz / dS;   // unit camera -> screen
+
+    // Screen right vector (horizontal), from its placement yaw.
+    const rot = e.mesh.rotation.y;
+    const rx = Math.cos(rot), rz = -Math.sin(rot);
+
+    const W = 3.5, H = 2.0, MIN_D = 0.25, GAP = 0.45;
+
+    const inFront = (px, py, pz) => {
+        // Distance along the view axis from the camera to the player vs screen.
+        const dP = (px - cam.x) * nx + (pz - cam.z) * nz;
+        if (dP < MIN_D || dP > dS - GAP) return false;   // not between camera and screen
+        const lateral = (px - SX) * rx + (pz - SZ) * rz;
+        if (Math.abs(lateral) > W) return false;
+        // Player body (ground level ~1.5 up to just above the screen top).
+        if (py - sy > H) return false;
+        if (py - sy < -5.5) return false;
+        return true;
+    };
+
+    let hide = false;
+    if (typeof player !== 'undefined' && player && player.visible !== false) {
+        hide = inFront(player.position.x, player.position.y, player.position.z);
+    }
+    if (!hide && typeof otherPlayers === 'object') {
+        for (const pid in otherPlayers) {
+            const m = otherPlayers[pid] && otherPlayers[pid].mesh;
+            if (!m) continue;
+            if (inFront(m.position.x, m.position.y, m.position.z)) { hide = true; break; }
+        }
+    }
+    // Smooth fade so the swap isn't a hard pop.
+    const target = hide ? 0 : 1;
+    const cur = parseFloat(el.style.opacity);
+    const now = isFinite(cur) ? cur : 1;
+    const next = now + (target - now) * 0.3;
+    el.style.opacity = String(Math.abs(next - target) < 0.02 ? target : next);
+}
 
 // Browsers refuse to unmute cross-origin media before any user interaction.
 // The game gets pointer/key events constantly, so re-apply unmute on each of
