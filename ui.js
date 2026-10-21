@@ -2737,8 +2737,12 @@ function handleDataFromClient(clientId, data) {
                 removePropFromWorld(oldest.id); // Remove visually on host
             }
 
+            // Keep the placer's prop id exactly as sent, so the video/sync keys
+            // (and undoNo history) are consistent across every peer's records.
             const newProp = {
-                id: Date.now() + "_" + Math.random().toString().substr(2, 5),
+                id: (typeof data.propId === 'string' && data.propId.length <= 40)
+                    ? data.propId
+                    : Date.now() + "_" + Math.random().toString().substr(2, 5),
                 type: data.propType,
                 x: data.x,
                 z: data.z,
@@ -2746,12 +2750,24 @@ function handleDataFromClient(clientId, data) {
                 // to mesh.rotation.y = their OWN player rotation and the prop
                 // faces a different way on each player's screen.
                 rot: (typeof data.rot === 'number' && isFinite(data.rot)) ? data.rot : 0,
+                // Video fields (undefined for every other prop type)
+                videoId: (typeof data.videoId === 'string' && data.videoId.length === 11)
+                    ? data.videoId : null,
+                startedAt: (typeof data.startedAt === 'number') ? data.startedAt : Date.now(),
+                placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : '',
                 owner: clientId,
                 timestamp: Date.now()
             };
             activeProps.push(newProp);
             spawnPropMesh(newProp); // Spawn visually on host
             broadcastToClients({ type: 'propPlaced', prop: newProp });
+
+        } else if (data.type === 'ytSync') {
+            // Video sync heartbeat from the placer: relay to the other clients
+            // AND consume it here for the host's own screen (unless the host
+            // IS the placer, which the placer-side filter already handles).
+            if (isHost) broadcastToClients(data);
+            applyYtSync(data);
 
         } else if (data.type === 'undoProp') {
             // P2P HOST: Handle Undo Request
@@ -2929,6 +2945,9 @@ function handleDataFromHost(data) {
     else if (data.type === 'propPlaced') spawnPropMesh(data.prop);
     else if (data.type === 'propRemoved') removePropFromWorld(data.id);
     else if (data.type === 'allProps') { if (Array.isArray(data.props)) data.props.slice(0, 1000).forEach(p => spawnPropMesh(p)); }
+    // Video heartbeat relayed by the host (either from the placer client, or
+    // broadcast by theHost when theHost is the placer).
+    else if (data.type === 'ytSync') applyYtSync(data);
 }
 
 function broadcastPlayerList() {
@@ -4352,6 +4371,9 @@ function setupThreeJS() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
     document.getElementById('game-container').appendChild(renderer.domElement);
+
+    // CSS3D overlay for the YouTube Screen prop (defined in props.js).
+    if (window.initCssScene) window.initCssScene();
 
     const hemi = new THREE.HemisphereLight(0xFFEEB1, 0x080820, 0.25); // Darker ambient
     hemi.name = 'hemiLight';
@@ -12390,6 +12412,13 @@ function animate() {
             p[3] = bobber.position.x; p[4] = bobber.position.y; p[5] = bobber.position.z;
             fishingLine.geometry.attributes.position.needsUpdate = true;
         } else fishingLine.visible = false;
+    }
+
+    // CSS3D overlay (YouTube Screen prop): keep DOM iframes glued to the scene
+    // and audio volume laced to proximity — runs before the WebGL draw.
+    if (window.tickYtScreens && cssRenderer) {
+        try { window.tickYtScreens(); } catch (e) { }
+        cssRenderer.render(cssScene, camera);
     }
 
     renderer.render(scene, camera);

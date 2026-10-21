@@ -84,7 +84,8 @@ function renderPropsUI() {
         { id: 'tireswing', icon: 'tireswing', name: 'Tire Swing' },
         { id: 'hotspring', icon: 'hotspring', name: 'Hot Spring' },
         { id: 'windchime', icon: 'windchime', name: 'Wind Chime' },
-        { id: 'surfboard', icon: 'surfboard', name: 'Surfboard' }
+        { id: 'surfboard', icon: 'surfboard', name: 'Surfboard' },
+        { id: 'screen', icon: 'screen', name: 'YouTube Screen' }
     ];
 
     items.forEach(item => {
@@ -106,11 +107,35 @@ function placeProp(type) {
         showToast("Slow down!", 'error');
         return;
     }
+
+    // --- YOUTUBE SCREEN: prompt for the video BEFORE the cooldown is armed ---
+    let videoId = null;
+    if (type === 'screen') {
+        // Room-wide cap: each YouTube embed is its own iframe (heavy), so limit
+        // how many screens a room may show at once.
+        const ytCount = Object.keys(ytPlayers).length;
+        if (ytCount >= MAX_YT_SCREENS) {
+            showToast('This room already has ' + MAX_YT_SCREENS + ' screens.', 'error');
+            return;
+        }
+        const url = window.prompt('Paste a YouTube video URL to play on the screen:', '');
+        if (!url) return; // cancelled
+        videoId = ytParseVideoId(String(url).trim());
+        if (!videoId) {
+            showToast('That does not look like a YouTube URL.', 'error');
+            return;
+        }
+    }
+
     lastPropTime = Date.now();
 
     const x = parseFloat(player.position.x.toFixed(2));
     const z = parseFloat(player.position.z.toFixed(2));
     const rot = parseFloat(player.rotation.y.toFixed(3)); // Add rotation
+
+    // Wall-clock anchor for video sync: every client advances its own player
+    // from startedAt, so no periodic timestamps are needed to stay in step.
+    const startedAt = Date.now();
 
     const propData = {
         id: Date.now() + "_" + Math.random().toString().substr(2, 5),
@@ -118,6 +143,10 @@ function placeProp(type) {
         x,
         z,
         rot, // Include rotation in prop data
+        // Video fields (null for every other prop type)
+        videoId: videoId,
+        startedAt: startedAt,
+        placer: String(myDeviceID || ''),
         timestamp: Date.now()
     };
 
@@ -125,14 +154,23 @@ function placeProp(type) {
         spawnPropMesh(propData);
         myProps.push(propData);
         broadcastToClients({ type: 'propPlaced', prop: propData });
+        if (videoId) startYtSyncLoop(propData);
     } else if (hostConn && hostConn.open) {
         hostConn.send({
             type: 'placeProp',
             propType: type,
+            // The host relays our id back in propPlaced so ALL records across
+            // the room share one id (this keeps the video sync key stable).
+            propId: propData.id,
             x,
             z,
-            rot // Send rotation to host
+            rot, // Send rotation to host
+            // Video fields for the host to carry into the record it relays
+            videoId: videoId,
+            startedAt: startedAt,
+            placer: String(myDeviceID || '')
         });
+        if (videoId) startYtSyncLoop(propData);
     }
 
     // Progression: count placements for the "Decorator" achievement. Props
@@ -690,6 +728,39 @@ function spawnPropMesh(data) {
         g.add(board, stripe, fin, stand);
     }
 
+    else if (data.type === 'screen') {
+        // YouTube Screen: a chunky jumbotron on legs. The actual video is a
+        // real DOM iframe rendered by CSS3DRenderer (attachYtVideo below), so
+        // the WebGL mesh is just the housing + a dark panel behind the video.
+        const housing = new THREE.MeshStandardMaterial({ color: 0x24262e, roughness: 0.7 });
+        const trimMat = new THREE.MeshStandardMaterial({ color: 0x44485c, roughness: 0.5 });
+
+        // Housom frame around a 16:9 panel (panel ~5.6 x 3.15 units).
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(5.9, 3.45, 0.22), housing);
+        panel.position.y = 3.4;
+        const screenPlane = new THREE.Mesh(new THREE.PlaneGeometry(5.7, 3.25), new THREE.MeshBasicMaterial({ color: 0x050505 }));
+        screenPlane.position.set(0, 3.4, 0.12);
+
+        // Two speaker pylons with grills.
+        for (const s of [-1, 1]) {
+            const spk = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.4, 0.5), trimMat);
+            spk.position.set(s * 3.3, 1.0, 0);
+            g.add(spk);
+        }
+
+        // Stand feet.
+        for (const s of [-1, 1]) {
+            const foot = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.4), housing);
+            foot.position.set(s * 1.4, 0.8, 0);
+            g.add(foot);
+        }
+
+        g.add(panel, screenPlane);
+
+        // Wire up the video (no-op if CSS3DRenderer/YouTube API unavailable).
+        attachYtVideo(data, g);
+    }
+
     mesh = g;
     // Get terrain height for proper Y positioning
     const terrainY = (typeof window.getTerrainHeight === 'function') ? window.getTerrainHeight(data.x, data.z) : 0;
@@ -721,7 +792,308 @@ function removePropFromWorld(id) {
         scene.remove(p);
         delete props[id];
     }
+    // Video cleanup: destroy the YouTube player, drop the CSS3D object and
+    // stop the placer's sync heartbeat.
+    if (ytPlayers[id]) {
+        try { if (ytPlayers[id].player && ytPlayers[id].player.destroy) ytPlayers[id].player.destroy(); } catch (e) { }
+        if (ytPlayers[id].cssObj && cssScene) cssScene.remove(ytPlayers[id].cssObj);
+        delete ytPlayers[id];
+    }
+    if (ytSyncLoops[id]) { clearInterval(ytSyncLoops[id]); delete ytSyncLoops[id]; }
 }
+
+// ===========================================================================
+// YOUTUBE SCREEN
+// ---------------------------------------------------------------------------
+// The placer pastes a YouTube URL. Every client embeds the video with the
+// official IFrame API (hidden controls, muted until proximity says otherwise)
+// and advances to the shared wall-clock anchor (prop.startedAt), so playback
+// stays in sync with NO heartbeats. The placer also broadcasts a small
+// ytSync heartbeat every 2s to correct clock skew; everyone else applies it.
+//
+// Rendering: iframes cannot be blitted into WebGL (cross-origin), so they
+// live in the DOM and follow the prop through CSS3DRenderer (three r128
+// examples, pinned the same way as three itself). Screens render above the
+// canvas, so geometry won't occlude them - accepted tradeoff for real video.
+// ===========================================================================
+const MAX_YT_SCREENS = 5;
+const ytPlayers = {};
+const ytSyncLoops = {};
+let ytApiReady = false;
+const ytPlayerQueue = [];
+let cssRenderer = null;
+let cssScene = null;
+let ytOverlay = null;
+
+window.onYouTubeIframeAPIReady = function () {
+    ytApiReady = true;
+    ytPlayerQueue.forEach(f => f());
+    ytPlayerQueue.length = 0;
+};
+
+// Accepts every common YouTube URL form; returns an 11-char id or null.
+function ytParseVideoId(input) {
+    if (!input) return null;
+    if (/^[A-Za-z0-9_-]{11}$/.test(input)) return input;
+    let m = input.match(/(?:v=|\/v\/|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
+    if (m) return m[1];
+    m = input.match(/^https?:\/\/www\.youtube-nocookie\.com\/embed\/([A-Za-z0-9_-]{11})/);
+    if (m) return m[1];
+    return null;
+}
+
+// One-time renderer init, called from setupThreeJS() when the game world is
+// built. No-op when the example renderer did not load (offline CDN etc).
+window.initCssScene = function () {
+    if (cssRenderer || typeof THREE === 'undefined' || typeof THREE.CSS3DRenderer === 'undefined') return;
+    cssRenderer = new THREE.CSS3DRenderer();
+    cssRenderer.setSize(window.innerWidth, window.innerHeight);
+    const el = cssRenderer.domElement;
+    el.style.position = 'absolute';
+    el.style.top = '0';
+    el.style.left = '0';
+    // The whole CSS3D overlay must not eat game input.
+    el.style.pointerEvents = 'none';
+    el.style.zIndex = '2';
+    const gc = document.getElementById('game-container');
+    if (gc) gc.appendChild(el);
+    cssScene = new THREE.Scene();
+};
+
+// Wire the video element + CSS3D object for a screen prop.
+function attachYtVideo(data, group) {
+    if (!data.videoId) return;
+    if (typeof THREE.CSS3DObject === 'undefined') {
+        // The examples renderer did not load (CDN blocked). Without it there is
+        // no way to show the video in-scene; the housing still spawns.
+        console.warn('[yt] CSS3DRenderer missing — screen stays black');
+        return;
+    }
+
+    // Make sure the CSS3D overlay exists BEFORE creating the element: the
+    // YouTube API resolves its target inside the document, so a detached shell
+    // means no player at all.
+    if (!cssRenderer && window.initCssScene) window.initCssScene();
+
+    const shell = document.createElement('div');
+    shell.style.width = '576px';
+    shell.style.height = '324px';
+    shell.style.background = '#050505';
+    shell.style.pointerEvents = 'none';
+    shell.style.overflow = 'hidden';
+    const frameEl = document.createElement('div');
+    frameEl.style.width = '100%';
+    frameEl.style.height = '100%';
+    frameEl.style.pointerEvents = 'none';
+    shell.appendChild(frameEl);
+
+    // Attach to the DOM first. The CSS3D object owns placement; this container
+    // makes the node findable even if the 3D scene renders later.
+    if (!ytOverlay) {
+        ytOverlay = document.createElement('div');
+        ytOverlay.style.position = 'fixed';
+        ytOverlay.style.left = '0';
+        ytOverlay.style.top = '0';
+        ytOverlay.style.width = '0';
+        ytOverlay.style.height = '0';
+        ytOverlay.style.overflow = 'visible';
+        ytOverlay.style.pointerEvents = 'none';
+        ytOverlay.style.zIndex = '-1';
+        document.body.appendChild(ytOverlay);
+    }
+
+    const cssObj = new THREE.CSS3DObject(shell);
+    cssObj.scale.set(0.0098, 0.0098, 1); // 576px -> ~5.65 world units wide (1.56:1)
+    if (cssScene) cssScene.add(cssObj);
+    else ytOverlay.appendChild(shell); // fallback: at least keep it mountable
+
+    const entry = {
+        data: { videoId: data.videoId, startedAt: data.startedAt || Date.now(), placer: data.placer || '' },
+        player: null,
+        cssObj: cssObj,
+        frameEl: frameEl,
+        mesh: group,
+        syncAt: null,
+        syncRecvAt: null,
+        retried: false
+    };
+    ytPlayers[data.id] = entry;
+    if (ytApiReady) createYtPlayer(entry);
+    else ytPlayerQueue.push(() => createYtPlayer(entry));
+}
+
+// Mount the actual YouTube player. Passed the DOM ELEMENT (not an id) so it
+// works even when the CSS3D overlay restructures the tree.
+function createYtPlayer(entry) {
+    if (!entry || !entry.frameEl || !entry.frameEl.isConnected) {
+        // Not in the document yet: retry shortly instead of silently failing.
+        setTimeout(() => { if (ytPlayers[Object.keys(ytPlayers).find(k => ytPlayers[k] === entry)]) createYtPlayer(entry); }, 250);
+        return;
+    }
+    try {
+        const startSec = Math.max(0, Math.floor((Date.now() - entry.data.startedAt) / 1000));
+        entry.player = new YT.Player(entry.frameEl, {
+            videoId: entry.data.videoId,
+            width: '576',
+            height: '324',
+            playerVars: {
+                autoplay: 1,
+                // Browsers block UNMUTED autoplay in cross-origin iframes, which
+                // leaves the player stuck on its thumbnail (reads as "not
+                // playing"). Start muted — always allowed — and let the
+                // proximity loop unmute once someone is close enough.
+                mute: 1,
+                controls: 0,
+                disablekb: 1,
+                modestbranding: 1,
+                rel: 0,
+                playsinline: 1,
+                fs: 0,
+                iv_load_policy: 3,
+                start: startSec
+            },
+            events: {
+                onReady: (e) => {
+                    try {
+                        e.target.mute();
+                        e.target.playVideo();
+                    } catch (err) { }
+                },
+                onError: () => {
+                    // 101/150: the owner disabled embedding. Black screen is fine.
+                    console.warn('[yt] embed rejected for', entry.data.videoId);
+                }
+            }
+        });
+        // Watchdog: some browsers mount but never start. If the state is still
+        // unstarted/paused after 2.5s, nudge playback once.
+        setTimeout(() => {
+            try {
+                if (!entry.player || !entry.player.getPlayerState) return;
+                const st = entry.player.getPlayerState();
+                if (st === -1 || st === 2 || st === 5) entry.player.playVideo();
+            } catch (err) { }
+        }, 2500);
+    } catch (err) { /* leave black panel */ }
+}
+
+// Heartbeat the placer runs for each screen it placed. Broadcasts either
+// directly (host) or up to the host, which relays (see handleDataFromClient).
+function startYtSyncLoop(propData) {
+    if (ytSyncLoops[propData.id]) return;
+    ytSyncLoops[propData.id] = setInterval(() => {
+        if (typeof isHost === 'undefined' && typeof player === 'undefined') return;
+        const e = ytPlayers[propData.id];
+        let at = (Date.now() - propData.startedAt) / 1000;
+        if (e && e.player && e.player.getCurrentTime) {
+            try { at = e.player.getCurrentTime(); } catch (err) { }
+        }
+        const msg = {
+            type: 'ytSync',
+            propId: propData.id,
+            at: Math.round((at || 0) * 10) / 10,
+            ts: Date.now(),
+            placer: String(myDeviceID || '')
+        };
+        if (typeof isHost !== 'undefined' && isHost) {
+            broadcastToClients(msg);
+        } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
+            hostConn.send(msg);
+        }
+    }, 2000);
+}
+
+// Receiver side: apply a placer's heartbeat. Clock-skew immune because the
+// target time is anchored to when THIS client received the packet.
+function applyYtSync(data) {
+    if (!data || data.type !== 'ytSync') return;
+    // Ignore our own heartbeats.
+    if (String(data.placer) === String(myDeviceID || '')) return;
+    const e = ytPlayers[data.propId];
+    if (!e) return;
+    e.syncAt = (Number(data.at) || 0);
+    e.syncRecvAt = Date.now();
+    if (e.player && e.player.getPlayerState) {
+        try {
+            // If the placer pressed pause/play, follow the state change too.
+            if (e.player.getPlayerState() === 2) e.player.playVideo();
+        } catch (err) { }
+    }
+}
+
+// Per-frame tick, called from animate(). Position the DOM overlay on the
+// screen mesh, resync drifted players (>=1.2s), and lace audio volume to
+// proximity (same falloff as proximity voice).
+window.tickYtScreens = function () {
+    for (const id in ytPlayers) {
+        const e = ytPlayers[id];
+        if (!e.mesh) continue;
+        if (e.cssObj) {
+            // Panel sits relative to the housing mesh's world transform.
+            e.cssObj.position.set(
+                e.mesh.position.x,
+                e.mesh.position.y + 3.435,
+                e.mesh.position.z
+            );
+            e.cssObj.rotation.y = e.mesh.rotation.y + Math.PI; // iframe faces the front (canvas plane faces +Z)
+        }
+        try { window.updateYtAudio(e); } catch (err) { }
+        try { window.tickYtSync(e, id); } catch (err) { }
+    }
+};
+
+// Browsers refuse to unmute cross-origin media before any user interaction.
+// The game gets pointer/key events constantly, so re-apply unmute on each of
+// them; volume (set per frame from distance) still controls audibility.
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
+    document.addEventListener(ev, () => {
+        for (const id in ytPlayers) {
+            const p = ytPlayers[id] && ytPlayers[id].player;
+            try {
+                if (p && p.isMuted && p.isMuted()) {
+                    p.unMute();
+                    p.playVideo && p.playVideo();
+                }
+            } catch (err) { }
+        }
+    }, true);
+});
+
+window.updateYtAudio = function (e) {    if (!e.player || !e.player.setVolume) return;
+    let dist = 999;
+    if (typeof camera !== 'undefined' && camera && typeof camera.position !== 'undefined') {
+        dist = camera.position.distanceTo(e.mesh.position);
+    } else if (typeof player !== 'undefined' && player) {
+        dist = player.position.distanceTo(e.mesh.position);
+    }
+    const vol = Math.pow(Math.max(0, 1 - dist / MAX_VOICE_DISTANCE), 1.5);
+    const volInt = Math.round(vol * 100);
+    try {
+        if (volInt > 1) {
+            if (e.player.isMuted && e.player.isMuted()) e.player.unMute();
+            e.player.setVolume(volInt);
+        } else if (!e.player.isMuted || e.player.isMuted() === false) {
+            e.player.mute();
+        }
+    } catch (err) { }
+};
+
+// Resync a drifted player (>= 1.2s off the anchor).
+window.tickYtSync = function (e, id) {
+    if (!e.player || !e.player.getCurrentTime || typeof camera === 'undefined') return;
+    let target;
+    if (e.syncAt !== null && e.syncRecvAt) {
+        target = e.syncAt + (Date.now() - e.syncRecvAt) / 1000;
+    } else {
+        target = Math.max(0, (Date.now() - e.data.startedAt) / 1000);
+    }
+    if (!isFinite(target)) target = 0;
+    let cur;
+    try { cur = e.player.getCurrentTime(); } catch (err) { return; }
+    if (isFinite(cur) && Math.abs(target - cur) > 1.2) {
+        try { e.player.seekTo(Math.max(0, target), true); } catch (err) { }
+    }
+};
 
 // --- HOOK NETWORKING ---
 // Prop sync over P2P is handled in ui.js (handleDataFromClient / handleDataFromHost),
