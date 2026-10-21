@@ -805,6 +805,7 @@ function removePropFromWorld(id) {
     // stop the placer's sync heartbeat.
     if (ytPlayers[id]) {
         try { if (ytPlayers[id].player && ytPlayers[id].player.destroy) ytPlayers[id].player.destroy(); } catch (e) { }
+        if (ytPlayers[id].twitchNudge) clearInterval(ytPlayers[id].twitchNudge);
         if (ytPlayers[id].cssObj && cssScene) cssScene.remove(ytPlayers[id].cssObj);
         delete ytPlayers[id];
     }
@@ -1021,11 +1022,95 @@ function createTwitchPlayer(entry) {
         try { p.setMuted(true); } catch (e) { }
         // Twitch's player exposes play/pause via the player object.
         if (p.addEventListener) {
-            p.addEventListener(Twitch.Player.READY, () => { try { p.play(); } catch (e) { } });
+            p.addEventListener(Twitch.Player.READY, () => { try { p.setMuted(true); p.play(); } catch (e) { } });
             p.addEventListener(Twitch.Player.PLAYBACK_BLOCKED, () => { try { p.setMuted(true); p.play(); } catch (e) { } });
         }
+        // Twitch ignores the autoplay flag in plenty of browsers (it shows its
+        // own click-to-play overlay instead). Retry while paused, and offer a
+        // clickable "CLICK TO PLAY" badge on the screen as the fallback.
+        startTwitchPlaybackNudge(entry);
     } catch (err) {
         console.warn('[screen] Twitch player failed:', err && err.message);
+    }
+}
+
+// Keep trying to start a Twitch stream for ~15s, then leave a click target.
+function startTwitchPlaybackNudge(entry) {
+    let tries = 0;
+    const tryPlay = () => {
+        const e = entry;
+        if (!e || !e.player) return false;
+        let paused = true;
+        try { paused = e.player.isPaused ? e.player.isPaused() : true; } catch (err) { }
+        if (!paused) { setTwitchBadge(e, null); return true; }
+        try { e.player.setMuted(true); e.player.play(); } catch (err) { }
+        setTwitchBadge(e, 'CLICK TO PLAY');
+        return false;
+    };
+    entry.twitchNudge = setInterval(() => {
+        tries++;
+        if (tryPlay() || tries > 15) {
+            clearInterval(entry.twitchNudge);
+            entry.twitchNudge = null;
+        }
+    }, 1000);
+    // Manual start: clicking the badge (or the shell while paused) plays it.
+    setTimeout(() => { if (entry.player) tryPlay(); }, 60);
+}
+
+// Toggle a small click-to-play badge inside the shell. While it is shown the
+// shell accepts pointer events, which is the only way to satisfy the browser's
+// user-gesture rule when Twitch refuses to autoplay.
+function setTwitchBadge(entry, text) {
+    const shell = entry.cssObj && entry.cssObj.element ? entry.cssObj.element : null;
+    if (!shell) return;
+    let badge = shell.querySelector('.tw-badge');
+    if (!text) {
+        if (badge) badge.remove();
+        shell.style.pointerEvents = 'none';
+        shell.style.cursor = '';
+        return;
+    }
+    if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'tw-badge';
+        badge.textContent = text;
+        badge.style.position = 'absolute';
+        badge.style.left = '50%';
+        badge.style.top = '50%';
+        badge.style.transform = 'translate(-50%, -50%)';
+        badge.style.background = 'rgba(10,10,12,0.82)';
+        badge.style.color = '#e8ecf7';
+        badge.style.font = 'bold 22px monospace';
+        badge.style.padding = '12px 20px';
+        badge.style.letterSpacing = '1px';
+        badge.style.border = '2px solid #8b5cf6';
+        badge.style.pointerEvents = 'auto';
+        badge.style.cursor = 'pointer';
+        badge.style.borderRadius = '4px';
+        badge.style.zIndex = '5';
+        const start = (ev) => {
+            if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+            try { entry.player.setMuted(true); entry.player.play(); } catch (err) { }
+            setTwitchBadge(entry, null);
+        };
+        badge.addEventListener('click', start);
+        badge.addEventListener('touchstart', start, { passive: false });
+        shell.appendChild(badge);
+        shell.style.pointerEvents = 'auto';
+        shell.style.cursor = 'pointer';
+        if (!entry._shellClickBound) {
+            // Clicking anywhere on the paused screen also starts playback.
+            entry._shellClickBound = true;
+            shell.addEventListener('click', (ev) => {
+                if (ev.target === badge) return;
+                if (!entry.player) return;
+                try { entry.player.setMuted(true); entry.player.play(); } catch (err) { }
+                setTwitchBadge(entry, null);
+            });
+        }
+    } else {
+        badge.textContent = text;
     }
 }
 
@@ -1216,9 +1301,19 @@ window.tickYtSync = function (e, id) {
 
     if (e.provider === 'twitch') {
         try {
-            // Live channels have no timeline: just make sure they are playing.
+            // Live channels have no timeline: keep them playing, and offer the
+            // click-to-play badge while paused (Twitch often ignores autoplay).
             if (e.data.twitchKind !== 'vod') {
-                if (e.player.isPaused && e.player.isPaused()) e.player.play();
+                const paused = e.player.isPaused ? e.player.isPaused() : false;
+                if (paused) {
+                    try { e.player.play(); } catch (err) { }
+                    if (document.visibilityState === 'visible' && e._twPaused !== paused) {
+                        setTwitchBadge(e, 'CLICK TO PLAY');
+                    }
+                } else if (e._twPaused) {
+                    setTwitchBadge(e, null);
+                }
+                e._twPaused = paused;
                 return;
             }
             // VOD: anchor + seek, like YouTube.
