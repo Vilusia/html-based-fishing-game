@@ -1034,17 +1034,17 @@ function createTwitchPlayer(entry) {
     }
 }
 
-// Keep trying to start a Twitch stream for ~15s, then leave a click target.
+// Keep trying to start a Twitch stream for ~15s. The badge is owned by the
+// per-frame tick (which trusts the stream clock, not isPaused()); this only
+// re-attempts playback so we never fight the tick over the badge.
 function startTwitchPlaybackNudge(entry) {
     let tries = 0;
     const tryPlay = () => {
         const e = entry;
-        if (!e || !e.player) return false;
-        let paused = true;
-        try { paused = e.player.isPaused ? e.player.isPaused() : true; } catch (err) { }
-        if (!paused) { setTwitchBadge(e, null); return true; }
+        if (!e || !e.player) return true;
+        const progressing = !!(e._twProgressAt && (Date.now() - e._twProgressAt) < 2000);
+        if (progressing) return true;
         try { e.player.setMuted(true); e.player.play(); } catch (err) { }
-        setTwitchBadge(e, 'CLICK TO PLAY');
         return false;
     };
     entry.twitchNudge = setInterval(() => {
@@ -1054,8 +1054,7 @@ function startTwitchPlaybackNudge(entry) {
             entry.twitchNudge = null;
         }
     }, 1000);
-    // Manual start: clicking the badge (or the shell while paused) plays it.
-    setTimeout(() => { if (entry.player) tryPlay(); }, 60);
+    setTimeout(() => tryPlay(), 60);
 }
 
 // Toggle a small click-to-play badge inside the shell. While it is shown the
@@ -1069,6 +1068,7 @@ function setTwitchBadge(entry, text) {
         if (badge) badge.remove();
         shell.style.pointerEvents = 'none';
         shell.style.cursor = '';
+        entry._twBadgeShown = false;
         return;
     }
     if (!badge) {
@@ -1092,7 +1092,9 @@ function setTwitchBadge(entry, text) {
         const start = (ev) => {
             if (ev) { ev.stopPropagation(); ev.preventDefault(); }
             try { entry.player.setMuted(true); entry.player.play(); } catch (err) { }
-            setTwitchBadge(entry, null);
+            // Do NOT hide the badge here: the tick hides it only once the
+            // stream clock actually advances, so a refused play keeps it up.
+            setTwitchBadge(entry, 'STARTING...');
         };
         badge.addEventListener('click', start);
         badge.addEventListener('touchstart', start, { passive: false });
@@ -1106,7 +1108,7 @@ function setTwitchBadge(entry, text) {
                 if (ev.target === badge) return;
                 if (!entry.player) return;
                 try { entry.player.setMuted(true); entry.player.play(); } catch (err) { }
-                setTwitchBadge(entry, null);
+                setTwitchBadge(entry, 'STARTING...');
             });
         }
     } else {
@@ -1301,19 +1303,30 @@ window.tickYtSync = function (e, id) {
 
     if (e.provider === 'twitch') {
         try {
-            // Live channels have no timeline: keep them playing, and offer the
-            // click-to-play badge while paused (Twitch often ignores autoplay).
+            // Live channels have no timeline to seek; what matters is whether
+            // the stream is ACTUALLY advancing. Twitch's isPaused() lies (it
+            // reports playing the moment play() is called, even when the
+            // browser blocked it), so the click-to-play badge is driven by the
+            // player's clock instead: it hides only once currentTime moves.
             if (e.data.twitchKind !== 'vod') {
-                const paused = e.player.isPaused ? e.player.isPaused() : false;
-                if (paused) {
-                    try { e.player.play(); } catch (err) { }
-                    if (document.visibilityState === 'visible' && e._twPaused !== paused) {
-                        setTwitchBadge(e, 'CLICK TO PLAY');
+                let cur = null;
+                try { cur = e.player.getCurrentTime ? e.player.getCurrentTime() : null; } catch (err) { }
+                if (cur != null && isFinite(cur)) {
+                    if (e._twLastT == null || Math.abs(cur - e._twLastT) > 0.05) {
+                        e._twLastT = cur;
+                        e._twProgressAt = Date.now();
                     }
-                } else if (e._twPaused) {
+                }
+                const progressing = !!(e._twProgressAt && (Date.now() - e._twProgressAt) < 2000);
+                if (!progressing) {
+                    try { e.player.play(); } catch (err) { }
+                    if (!e._twBadgeShown && document.visibilityState === 'visible') {
+                        setTwitchBadge(e, 'CLICK TO PLAY');
+                        e._twBadgeShown = true;
+                    }
+                } else if (e._twBadgeShown) {
                     setTwitchBadge(e, null);
                 }
-                e._twPaused = paused;
                 return;
             }
             // VOD: anchor + seek, like YouTube.
@@ -1435,6 +1448,12 @@ window.applyYtChange = function (data) {
     };
     e.syncAt = null;
     e.syncRecvAt = null;
+    // Fresh stream: reset Twitch badge/progress bookkeeping so the tick can
+    // re-evaluate this screen from scratch.
+    e._twBadgeShown = false;
+    e._twProgressAt = 0;
+    e._twLastT = null;
+    if (shell) shell.style.pointerEvents = 'none';
     if (provider === 'twitch') {
         loadTwitchApi(() => createTwitchPlayer(e));
     } else if (ytApiReady) {
