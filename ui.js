@@ -2739,13 +2739,8 @@ function handleDataFromClient(clientId, data) {
 
             // Keep the placer's prop id exactly as sent, so the sync keys (and
             // undo history) are consistent across every peer's records.
-            const srcProvider = (data.provider === 'twitch') ? 'twitch'
-                : (data.provider === 'youtube') ? 'youtube' : null;
             const ytId = (typeof data.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.videoId))
                 ? data.videoId : null;
-            const twId = (typeof data.twitchId === 'string' && (/^[A-Za-z0-9_]{2,25}$/.test(data.twitchId) || /^\d{4,}$/.test(data.twitchId)))
-                ? data.twitchId : null;
-            const twKind = (data.twitchKind === 'vod') ? 'vod' : 'channel';
             const newProp = {
                 id: (typeof data.propId === 'string' && data.propId.length <= 40)
                     ? data.propId
@@ -2758,11 +2753,8 @@ function handleDataFromClient(clientId, data) {
                 // faces a different way on each player's screen.
                 rot: (typeof data.rot === 'number' && isFinite(data.rot)) ? data.rot : 0,
                 // Screen source (null for every other prop type)
-                provider: (srcProvider === 'twitch' && twId) ? 'twitch'
-                    : (srcProvider === 'youtube' && ytId) ? 'youtube' : null,
+                provider: ytId ? 'youtube' : null,
                 videoId: ytId,
-                twitchId: (srcProvider === 'twitch') ? twId : null,
-                twitchKind: (srcProvider === 'twitch' && twId) ? twKind : null,
                 startedAt: (typeof data.startedAt === 'number') ? data.startedAt : Date.now(),
                 placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : '',
                 owner: clientId,
@@ -2783,31 +2775,22 @@ function handleDataFromClient(clientId, data) {
             // A placer swapped the video on their screen. Validate, update the
             // stored record (so late joiners get the new video via allProps),
             // then relay. Hosts may also change any screen.
-            const provider = (data.provider === 'twitch') ? 'twitch' : 'youtube';
             const vid = (typeof data.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.videoId))
                 ? data.videoId : null;
-            const twId = (typeof data.twitchId === 'string' && (/^[A-Za-z0-9_]{2,25}$/.test(data.twitchId) || /^\d{4,}$/.test(data.twitchId)))
-                ? data.twitchId : null;
-            const twKind = (data.twitchKind === 'vod') ? 'vod' : 'channel';
-            if (provider === 'youtube' && !vid) return;
-            if (provider === 'twitch' && !twId) return;
+            if (!vid) return;
             const startedAt = (typeof data.startedAt === 'number' && isFinite(data.startedAt))
                 ? data.startedAt : Date.now();
             const rec = activeProps.find(p => p.id === data.propId);
             if (!rec) return;                      // unknown screen: ignore
             if (rec.owner !== clientId && !isHost) return; // only the placer (or host) may change it
-            rec.provider = provider;
-            rec.videoId = provider === 'youtube' ? vid : null;
-            rec.twitchId = provider === 'twitch' ? twId : null;
-            rec.twitchKind = provider === 'twitch' ? twKind : null;
+            rec.provider = 'youtube';
+            rec.videoId = vid;
             rec.startedAt = startedAt;
             const clean = {
                 type: 'ytChange',
                 propId: rec.id,
-                provider: provider,
-                videoId: provider === 'youtube' ? vid : null,
-                twitchId: provider === 'twitch' ? twId : null,
-                twitchKind: provider === 'twitch' ? twKind : null,
+                provider: 'youtube',
+                videoId: vid,
                 startedAt: startedAt,
                 placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : ''
             };
@@ -10491,7 +10474,6 @@ function setupInputs() {
             else if (interactTarget === 'tutorial') toggleTutorial();
             else if (interactTarget === 'fisher') talkToFisher();
             else if (interactTarget === 'ytscreen' && typeof window.changeScreenVideo === 'function') window.changeScreenVideo(interactScreenId);
-            else if (interactTarget === 'twstart' && typeof window.startScreenPlayback === 'function') window.startScreenPlayback(interactScreenId);
             else if (interactTarget === 'lava_keeper') {
                 if (saveState.lavaUnlocked) {
                     enterLavaWorld();
@@ -10776,7 +10758,6 @@ function setupInputs() {
         else if (interactTarget === 'tutorial') toggleTutorial();
         else if (interactTarget === 'fisher') talkToFisher();
         else if (interactTarget === 'ytscreen' && typeof window.changeScreenVideo === 'function') window.changeScreenVideo(interactScreenId);
-        else if (interactTarget === 'twstart' && typeof window.startScreenPlayback === 'function') window.startScreenPlayback(interactScreenId);
 
         // --- ADDED LAVA KEEPER CHECK FOR MOBILE ---
         else if (interactTarget === 'lava_keeper') {
@@ -12408,22 +12389,12 @@ function animate() {
             if (bestId) {
                 const pd = props[bestId].userData.propData;
                 const canEdit = String(pd.placer || '') === me || (typeof isHost !== 'undefined' && isHost);
-                // A stalled Twitch stream takes priority: ANY player nearby can
-                // start it with E (a keypress is valid user activation).
                 if (canEdit) {
                     interactTarget = 'ytscreen';
                     interactScreenId = bestId;
                     prompt.innerText = 'PRESS E TO CHANGE VIDEO';
                     prompt.style.display = 'block';
                     if (btn) btn.innerText = "CHANGE";
-                } else if (pd.provider === 'twitch' && window.twScreenNeedsStart && window.twScreenNeedsStart(bestId)) {
-                    // Twitch autoplay is blocked in the 3D overlay; free the
-                    // mouse so the player's own play button can be clicked.
-                    interactTarget = 'twstart';
-                    interactScreenId = bestId;
-                    prompt.innerText = 'PRESS E TO FREE MOUSE — THEN CLICK TO PLAY';
-                    prompt.style.display = 'block';
-                    if (btn) btn.innerText = "MOUSE";
                 }
             }
         }

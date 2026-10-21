@@ -118,11 +118,11 @@ function placeProp(type) {
             showToast('This room already has ' + MAX_YT_SCREENS + ' screens.', 'error');
             return;
         }
-        const url = window.prompt('Paste a YouTube or Twitch URL to play on the screen:', '');
+        const url = window.prompt('Paste a YouTube URL to play on the screen:', '');
         if (!url) return; // cancelled
         src = parseScreenSource(String(url).trim());
         if (!src) {
-            showToast('That does not look like a YouTube or Twitch URL.', 'error');
+            showToast('That does not look like a YouTube URL.', 'error');
             return;
         }
     }
@@ -144,10 +144,8 @@ function placeProp(type) {
         z,
         rot, // Include rotation in prop data
         // Source fields (null for every other prop type)
-        provider: src ? src.provider : null,
-        videoId: src && src.provider === 'youtube' ? src.id : null,
-        twitchId: src && src.provider === 'twitch' ? src.id : null,
-        twitchKind: src && src.provider === 'twitch' ? src.kind : null,
+        provider: src ? 'youtube' : null,
+        videoId: src ? src.id : null,
         startedAt: startedAt,
         placer: String(myDeviceID || ''),
         timestamp: Date.now()
@@ -171,8 +169,6 @@ function placeProp(type) {
             // Source fields for the host to carry into the record it relays
             provider: propData.provider,
             videoId: propData.videoId,
-            twitchId: propData.twitchId,
-            twitchKind: propData.twitchKind,
             startedAt: startedAt,
             placer: String(myDeviceID || '')
         });
@@ -805,7 +801,6 @@ function removePropFromWorld(id) {
     // stop the placer's sync heartbeat.
     if (ytPlayers[id]) {
         try { if (ytPlayers[id].player && ytPlayers[id].player.destroy) ytPlayers[id].player.destroy(); } catch (e) { }
-        if (ytPlayers[id].twitchNudge) clearInterval(ytPlayers[id].twitchNudge);
         if (ytPlayers[id].cssObj && cssScene) cssScene.remove(ytPlayers[id].cssObj);
         delete ytPlayers[id];
     }
@@ -852,30 +847,12 @@ function ytParseVideoId(input) {
     return null;
 }
 
-// Resolve a pasted URL to a screen source:
-//   { provider: 'youtube', id: '<11 chars>' }
-//   { provider: 'twitch', kind: 'channel', id: '<name>' }
-//   { provider: 'twitch', kind: 'vod',     id: '<numeric id>' }
+// Resolve a pasted URL to a screen source: { id: '<11-char youtube id>' }.
+// (YouTube is the only supported provider.)
 function parseScreenSource(input) {
     if (!input) return null;
-    const raw = String(input).trim();
-
-    // YouTube first (its ids are 11 chars and unambiguous).
-    const yt = ytParseVideoId(raw);
-    if (yt) return { provider: 'youtube', id: yt };
-
-    // Twitch VOD: twitch.tv/videos/123456789 (checked before channel matching)
-    let m = raw.match(/(?:twitch\.tv\/videos\/|player\.twitch\.tv\/?\?[^#]*\bvideo=)(\d{4,})/);
-    if (m) return { provider: 'twitch', kind: 'vod', id: m[1] };
-
-    // Twitch channel: twitch.tv/<name>, player.twitch.tv/?channel=<name>
-    m = raw.match(/(?:twitch\.tv\/|player\.twitch\.tv\/?\?[^#]*\bchannel=)([A-Za-z0-9_]{2,25})(?:[/?#]|$)/);
-    if (m) return { provider: 'twitch', kind: 'channel', id: m[1] };
-    // Bare channel name (letters/underscores only, 3..25) so "shroud" works.
-    if (/^[A-Za-z0-9_]{3,25}$/.test(raw) && !/^[A-Za-z0-9_-]{11}$/.test(raw)) {
-        return { provider: 'twitch', kind: 'channel', id: raw };
-    }
-    return null;
+    const yt = ytParseVideoId(String(input).trim());
+    return yt ? { provider: 'youtube', id: yt } : null;
 }
 
 // One-time renderer init, called from setupThreeJS() when the game world is
@@ -898,9 +875,7 @@ window.initCssScene = function () {
 
 // Wire the video element + CSS3D object for a screen prop.
 function attachYtVideo(data, group) {
-    const isTwitch = data.provider === 'twitch';
-    if (!isTwitch && !data.videoId) return;
-    if (isTwitch && !data.twitchId) return;
+    if (!data.videoId) return;
     if (typeof THREE.CSS3DObject === 'undefined') {
         // The examples renderer did not load (CDN blocked). Without it there is
         // no way to show the video in-scene; the housing still spawns.
@@ -947,15 +922,13 @@ function attachYtVideo(data, group) {
 
     const entry = {
         data: {
-            provider: isTwitch ? 'twitch' : 'youtube',
+            provider: 'youtube',
             videoId: data.videoId || null,
-            twitchId: data.twitchId || null,
-            twitchKind: data.twitchKind || null,
             startedAt: data.startedAt || Date.now(),
             placer: data.placer || ''
         },
         player: null,
-        provider: isTwitch ? 'twitch' : 'youtube',
+        provider: 'youtube',
         cssObj: cssObj,
         frameEl: frameEl,
         mesh: group,
@@ -963,141 +936,13 @@ function attachYtVideo(data, group) {
         syncRecvAt: null,
         retried: false
     };
-    // Twitch's autoplay validator refuses players that are not visibly laid
-    // out when constructed ("style visibility" requirement), so the player is
-    // created lazily from tickYtScreens() once the screen is actually on
-    // camera. Creating it at spawn time (often off-screen) is what produced
-    // the console error "Autoplay disabled ... style visibility".
     ytPlayers[data.id] = entry;
-    if (isTwitch) {
-        registerScreenForLazyTwitch(entry);
-    } else if (ytApiReady) {
+    if (ytApiReady) {
         createYtPlayer(entry);
     } else {
         ytPlayerQueue.push(() => createYtPlayer(entry));
     }
 }
-
-// Create the Twitch player the first time its screen is on camera, so the
-// embed's visibility check passes and autoplay is permitted.
-function registerScreenForLazyTwitch(entry) {
-    entry._twAwaitingCreate = true;
-}
-
-function maybeCreateTwitchPlayer(entry) {
-    if (!entry || !entry._twAwaitingCreate || entry.iframe) return;
-    if (!entry.mesh || typeof camera === 'undefined' || !camera) return;
-    if (document.visibilityState !== 'visible') return; // hidden tab: wait
-    // Project the panel centre; only build while it is actually on camera, so
-    // the iframe is laid out at a sensible size and off-screen screens cost
-    // nothing.
-    const v = new THREE.Vector3(
-        entry.mesh.position.x,
-        entry.mesh.position.y + 3.9,
-        entry.mesh.position.z
-    );
-    const dist = camera.position.distanceTo(v);
-    if (dist > TWITCH_AUDIBLE_RANGE) return;
-    v.project(camera);
-    if (!(v.z > -1 && v.z < 1)) return;        // behind the camera
-    if (Math.abs(v.x) > 0.95 || Math.abs(v.y) > 0.95) return; // outside the view
-    entry._twAwaitingCreate = false;
-    entry._twAttached = true;
-    createTwitchPlayer(entry);
-}
-
-// Mount a Twitch player using OUR OWN iframe. We deliberately avoid the Twitch
-// JS SDK: its autoplay gate ("style visibility") rejects players embedded in a
-// transformed/DOM-overlay scene and then refuses to start even on click. A
-// hand-built iframe uses the same embed page without that gate, and the
-// browser's normal autoplay rules apply (the game has plenty of user
-// interaction, so sound-on autoplay is typically allowed).
-//
-// Trade-off: without the SDK we cannot set a volume, so proximity audio is
-// on/off — the player iframe is only attached while the camera is within
-// TWITCH_AUDIBLE_RANGE, and detached beyond it (which also frees the decode
-// for distant screens).
-const TWITCH_AUDIBLE_RANGE = 26;
-
-function createTwitchPlayer(entry) {
-    if (!entry || !entry.frameEl || !entry.frameEl.isConnected) {
-        setTimeout(() => { if (ytPlayers[Object.keys(ytPlayers).find(k => ytPlayers[k] === entry)]) createTwitchPlayer(entry); }, 250);
-        return;
-    }
-    try {
-        // Twitch exact-matches `parent` against the embedding origin INCLUDING
-        // a non-default port, so send location.host first and the bare hostname
-        // as a fallback.
-        const parents = [location.host];
-        if (location.hostname !== location.host) parents.push(location.hostname);
-        const parentQs = parents.map(h => 'parent=' + encodeURIComponent(h)).join('&');
-        const content = (entry.data.twitchKind === 'vod')
-            ? 'video=' + encodeURIComponent(entry.data.twitchId)
-            : 'channel=' + encodeURIComponent(entry.data.twitchId);
-        const src = 'https://player.twitch.tv/?' + content + '&' + parentQs +
-            '&autoplay=true&muted=false&controls=true';
-
-        const ifr = document.createElement('iframe');
-        ifr.src = src;
-        ifr.width = '640';
-        ifr.height = '360';
-        ifr.setAttribute('allow', 'autoplay; fullscreen; encrypted-media');
-        ifr.setAttribute('allowfullscreen', 'true');
-        ifr.style.width = '100%';
-        ifr.style.height = '100%';
-        ifr.style.border = '0';
-        // Clicks must reach the player: Twitch's autoplay gate often refuses
-        // programmatic starts, so its own big play button is the reliable path.
-        ifr.style.pointerEvents = 'auto';
-        entry.frameEl.innerHTML = '';
-        entry.frameEl.appendChild(ifr);
-        entry.iframe = ifr;
-        entry.player = { __iframe: true };  // marker: no SDK methods
-        console.info('[screen] twitch iframe:', src);
-    } catch (err) {
-        console.warn('[screen] Twitch iframe failed:', err && err.message);
-    }
-}
-
-// Attach/detach the iframe by distance. Cheap proximity gating: attach when
-// close (sound audible), detach when far (silent + saves decode). Re-attaching
-// resumes the live edge, which is exactly right for a live channel.
-function updateTwitchRange(entry) {
-    if (!entry || entry.provider !== 'twitch') return;
-    if (!entry.cssObj || !entry.mesh) return;
-    let dist = 999;
-    if (typeof camera !== 'undefined' && camera && camera.position) {
-        dist = camera.position.distanceTo(entry.mesh.position);
-    }
-    const near = dist <= TWITCH_AUDIBLE_RANGE;
-    if (near && !entry._twAttached) {
-        entry._twAttached = true;
-        if (!entry.iframe) createTwitchPlayer(entry);
-        else {
-            const f = entry.frameEl && entry.frameEl.querySelector('iframe');
-            if (!f) createTwitchPlayer(entry);
-        }
-    } else if (!near && entry._twAttached) {
-        entry._twAttached = false;
-        if (entry.frameEl) entry.frameEl.innerHTML = '';
-        entry.iframe = null;
-        entry.player = null;
-        entry._twAwaitingCreate = true;
-    }
-}
-// Twitch can't reliably autoplay inside the 3D overlay, so the useful action
-// near a screen is freeing the mouse: the player's own big play button then
-// works because clicks now reach the iframe.
-window.twScreenNeedsStart = function (propId) {
-    const e = ytPlayers[propId];
-    return !!(e && e.provider === 'twitch');
-};
-
-// The hand-rolled Twitch iframe plays on its own; E just frees the mouse so a
-// player can interact with the embed's own controls if they need to.
-window.startScreenPlayback = function () {
-    try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) { }
-};
 
 // Mount the actual YouTube player. Passed the DOM ELEMENT (not an id) so it
 // works even when the CSS3D overlay restructures the tree.
@@ -1156,10 +1001,8 @@ function createYtPlayer(entry) {
 
 // Heartbeat the placer runs for each screen it placed. Broadcasts either
 // directly (host) or up to the host, which relays (see handleDataFromClient).
-// Live Twitch channels have no timeline to sync, so they skip the heartbeat.
 function startYtSyncLoop(propData) {
     if (ytSyncLoops[propData.id]) return;
-    if (propData.provider === 'twitch' && propData.twitchKind !== 'vod') return;
     ytSyncLoops[propData.id] = setInterval(() => {
         if (typeof isHost === 'undefined' && typeof player === 'undefined') return;
         const e = ytPlayers[propData.id];
@@ -1207,8 +1050,6 @@ window.tickYtScreens = function () {
     for (const id in ytPlayers) {
         const e = ytPlayers[id];
         if (!e.mesh) continue;
-        // Twitch: construct the player only once the screen is on camera.
-        if (e._twAwaitingCreate) maybeCreateTwitchPlayer(e);
         if (e.cssObj) {
             // Panel sits relative to the housing mesh's world transform.
             e.cssObj.position.set(
@@ -1232,8 +1073,7 @@ window.tickYtScreens = function () {
             const entry = ytPlayers[id];
             const p = entry && entry.player;
             try {
-                // Twitch is a plain iframe now (no SDK handles) - nothing to do.
-                if (!p || entry.provider === 'twitch') continue;
+                if (!p) continue;
                 if (p.isMuted && p.isMuted()) {
                     p.unMute();
                     p.playVideo && p.playVideo();
@@ -1255,10 +1095,6 @@ window.updateYtAudio = function (e) {
     const volInt = Math.round(vol * 100);
     const p = e.player;
 
-    // Twitch has no SDK controls here: updateTwitchRange() decides audible vs
-    // silent by attaching/detaching the iframe, so there is nothing to set.
-    if (e.provider === 'twitch') return;
-
     // YouTube
     if (!p.setVolume) return;
     try {
@@ -1274,12 +1110,6 @@ window.updateYtAudio = function (e) {
 // Resync a drifted player (>= 1.2s off the anchor).
 window.tickYtSync = function (e, id) {
     if (!e.player || typeof camera === 'undefined') return;
-
-    if (e.provider === 'twitch') {
-        // No SDK: audibility is a distance on/off (attach/detach the iframe).
-        updateTwitchRange(e);
-        return;
-    }
 
     if (!e.player.getCurrentTime) return;
     let target;
@@ -1317,37 +1147,31 @@ window.changeScreenVideo = function (propId) {
         return;
     }
 
-    const url = window.prompt('Paste a new YouTube or Twitch URL for this screen:', '');
+    const url = window.prompt('Paste a new YouTube URL for this screen:', '');
     if (!url) return;
     const src = parseScreenSource(String(url).trim());
-    if (!src) { showToast('That does not look like a YouTube or Twitch URL.', 'error'); return; }
+    if (!src) { showToast('That does not look like a YouTube URL.', 'error'); return; }
 
     const msg = {
         type: 'ytChange',
         propId: propId,
-        provider: src.provider,
-        videoId: src.provider === 'youtube' ? src.id : null,
-        twitchId: src.provider === 'twitch' ? src.id : null,
-        twitchKind: src.provider === 'twitch' ? src.kind : null,
+        provider: 'youtube',
+        videoId: src.id,
         startedAt: Date.now(),
         placer: me
     };
 
     // Update our own record first, then tell the room.
-    pd.provider = msg.provider;
+    pd.provider = 'youtube';
     pd.videoId = msg.videoId;
-    pd.twitchId = msg.twitchId;
-    pd.twitchKind = msg.twitchKind;
     pd.startedAt = msg.startedAt;
     window.applyYtChange(msg);
 
     if (typeof isHost !== 'undefined' && isHost) {
         if (myProps.some(p => p.id === propId)) {
             const rec = myProps.find(p => p.id === propId);
-            rec.provider = msg.provider;
+            rec.provider = 'youtube';
             rec.videoId = msg.videoId;
-            rec.twitchId = msg.twitchId;
-            rec.twitchKind = msg.twitchKind;
             rec.startedAt = msg.startedAt;
         }
         broadcastToClients(msg);
@@ -1363,7 +1187,6 @@ window.applyYtChange = function (data) {
     const e = ytPlayers[id];
     if (!e) return; // no screen with this id here
 
-    const provider = data.provider === 'twitch' ? 'twitch' : 'youtube';
     // Tear down the old player but keep the shell in the DOM.
     try { if (e.player && e.player.destroy) e.player.destroy(); } catch (err) { }
     e.player = null;
@@ -1377,28 +1200,16 @@ window.applyYtChange = function (data) {
         shell.appendChild(frameEl);
         e.frameEl = frameEl;
     }
-    e.provider = provider;
+    e.provider = 'youtube';
     e.data = {
-        provider: provider,
+        provider: 'youtube',
         videoId: data.videoId || null,
-        twitchId: data.twitchId || null,
-        twitchKind: data.twitchKind || null,
         startedAt: data.startedAt || Date.now(),
         placer: data.placer || (e.data && e.data.placer) || ''
     };
     e.syncAt = null;
     e.syncRecvAt = null;
-    // Fresh stream: rebuild the Twitch iframe lazily once on camera.
-    e._twAttached = false;
-    e._twProgressAt = 0;
-    e._twLastT = null;
-    if (shell) shell.style.pointerEvents = 'none';
-    if (provider === 'twitch') {
-        e._twAwaitingCreate = true;
-        if (e.frameEl) e.frameEl.innerHTML = '';
-        e.iframe = null;
-        e.player = null;
-    } else if (ytApiReady) {
+    if (ytApiReady) {
         createYtPlayer(e);
     } else {
         ytPlayerQueue.push(() => createYtPlayer(e));
