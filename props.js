@@ -1046,7 +1046,9 @@ function createTwitchPlayer(entry) {
         ifr.style.width = '100%';
         ifr.style.height = '100%';
         ifr.style.border = '0';
-        ifr.style.pointerEvents = 'none';
+        // Clicks must reach the player: Twitch's autoplay gate often refuses
+        // programmatic starts, so its own big play button is the reliable path.
+        ifr.style.pointerEvents = 'auto';
         entry.frameEl.innerHTML = '';
         entry.frameEl.appendChild(ifr);
         entry.iframe = ifr;
@@ -1083,9 +1085,13 @@ function updateTwitchRange(entry) {
         entry._twAwaitingCreate = true;
     }
 }
-// Twitch has no SDK here, so there is no "needs start" state to report (the
-// hand-rolled iframe autoplays under the browser's normal policy).
-window.twScreenNeedsStart = function () { return false; };
+// Twitch can't reliably autoplay inside the 3D overlay, so the useful action
+// near a screen is freeing the mouse: the player's own big play button then
+// works because clicks now reach the iframe.
+window.twScreenNeedsStart = function (propId) {
+    const e = ytPlayers[propId];
+    return !!(e && e.provider === 'twitch');
+};
 
 // The hand-rolled Twitch iframe plays on its own; E just frees the mouse so a
 // player can interact with the embed's own controls if they need to.

@@ -12410,18 +12410,20 @@ function animate() {
                 const canEdit = String(pd.placer || '') === me || (typeof isHost !== 'undefined' && isHost);
                 // A stalled Twitch stream takes priority: ANY player nearby can
                 // start it with E (a keypress is valid user activation).
-                if (pd.provider === 'twitch' && window.twScreenNeedsStart && window.twScreenNeedsStart(bestId)) {
-                    interactTarget = 'twstart';
-                    interactScreenId = bestId;
-                    prompt.innerText = 'PRESS E TO START STREAM';
-                    prompt.style.display = 'block';
-                    if (btn) btn.innerText = "PLAY";
-                } else if (canEdit) {
+                if (canEdit) {
                     interactTarget = 'ytscreen';
                     interactScreenId = bestId;
                     prompt.innerText = 'PRESS E TO CHANGE VIDEO';
                     prompt.style.display = 'block';
                     if (btn) btn.innerText = "CHANGE";
+                } else if (pd.provider === 'twitch' && window.twScreenNeedsStart && window.twScreenNeedsStart(bestId)) {
+                    // Twitch autoplay is blocked in the 3D overlay; free the
+                    // mouse so the player's own play button can be clicked.
+                    interactTarget = 'twstart';
+                    interactScreenId = bestId;
+                    prompt.innerText = 'PRESS E TO FREE MOUSE — THEN CLICK TO PLAY';
+                    prompt.style.display = 'block';
+                    if (btn) btn.innerText = "MOUSE";
                 }
             }
         }
