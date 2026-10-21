@@ -984,13 +984,28 @@ function createYtPlayer(entry) {
                 rel: 0,
                 playsinline: 1,
                 fs: 0,
-                iv_load_policy: 3,
-                start: startSec
+                iv_load_policy: 3
+                // NOTE: no `start` here. On a live stream it makes YouTube jump
+                // into the DVR window (i.e. "from the beginning") instead of the
+                // live edge; the seek is applied in onReady for VODs only.
             },
             events: {
                 onReady: (e) => {
                     try {
                         e.target.mute();
+                        // Live streams report duration 0; never seek those.
+                        // VODs seek to the shared wall-clock anchor so every
+                        // viewer is in step.
+                        let dur = 0;
+                        try { dur = e.target.getDuration(); } catch (err) { }
+                        if (dur && isFinite(dur) && dur > 0) {
+                            entry.isLive = false;
+                            if (startSec > 1) e.target.seekTo(startSec, true);
+                        } else {
+                            entry.isLive = true;
+                            entry.syncAt = null;   // anchor sync is meaningless live
+                            entry.syncRecvAt = null;
+                        }
                         e.target.playVideo();
                     } catch (err) { }
                 },
@@ -1001,12 +1016,19 @@ function createYtPlayer(entry) {
             }
         });
         // Watchdog: some browsers mount but never start. If the state is still
-        // unstarted/paused after 2.5s, nudge playback once.
+        // unstarted/paused after 2.5s, nudge playback once. Also re-check the
+        // live flag here: metadata can be missing at onReady, and treating a
+        // VOD as live only means "no seek", which is harmless.
         setTimeout(() => {
             try {
                 if (!entry.player || !entry.player.getPlayerState) return;
                 const st = entry.player.getPlayerState();
                 if (st === -1 || st === 2 || st === 5) entry.player.playVideo();
+                if (entry.isLive === undefined) {
+                    let d = 0;
+                    try { d = entry.player.getDuration(); } catch (err) { }
+                    entry.isLive = !(d && isFinite(d) && d > 0);
+                }
             } catch (err) { }
         }, 2500);
     } catch (err) { /* leave black panel */ }
@@ -1023,6 +1045,9 @@ function startYtSyncLoop(propData) {
         if (e && e.player && e.player.getCurrentTime) {
             try { at = e.player.getCurrentTime(); } catch (err) { }
         }
+        // Live streams share the live edge implicitly; heartbeats would only
+        // broadcast DVR-window times that receivers must ignore anyway.
+        if (e && e.isLive) return;
         const msg = {
             type: 'ytSync',
             propId: propData.id,
@@ -1120,9 +1145,17 @@ window.updateYtAudio = function (e) {
     } catch (err) { }
 };
 
-// Resync a drifted player (>= 1.2s off the anchor).
+// Resync a drifted player (>= 1.2s off the anchor). Live streams are exempt:
+// their timeline is the DVR window, so any seek would jump into the past.
 window.tickYtSync = function (e, id) {
     if (!e.player || typeof camera === 'undefined') return;
+
+    if (e.isLive) {
+        try {
+            if (e.player.getPlayerState && e.player.getPlayerState() !== 1) e.player.playVideo();
+        } catch (err) { }
+        return;
+    }
 
     if (!e.player.getCurrentTime) return;
     let target;
@@ -1222,6 +1255,7 @@ window.applyYtChange = function (data) {
     };
     e.syncAt = null;
     e.syncRecvAt = null;
+    e.isLive = undefined;   // re-detect for the new video
     if (ytApiReady || (window.YT && typeof window.YT.Player === 'function')) {
         markYtApiReady();
         createYtPlayer(e);
