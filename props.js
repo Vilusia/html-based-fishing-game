@@ -1057,17 +1057,25 @@ function startTwitchPlaybackNudge(entry) {
     setTimeout(() => tryPlay(), 60);
 }
 
-// Toggle a small click-to-play badge inside the shell. While it is shown the
-// shell accepts pointer events, which is the only way to satisfy the browser's
-// user-gesture rule when Twitch refuses to autoplay.
+// Toggle the paused-screen overlay. While it is shown the screen forwards
+// pointer events to the IFRAME ITSELF: Twitch's autoplay gate only opens on a
+// genuine click inside its own frame — API play() calls are ignored no matter
+// how often we send them. The label is a non-interactive caption so it can
+// never intercept that click.
 function setTwitchBadge(entry, text) {
     const shell = entry.cssObj && entry.cssObj.element ? entry.cssObj.element : null;
     if (!shell) return;
+    const iframes = shell.querySelectorAll('iframe');
+    const setIframeClicks = (on) => {
+        shell.style.pointerEvents = on ? 'auto' : 'none';
+        shell.style.cursor = on ? 'pointer' : '';
+        for (let i = 0; i < iframes.length; i++) iframes[i].style.pointerEvents = on ? 'auto' : 'none';
+    };
+
     let badge = shell.querySelector('.tw-badge');
     if (!text) {
         if (badge) badge.remove();
-        shell.style.pointerEvents = 'none';
-        shell.style.cursor = '';
+        setIframeClicks(false);
         entry._twBadgeShown = false;
         return;
     }
@@ -1077,40 +1085,20 @@ function setTwitchBadge(entry, text) {
         badge.textContent = text;
         badge.style.position = 'absolute';
         badge.style.left = '50%';
-        badge.style.top = '50%';
-        badge.style.transform = 'translate(-50%, -50%)';
-        badge.style.background = 'rgba(10,10,12,0.82)';
+        badge.style.bottom = '10px';
+        badge.style.transform = 'translateX(-50%)';
+        badge.style.background = 'rgba(10,10,12,0.78)';
         badge.style.color = '#e8ecf7';
-        badge.style.font = 'bold 22px monospace';
-        badge.style.padding = '12px 20px';
+        badge.style.font = 'bold 14px monospace';
+        badge.style.padding = '6px 12px';
         badge.style.letterSpacing = '1px';
-        badge.style.border = '2px solid #8b5cf6';
-        badge.style.pointerEvents = 'auto';
-        badge.style.cursor = 'pointer';
-        badge.style.borderRadius = '4px';
+        badge.style.border = '1px solid #8b5cf6';
+        badge.style.borderRadius = '3px';
         badge.style.zIndex = '5';
-        const start = (ev) => {
-            if (ev) { ev.stopPropagation(); ev.preventDefault(); }
-            try { entry.player.setMuted(true); entry.player.play(); } catch (err) { }
-            // Do NOT hide the badge here: the tick hides it only once the
-            // stream clock actually advances, so a refused play keeps it up.
-            setTwitchBadge(entry, 'STARTING...');
-        };
-        badge.addEventListener('click', start);
-        badge.addEventListener('touchstart', start, { passive: false });
+        // Clicks must pass THROUGH to Twitch's player underneath.
+        badge.style.pointerEvents = 'none';
         shell.appendChild(badge);
-        shell.style.pointerEvents = 'auto';
-        shell.style.cursor = 'pointer';
-        if (!entry._shellClickBound) {
-            // Clicking anywhere on the paused screen also starts playback.
-            entry._shellClickBound = true;
-            shell.addEventListener('click', (ev) => {
-                if (ev.target === badge) return;
-                if (!entry.player) return;
-                try { entry.player.setMuted(true); entry.player.play(); } catch (err) { }
-                setTwitchBadge(entry, 'STARTING...');
-            });
-        }
+        setIframeClicks(true);
     } else {
         badge.textContent = text;
     }
@@ -1319,9 +1307,12 @@ window.tickYtSync = function (e, id) {
                 }
                 const progressing = !!(e._twProgressAt && (Date.now() - e._twProgressAt) < 2000);
                 if (!progressing) {
-                    try { e.player.play(); } catch (err) { }
+                    // Deliberately NOT calling play() here: spamming the API
+                    // keeps Twitch stuck. Playback attempts belong to the
+                    // nudge timer; the fix for a blocked gate is a real click
+                    // on the player, which the badge makes possible.
                     if (!e._twBadgeShown && document.visibilityState === 'visible') {
-                        setTwitchBadge(e, 'CLICK TO PLAY');
+                        setTwitchBadge(e, 'CLICK SCREEN TO PLAY');
                         e._twBadgeShown = true;
                     }
                 } else if (e._twBadgeShown) {
