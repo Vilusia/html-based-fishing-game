@@ -830,11 +830,20 @@ let cssRenderer = null;
 let cssScene = null;
 let ytOverlay = null;
 
-window.onYouTubeIframeAPIReady = function () {
+// The YouTube IFrame API invokes window.onYouTubeIframeAPIReady exactly once
+// when its script finishes loading. On repeat visits the script is cached and
+// can finish BEFORE this file is parsed, so the callback would be assigned too
+// late and no player would ever be created (this is why a host who reloads
+// often saw black screens while everyone else saw video).
+function markYtApiReady() {
+    if (ytApiReady) return;
     ytApiReady = true;
-    ytPlayerQueue.forEach(f => f());
-    ytPlayerQueue.length = 0;
-};
+    const queued = ytPlayerQueue.splice(0);
+    queued.forEach(fn => { try { fn(); } catch (e) { } });
+}
+window.onYouTubeIframeAPIReady = markYtApiReady;
+// If the API is already present, we missed the callback: treat it as ready now.
+if (window.YT && typeof window.YT.Player === 'function') markYtApiReady();
 
 // Accepts every common YouTube URL form; returns an 11-char id or null.
 function ytParseVideoId(input) {
@@ -937,7 +946,11 @@ function attachYtVideo(data, group) {
         retried: false
     };
     ytPlayers[data.id] = entry;
-    if (ytApiReady) {
+    // Never rely on the ready flag alone: if the API object exists we can
+    // create immediately, even when the init callback fired before this file
+    // was parsed (cached YouTube loader on repeat visits).
+    if (ytApiReady || (window.YT && typeof window.YT.Player === 'function')) {
+        markYtApiReady();
         createYtPlayer(entry);
     } else {
         ytPlayerQueue.push(() => createYtPlayer(entry));
@@ -1209,7 +1222,8 @@ window.applyYtChange = function (data) {
     };
     e.syncAt = null;
     e.syncRecvAt = null;
-    if (ytApiReady) {
+    if (ytApiReady || (window.YT && typeof window.YT.Player === 'function')) {
+        markYtApiReady();
         createYtPlayer(e);
     } else {
         ytPlayerQueue.push(() => createYtPlayer(e));
