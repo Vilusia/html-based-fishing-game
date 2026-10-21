@@ -1124,12 +1124,17 @@ function updateScreenOcclusion(e) {
     const rot = e.mesh.rotation.y;
     const rx = Math.cos(rot), rz = -Math.sin(rot);
 
-    const W = 3.5, H = 2.0, MIN_D = 0.25, GAP = 0.45;
+    const W = 3.5, H = 2.0, MIN_D = 0.25, AT_SCREEN = 1.5;
 
     const inFront = (px, py, pz) => {
         // Distance along the view axis from the camera to the player vs screen.
         const dP = (px - cam.x) * nx + (pz - cam.z) * nz;
-        if (dP < MIN_D || dP > dS - GAP) return false;   // not between camera and screen
+        if (dP < MIN_D || dP >= dS) return false;   // must be in front of the screen
+        // Only hide when the player is standing RIGHT at the screen plane, not
+        // merely somewhere on the camera->screen line (in third-person the
+        // player's own character is always on that line, which made the video
+        // invisible during normal viewing).
+        if (dS - dP > AT_SCREEN) return false;
         const lateral = (px - SX) * rx + (pz - SZ) * rz;
         if (Math.abs(lateral) > W) return false;
         // Player body (ground level ~1.5 up to just above the screen top).
