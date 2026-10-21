@@ -878,30 +878,6 @@ function parseScreenSource(input) {
     return null;
 }
 
-// Lazily load the Twitch Embed JS (v1 is the stable, versioned endpoint).
-let twitchApiState = 'idle'; // idle | loading | ready | failed
-const twitchQueue = [];
-function loadTwitchApi(cb) {
-    if (twitchApiState === 'ready' && window.Twitch && window.Twitch.Player) { cb(); return; }
-    if (twitchApiState === 'failed') return;
-    twitchQueue.push(cb);
-    if (twitchApiState === 'loading') return;
-    twitchApiState = 'loading';
-    const s = document.createElement('script');
-    s.src = 'https://player.twitch.tv/js/embed/v1.js';
-    s.async = true;
-    s.onload = () => {
-        twitchApiState = 'ready';
-        while (twitchQueue.length) { try { twitchQueue.shift()(); } catch (e) { } }
-    };
-    s.onerror = () => {
-        twitchApiState = 'failed';
-        console.warn('[screen] Twitch embed script failed to load');
-        twitchQueue.length = 0;
-    };
-    document.head.appendChild(s);
-}
-
 // One-time renderer init, called from setupThreeJS() when the game world is
 // built. No-op when the example renderer did not load (offline CDN etc).
 window.initCssScene = function () {
@@ -1009,168 +985,112 @@ function registerScreenForLazyTwitch(entry) {
 }
 
 function maybeCreateTwitchPlayer(entry) {
-    if (!entry || !entry._twAwaitingCreate || entry.player) return;
+    if (!entry || !entry._twAwaitingCreate || entry.iframe) return;
     if (!entry.mesh || typeof camera === 'undefined' || !camera) return;
     if (document.visibilityState !== 'visible') return; // hidden tab: wait
-    // Project the panel centre; require it to be inside the viewport.
+    // Project the panel centre; only build while it is actually on camera, so
+    // the iframe is laid out at a sensible size and off-screen screens cost
+    // nothing.
     const v = new THREE.Vector3(
         entry.mesh.position.x,
         entry.mesh.position.y + 3.9,
         entry.mesh.position.z
     );
     const dist = camera.position.distanceTo(v);
-    if (dist > 7.5) return;                   // too far: iframe renders below Twitch's minimum size
+    if (dist > TWITCH_AUDIBLE_RANGE) return;
     v.project(camera);
     if (!(v.z > -1 && v.z < 1)) return;        // behind the camera
     if (Math.abs(v.x) > 0.95 || Math.abs(v.y) > 0.95) return; // outside the view
     entry._twAwaitingCreate = false;
-    loadTwitchApi(() => createTwitchPlayer(entry));
+    entry._twAttached = true;
+    createTwitchPlayer(entry);
 }
 
-// Mount a Twitch embed. Channels have no meaningful timeline (live), so no
-// seeking; VODs are anchored like YouTube videos.
+// Mount a Twitch player using OUR OWN iframe. We deliberately avoid the Twitch
+// JS SDK: its autoplay gate ("style visibility") rejects players embedded in a
+// transformed/DOM-overlay scene and then refuses to start even on click. A
+// hand-built iframe uses the same embed page without that gate, and the
+// browser's normal autoplay rules apply (the game has plenty of user
+// interaction, so sound-on autoplay is typically allowed).
+//
+// Trade-off: without the SDK we cannot set a volume, so proximity audio is
+// on/off — the player iframe is only attached while the camera is within
+// TWITCH_AUDIBLE_RANGE, and detached beyond it (which also frees the decode
+// for distant screens).
+const TWITCH_AUDIBLE_RANGE = 26;
+
 function createTwitchPlayer(entry) {
     if (!entry || !entry.frameEl || !entry.frameEl.isConnected) {
         setTimeout(() => { if (ytPlayers[Object.keys(ytPlayers).find(k => ytPlayers[k] === entry)]) createTwitchPlayer(entry); }, 250);
         return;
     }
-    if (!window.Twitch || !window.Twitch.Player) return;
     try {
-        // Twitch exact-matches the `parent` value against the embedding origin,
-        // INCLUDING a non-default port. Passing only the hostname breaks the
-        // player on http://localhost:8137 (it loads but never starts), so send
-        // the full host first and the bare hostname as a fallback.
-        const parentList = [location.host];
-        if (location.hostname !== location.host) parentList.push(location.hostname);
-        console.info('[screen] twitch parent:', parentList.join(' , '), '| origin:', location.origin);
-        const opts = {
-            width: 640,
-            height: 360,
-            parent: parentList,
-            autoplay: true,
-            muted: true
-        };
-        if (entry.data.twitchKind === 'vod') opts.video = entry.data.twitchId;
-        else opts.channel = entry.data.twitchId;
-        const p = new Twitch.Player(entry.frameEl, opts);
-        entry.player = p;
-        try { p.setMuted(true); } catch (e) { }
-        // Twitch's player exposes play/pause via the player object.
-        if (p.addEventListener) {
-            p.addEventListener(Twitch.Player.READY, () => { try { p.setMuted(true); p.play(); } catch (e) { } });
-            p.addEventListener(Twitch.Player.PLAYBACK_BLOCKED, () => { try { p.setMuted(true); p.play(); } catch (e) { } });
-        }
-        // Twitch ignores the autoplay flag in plenty of browsers (it shows its
-        // own click-to-play overlay instead). Retry while paused, and offer a
-        // clickable "CLICK TO PLAY" badge on the screen as the fallback.
-        startTwitchPlaybackNudge(entry);
+        // Twitch exact-matches `parent` against the embedding origin INCLUDING
+        // a non-default port, so send location.host first and the bare hostname
+        // as a fallback.
+        const parents = [location.host];
+        if (location.hostname !== location.host) parents.push(location.hostname);
+        const parentQs = parents.map(h => 'parent=' + encodeURIComponent(h)).join('&');
+        const content = (entry.data.twitchKind === 'vod')
+            ? 'video=' + encodeURIComponent(entry.data.twitchId)
+            : 'channel=' + encodeURIComponent(entry.data.twitchId);
+        const src = 'https://player.twitch.tv/?' + content + '&' + parentQs +
+            '&autoplay=true&muted=false&controls=true';
+
+        const ifr = document.createElement('iframe');
+        ifr.src = src;
+        ifr.width = '640';
+        ifr.height = '360';
+        ifr.setAttribute('allow', 'autoplay; fullscreen; encrypted-media');
+        ifr.setAttribute('allowfullscreen', 'true');
+        ifr.style.width = '100%';
+        ifr.style.height = '100%';
+        ifr.style.border = '0';
+        ifr.style.pointerEvents = 'none';
+        entry.frameEl.innerHTML = '';
+        entry.frameEl.appendChild(ifr);
+        entry.iframe = ifr;
+        entry.player = { __iframe: true };  // marker: no SDK methods
+        console.info('[screen] twitch iframe:', src);
     } catch (err) {
-        console.warn('[screen] Twitch player failed:', err && err.message);
+        console.warn('[screen] Twitch iframe failed:', err && err.message);
     }
 }
 
-// Keep trying to start a Twitch stream for ~15s. The badge is owned by the
-// per-frame tick (which trusts the stream clock, not isPaused()); this only
-// re-attempts playback so we never fight the tick over the badge.
-function startTwitchPlaybackNudge(entry) {
-    let tries = 0;
-    const tryPlay = () => {
-        const e = entry;
-        if (!e || !e.player) return true;
-        const progressing = !!(e._twProgressAt && (Date.now() - e._twProgressAt) < 2000);
-        if (progressing) return true;
-        try { e.player.setMuted(true); e.player.play(); } catch (err) { }
-        return false;
-    };
-    entry.twitchNudge = setInterval(() => {
-        tries++;
-        if (tryPlay() || tries > 15) {
-            clearInterval(entry.twitchNudge);
-            entry.twitchNudge = null;
+// Attach/detach the iframe by distance. Cheap proximity gating: attach when
+// close (sound audible), detach when far (silent + saves decode). Re-attaching
+// resumes the live edge, which is exactly right for a live channel.
+function updateTwitchRange(entry) {
+    if (!entry || entry.provider !== 'twitch') return;
+    if (!entry.cssObj || !entry.mesh) return;
+    let dist = 999;
+    if (typeof camera !== 'undefined' && camera && camera.position) {
+        dist = camera.position.distanceTo(entry.mesh.position);
+    }
+    const near = dist <= TWITCH_AUDIBLE_RANGE;
+    if (near && !entry._twAttached) {
+        entry._twAttached = true;
+        if (!entry.iframe) createTwitchPlayer(entry);
+        else {
+            const f = entry.frameEl && entry.frameEl.querySelector('iframe');
+            if (!f) createTwitchPlayer(entry);
         }
-    }, 1000);
-    setTimeout(() => tryPlay(), 60);
+    } else if (!near && entry._twAttached) {
+        entry._twAttached = false;
+        if (entry.frameEl) entry.frameEl.innerHTML = '';
+        entry.iframe = null;
+        entry.player = null;
+        entry._twAwaitingCreate = true;
+    }
 }
+// Twitch has no SDK here, so there is no "needs start" state to report (the
+// hand-rolled iframe autoplays under the browser's normal policy).
+window.twScreenNeedsStart = function () { return false; };
 
-// Toggle the paused-screen overlay. While it is shown the screen forwards
-// pointer events to the IFRAME ITSELF: Twitch's autoplay gate only opens on a
-// genuine click inside its own frame — API play() calls are ignored no matter
-// how often we send them. The label is a non-interactive caption so it can
-// never intercept that click.
-function setTwitchBadge(entry, text) {
-    const shell = entry.cssObj && entry.cssObj.element ? entry.cssObj.element : null;
-    if (!shell) return;
-    const iframes = shell.querySelectorAll('iframe');
-    const setIframeClicks = (on) => {
-        shell.style.pointerEvents = on ? 'auto' : 'none';
-        shell.style.cursor = on ? 'pointer' : '';
-        for (let i = 0; i < iframes.length; i++) iframes[i].style.pointerEvents = on ? 'auto' : 'none';
-    };
-
-    let badge = shell.querySelector('.tw-badge');
-    if (!text) {
-        if (badge) badge.remove();
-        setIframeClicks(false);
-        entry._twBadgeShown = false;
-        return;
-    }
-    if (!badge) {
-        badge = document.createElement('div');
-        badge.className = 'tw-badge';
-        badge.textContent = text;
-        badge.style.position = 'absolute';
-        badge.style.left = '50%';
-        badge.style.bottom = '10px';
-        badge.style.transform = 'translateX(-50%)';
-        badge.style.background = 'rgba(10,10,12,0.78)';
-        badge.style.color = '#e8ecf7';
-        badge.style.font = 'bold 14px monospace';
-        badge.style.padding = '6px 12px';
-        badge.style.letterSpacing = '1px';
-        badge.style.border = '1px solid #8b5cf6';
-        badge.style.borderRadius = '3px';
-        badge.style.zIndex = '5';
-        // Clicks must pass THROUGH to Twitch's player underneath.
-        badge.style.pointerEvents = 'none';
-        shell.appendChild(badge);
-        setIframeClicks(true);
-    } else {
-        badge.textContent = text;
-    }
-    entry._twBadgeShown = true;
-}
-
-// True when a screen exists but its stream has not started (badge showing).
-window.twScreenNeedsStart = function (propId) {
-    const e = ytPlayers[propId];
-    if (!e || e.provider !== 'twitch') return false;
-    return !(e._twProgressAt && (Date.now() - e._twProgressAt) < 2000);
-};
-
-// Start a paused screen's stream from a KEYBOARD gesture (E). A keypress in the
-// top document counts as user activation, so the embed's play() is allowed even
-// though its own click gate was blocked. Also frees the mouse in case the user
-// wants to click the player instead.
-window.startScreenPlayback = function (propId) {
-    const e = ytPlayers[propId];
-    if (!e) return;
-    // Player may not exist yet (created lazily once on camera).
-    if (!e.player && e._twAwaitingCreate) {
-        maybeCreateTwitchPlayer(e);
-        setTwitchBadge(e, 'STARTING...');
-        return;
-    }
-    if (!e.player) return;
+// The hand-rolled Twitch iframe plays on its own; E just frees the mouse so a
+// player can interact with the embed's own controls if they need to.
+window.startScreenPlayback = function () {
     try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) { }
-    try {
-        if (e.provider === 'twitch') {
-            e.player.setMuted(true);
-            e.player.play();
-        } else {
-            e.player.playVideo();
-        }
-    } catch (err) { }
-    setTwitchBadge(e, 'STARTING...');
 };
 
 // Mount the actual YouTube player. Passed the DOM ELEMENT (not an id) so it
@@ -1306,11 +1226,9 @@ window.tickYtScreens = function () {
             const entry = ytPlayers[id];
             const p = entry && entry.player;
             try {
-                if (!p) continue;
-                if (entry.provider === 'twitch') {
-                    if (p.getMuted && p.getMuted()) p.setMuted(false);
-                    if (p.play) p.play();
-                } else if (p.isMuted && p.isMuted()) {
+                // Twitch is a plain iframe now (no SDK handles) - nothing to do.
+                if (!p || entry.provider === 'twitch') continue;
+                if (p.isMuted && p.isMuted()) {
                     p.unMute();
                     p.playVideo && p.playVideo();
                 }
@@ -1331,18 +1249,9 @@ window.updateYtAudio = function (e) {
     const volInt = Math.round(vol * 100);
     const p = e.player;
 
-    // Twitch's embed API takes 0..1 volumes and setMuted booleans.
-    if (e.provider === 'twitch') {
-        try {
-            if (vol > 0.02) {
-                if (p.getMuted && p.getMuted()) { p.setMuted(false); }
-                if (p.setVolume) p.setVolume(vol);
-            } else if (!p.getMuted || !p.getMuted()) {
-                if (p.setMuted) p.setMuted(true);
-            }
-        } catch (err) { }
-        return;
-    }
+    // Twitch has no SDK controls here: updateTwitchRange() decides audible vs
+    // silent by attaching/detaching the iframe, so there is nothing to set.
+    if (e.provider === 'twitch') return;
 
     // YouTube
     if (!p.setVolume) return;
@@ -1361,49 +1270,8 @@ window.tickYtSync = function (e, id) {
     if (!e.player || typeof camera === 'undefined') return;
 
     if (e.provider === 'twitch') {
-        try {
-            // Live channels have no timeline to seek; what matters is whether
-            // the stream is ACTUALLY advancing. Twitch's isPaused() lies (it
-            // reports playing the moment play() is called, even when the
-            // browser blocked it), so the click-to-play badge is driven by the
-            // player's clock instead: it hides only once currentTime moves.
-            if (e.data.twitchKind !== 'vod') {
-                let cur = null;
-                try { cur = e.player.getCurrentTime ? e.player.getCurrentTime() : null; } catch (err) { }
-                if (cur != null && isFinite(cur)) {
-                    if (e._twLastT == null || Math.abs(cur - e._twLastT) > 0.05) {
-                        e._twLastT = cur;
-                        e._twProgressAt = Date.now();
-                    }
-                }
-                const progressing = !!(e._twProgressAt && (Date.now() - e._twProgressAt) < 2000);
-                if (!progressing) {
-                    // Deliberately NOT calling play() here: spamming the API
-                    // keeps Twitch stuck. Playback attempts belong to the
-                    // nudge timer; the fix for a blocked gate is a real click
-                    // on the player, which the badge makes possible.
-                    if (!e._twBadgeShown && document.visibilityState === 'visible') {
-                        setTwitchBadge(e, 'CLICK SCREEN TO PLAY');
-                        e._twBadgeShown = true;
-                        // Pointer lock routes ALL mouse input to the canvas, so
-                        // the player would be unclickable while the camera is
-                        // locked. Free the mouse once so a click can land.
-                        try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) { }
-                    }
-                } else if (e._twBadgeShown) {
-                    setTwitchBadge(e, null);
-                }
-                return;
-            }
-            // VOD: anchor + seek, like YouTube.
-            const target = (e.syncAt !== null && e.syncRecvAt)
-                ? e.syncAt + (Date.now() - e.syncRecvAt) / 1000
-                : Math.max(0, (Date.now() - e.data.startedAt) / 1000);
-            const cur = e.player.getCurrentTime ? e.player.getCurrentTime() : NaN;
-            if (isFinite(cur) && isFinite(target) && Math.abs(target - cur) > 2.5 && e.player.seek) {
-                e.player.seek(target);
-            }
-        } catch (err) { }
+        // No SDK: audibility is a distance on/off (attach/detach the iframe).
+        updateTwitchRange(e);
         return;
     }
 
@@ -1514,16 +1382,16 @@ window.applyYtChange = function (data) {
     };
     e.syncAt = null;
     e.syncRecvAt = null;
-    // Fresh stream: reset Twitch badge/progress bookkeeping so the tick can
-    // re-evaluate this screen from scratch.
-    e._twBadgeShown = false;
+    // Fresh stream: rebuild the Twitch iframe lazily once on camera.
+    e._twAttached = false;
     e._twProgressAt = 0;
     e._twLastT = null;
     if (shell) shell.style.pointerEvents = 'none';
     if (provider === 'twitch') {
-        // Recreate lazily: Twitch denies autoplay to players constructed while
-        // off camera, so wait until the screen is on screen again.
         e._twAwaitingCreate = true;
+        if (e.frameEl) e.frameEl.innerHTML = '';
+        e.iframe = null;
+        e.player = null;
     } else if (ytApiReady) {
         createYtPlayer(e);
     } else {
