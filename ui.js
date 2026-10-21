@@ -2739,6 +2739,10 @@ function handleDataFromClient(clientId, data) {
                 type: data.propType,
                 x: data.x,
                 z: data.z,
+                // Rotation must be carried through, or every viewer falls back
+                // to mesh.rotation.y = their OWN player rotation and the prop
+                // faces a different way on each player's screen.
+                rot: (typeof data.rot === 'number' && isFinite(data.rot)) ? data.rot : 0,
                 owner: clientId,
                 timestamp: Date.now()
             };

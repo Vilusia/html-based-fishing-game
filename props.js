@@ -695,11 +695,14 @@ function spawnPropMesh(data) {
     const terrainY = (typeof window.getTerrainHeight === 'function') ? window.getTerrainHeight(data.x, data.z) : 0;
     mesh.position.set(data.x, terrainY, data.z);
 
-    // Use rotation from network data if provided, otherwise use local player rotation
-    if (typeof data.rot === 'number') {
+    // Use the rotation from the network data. Every prop sender includes it,
+    // so a missing/invalid rot means OLD-VERSION peer data: fall back to 0
+    // (a stable direction) rather than the local viewer's rotation, which
+    // would face the prop differently on every player's screen.
+    if (typeof data.rot === 'number' && isFinite(data.rot)) {
         mesh.rotation.y = data.rot;
     } else {
-        mesh.rotation.y = player.rotation.y;
+        mesh.rotation.y = 0;
     }
 
     scene.add(mesh);
