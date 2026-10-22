@@ -1,7 +1,7 @@
 ﻿
 (function () {
     // Play domains. Substring matching covers every subdomain of both roots.
-    // The game is served at https://play.htmlfishing.com (root); the lobby
+    // The game is served at https://htmlfishing.com (root); the lobby
     // directory is https://master.gaywebfishing.org.
     var allowedDomains = ["gaywebfishing.org", "htmlfishing.com", "localhost", "127.0.0.1"];
 

@@ -6,7 +6,7 @@
 #        sudo mkdir -p /var/www && sudo chown administrator /var/www
 #        git clone https://github.com/Vilusia/html-fishing.git /var/www/html-fishing
 #      (Use the SAME folder the Cloudflare tunnel serves at the root of
-#       play.htmlfishing.com.)
+#       htmlfishing.com.)
 #   2. Set up password-less SSH from this PC (once):
 #        ssh-keygen -t ed25519          # if you don't have a key yet
 #        type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh administrator@gpu-jkey "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
