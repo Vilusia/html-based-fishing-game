@@ -2741,6 +2741,13 @@ function handleDataFromClient(clientId, data) {
             // undo history) are consistent across every peer's records.
             const ytId = (typeof data.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.videoId))
                 ? data.videoId : null;
+            // Twitch: either a channel slug or a numeric VOD id. The kind field
+            // decides which; ids that match neither are dropped.
+            const twRaw = (typeof data.twitchId === 'string') ? data.twitchId : null;
+            const twVod = (twRaw && data.twitchKind === 'video' && /^\d{1,20}$/.test(twRaw)) ? twRaw : null;
+            const twCh = (twRaw && !twVod && data.twitchKind !== 'video' && /^[A-Za-z0-9_]{1,25}$/.test(twRaw))
+                ? twRaw : null;
+            const provider = ytId ? 'youtube' : ((twVod || twCh) ? 'twitch' : null);
             const newProp = {
                 id: (typeof data.propId === 'string' && data.propId.length <= 40)
                     ? data.propId
@@ -2753,8 +2760,10 @@ function handleDataFromClient(clientId, data) {
                 // faces a different way on each player's screen.
                 rot: (typeof data.rot === 'number' && isFinite(data.rot)) ? data.rot : 0,
                 // Screen source (null for every other prop type)
-                provider: ytId ? 'youtube' : null,
+                provider: provider,
                 videoId: ytId,
+                twitchId: twVod || twCh,
+                twitchKind: twVod ? 'video' : (twCh ? 'channel' : null),
                 startedAt: (typeof data.startedAt === 'number') ? data.startedAt : Date.now(),
                 placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : '',
                 owner: clientId,
@@ -2775,24 +2784,33 @@ function handleDataFromClient(clientId, data) {
             // A placer swapped the video on their screen. Validate, update the
             // stored record (so late joiners get the new video via allProps),
             // then relay. Hosts may also change any screen.
-            const vid = (typeof data.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.videoId))
+            const ytId = (typeof data.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.videoId))
                 ? data.videoId : null;
-            if (!vid) return;
+            const twRaw = (typeof data.twitchId === 'string') ? data.twitchId : null;
+            const twVod = (twRaw && data.twitchKind === 'video' && /^\d{1,20}$/.test(twRaw)) ? twRaw : null;
+            const twCh = (twRaw && !twVod && data.twitchKind !== 'video' && /^[A-Za-z0-9_]{1,25}$/.test(twRaw))
+                ? twRaw : null;
+            const provider = ytId ? 'youtube' : ((twVod || twCh) ? 'twitch' : null);
+            if (!provider) return;
             const startedAt = (typeof data.startedAt === 'number' && isFinite(data.startedAt))
                 ? data.startedAt : Date.now();
             const rec = activeProps.find(p => p.id === data.propId);
             if (!rec) return;                      // unknown screen: ignore
             if (rec.owner !== clientId && !isHost) return; // only the placer (or host) may change it
-            rec.provider = 'youtube';
-            rec.videoId = vid;
+            rec.provider = provider;
+            rec.videoId = ytId;
+            rec.twitchId = twVod || twCh;
+            rec.twitchKind = twVod ? 'video' : (twCh ? 'channel' : null);
             rec.startedAt = startedAt;
             const clean = {
                 type: 'ytChange',
                 propId: rec.id,
-                provider: 'youtube',
-                videoId: vid,
+                provider: provider,
+                videoId: rec.videoId,
+                twitchId: rec.twitchId,
+                twitchKind: rec.twitchKind,
                 startedAt: startedAt,
-                placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : ''
+                placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : (rec.placer || '')
             };
             broadcastToClients(clean);
             applyYtChange(clean);
@@ -12397,7 +12415,7 @@ function animate() {
                 if (canEdit) {
                     interactTarget = 'ytscreen';
                     interactScreenId = bestId;
-                    prompt.innerText = 'PRESS E TO CHANGE VIDEO';
+                    prompt.innerText = 'PRESS E TO CHANGE STREAM';
                     prompt.style.display = 'block';
                     if (btn) btn.innerText = "CHANGE";
                 }

@@ -180,6 +180,28 @@ window.MASTER_SERVER_URL = window.MASTER_SERVER_URL || (
 > HTTPS, browsers block these requests as mixed content. Serve the game over
 > HTTP, or put the master behind TLS.
 
+### Stream Player (YouTube / Twitch)
+
+The `screen` prop ("Stream Player") accepts a YouTube or Twitch URL. The video
+is a real DOM iframe pinned to the housing with `CSS3DRenderer`, so it plays
+above the WebGL canvas.
+
+- **One-sided:** `updateScreenFacing()` hides the panel once the camera moves
+  behind the housing. The picture faces the side the placer stood on, so a
+  screen you just placed is always readable.
+- **YouTube:** official IFrame API, muted autoplay, synced to a shared
+  wall-clock anchor (`prop.startedAt`) with placer heartbeats. Live streams are
+  never seeked (they stay at the live edge); VODs seek to the anchor.
+- **Twitch:** plain `player.twitch.tv` iframe with `autoplay=false` and
+  `parent=<current hostname>`. Twitch's autoplay policy refuses a player that
+  is not visibly on screen, so the embed is **click-to-play**: the shell takes
+  pointer events, Twitch's own play button provides the user gesture, and the
+  click lands inside the cross-origin iframe (it never casts a line or locks
+  the mouse). A short "CLICK TO PLAY" chip hints at it. Twitch audio is
+  controlled by Twitch's player, not the in-game volume sliders.
+- **Audio:** YouTube screens scale with both the Master slider and
+  "Video Screens" (audio mixer) by proximity.
+
 ---
 
 ## Progression systems (`progression.js`)
