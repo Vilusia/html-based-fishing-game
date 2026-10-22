@@ -1047,6 +1047,7 @@ function attachYtVideo(data, group) {
         player: null,
         iframe: null,
         twFrame: null,
+        twVideoWrap: null,
         provider: provider,
         cssObj: cssObj,
         shell: shell,
@@ -1075,6 +1076,7 @@ function mountScreenContent(entry) {
     entry.twitchPending = false;
     entry.twitchReady = false;
     if (entry.twFrame) { entry.twFrame.remove(); entry.twFrame = null; }
+    entry.twVideoWrap = null;
     shell.innerHTML = '';
     // The shell is only the dark backing behind the picture now; the Twitch
     // iframe lives in its own screen-space layer so it can autoplay. Never let
@@ -1102,13 +1104,22 @@ function mountScreenContent(entry) {
         twFrame.style.top = '0';
         twFrame.style.width = '640px';
         twFrame.style.height = '360px';
-        twFrame.style.transformOrigin = '0 0';
         twFrame.style.overflow = 'hidden';
         twFrame.style.background = '#050505';
         twFrame.style.pointerEvents = 'none';
         twFrame.style.display = 'none';
+        // Inner 640x360 layout, uniformly scaled to cover the projected box.
+        const twVideoWrap = document.createElement('div');
+        twVideoWrap.style.position = 'absolute';
+        twVideoWrap.style.left = '0';
+        twVideoWrap.style.top = '0';
+        twVideoWrap.style.width = '640px';
+        twVideoWrap.style.height = '360px';
+        twVideoWrap.style.transformOrigin = '0 0';
+        twFrame.appendChild(twVideoWrap);
         ensureTwitchLayer().appendChild(twFrame);
         entry.twFrame = twFrame;
+        entry.twVideoWrap = twVideoWrap;
         entry.twitchPending = true;
         if (!entry.twitchUnmuted) addSoundChip(twFrame, entry);
         return;
@@ -1241,21 +1252,40 @@ function positionTwitchFrame(e) {
     const s = frame.style;
     s.left = minX.toFixed(2) + 'px';
     s.top = minY.toFixed(2) + 'px';
-    // Keep the iframe's own layout at 640x360 (Twitch refuses autoplay to
-    // players below its minimum size, and it measures the inner viewport) and
-    // map it onto the projected box with a plain 2D scale. No perspective or
-    // preserve-3d: that is what broke Twitch's IntersectionObserver v2 check.
-    s.width = '640px';
-    s.height = '360px';
-    s.transform = 'scale(' + (w / 640).toFixed(5) + ',' + (h / 360).toFixed(5) + ')';
+    // The frame is the clipping/hit box: exactly the projected bounding box.
+    s.width = w.toFixed(2) + 'px';
+    s.height = h.toFixed(2) + 'px';
+    // The player keeps a 640x360 layout (Twitch refuses autoplay below its
+    // minimum size, and it measures the inner viewport), then a *uniform* 2D
+    // scale covers the box and is centred. Measure the panel at its centre line
+    // rather than using the bounding box: in perspective the bbox grows as the
+    // near edge gets closer, which looked like the picture zooming in while the
+    // screen turned. One scale for both axes also stops it squashing.
+    if (e.twVideoWrap) {
+        const proj = (px, py, pz) => {
+            const v = new THREE.Vector3(px, py, pz).project(camera);
+            return [(v.x * 0.5 + 0.5) * window.innerWidth, (1 - (v.y * 0.5 + 0.5)) * window.innerHeight];
+        };
+        const topMid = proj(cx, cy + hh, cz);
+        const botMid = proj(cx, cy - hh, cz);
+        const leftMid = proj(cx - rx * hw, cy, cz - rz * hw);
+        const rightMid = proj(cx + rx * hw, cy, cz + rz * hw);
+        const wC = Math.abs(rightMid[0] - leftMid[0]);
+        const hC = Math.abs(topMid[1] - botMid[1]);
+        const scale = Math.max(0.02, Math.max(wC / 640, hC / 360));
+        const tx = (w - 640 * scale) / 2;
+        const ty = (h - 360 * scale) / 2;
+        e.twVideoWrap.style.transform =
+            'translate(' + tx.toFixed(2) + 'px,' + ty.toFixed(2) + 'px) scale(' + scale.toFixed(5) + ')';
+    }
     e.twitchReady = true;
     return true;
 }
 
 function mountTwitch(entry) {
-    if (!entry || !entry.twFrame) return;
+    if (!entry || !entry.twVideoWrap) return;
     const ifr = buildTwitchIframe(entry);
-    entry.twFrame.appendChild(ifr);
+    entry.twVideoWrap.appendChild(ifr);
     entry.twFrame.style.display = 'block';
     entry.iframe = ifr;
 }
@@ -1286,7 +1316,7 @@ function unmuteTwitch(entry) {
     if (!entry.iframe) return;   // still pending: the mount will start unmuted
     entry.iframe.remove();
     const ifr = buildTwitchIframe(entry);
-    entry.twFrame.appendChild(ifr);
+    entry.twVideoWrap.appendChild(ifr);
     entry.iframe = ifr;
 }
 
