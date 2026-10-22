@@ -840,6 +840,7 @@ function removePropFromWorld(id) {
     // stop the placer's sync heartbeat.
     if (ytPlayers[id]) {
         try { if (ytPlayers[id].player && ytPlayers[id].player.destroy) ytPlayers[id].player.destroy(); } catch (e) { }
+        if (ytPlayers[id].twFrame) ytPlayers[id].twFrame.remove();
         if (ytPlayers[id].cssObj && cssScene) cssScene.remove(ytPlayers[id].cssObj);
         delete ytPlayers[id];
     }
@@ -857,18 +858,21 @@ function removePropFromWorld(id) {
 // heartbeats. The placer also broadcasts a small ytSync heartbeat every 2s to
 // correct clock skew; everyone else applies it.
 //
-// Twitch: a plain iframe with autoplay OFF. Twitch's autoplay policy only
-// permits a muted player that is genuinely visible, and it still refuses in
-// many situations ("Autoplay disabled ... style visibility"), so the player is
-// click-to-play instead: the shell takes pointer events and Twitch's own play
-// button starts the stream on a real user gesture. Because the click lands
-// inside a cross-origin iframe it never reaches the game, so it cannot cast a
-// line or re-lock the mouse.
+// Twitch: muted autoplay, but the player lives in an untransformed screen-space
+// layer that tracks the panel (see twitchLayer below). Twitch's autoplay gate
+// runs IntersectionObserver v2 inside its iframe and refuses players it cannot
+// see: anything inside a perspective/preserve-3d wrapper, an element that is
+// faded out, or a player smaller than its minimum size all get
+// "Autoplay disabled ... style visibility". A plain 640x360 iframe that is
+// actually on screen passes, so the video is fitted to the panel's projected
+// box with a 2D scale and the depth punch crops it to the housing opening.
+// The SOUND chip reloads the embed unmuted on a real top-document click.
 //
-// Rendering: iframes cannot be blitted into WebGL (cross-origin), so they
-// live in the DOM and follow the prop through CSS3DRenderer (three r128
-// examples, pinned the same way as three itself). Screens render above the
-// canvas, so geometry won't occlude them - accepted tradeoff for real video.
+// Rendering: iframes cannot be blitted into WebGL (cross-origin), so they live
+// in the DOM. YouTube follows the prop through CSS3DRenderer (three r128
+// examples, pinned the same way as three itself); Twitch uses the flat layer.
+// The WebGL canvas is composited above both and punchScreens() erases its
+// alpha behind the video, so the world still draws in front of the screen.
 // ===========================================================================
 const MAX_YT_SCREENS = 5;
 const ytPlayers = {};
@@ -878,6 +882,14 @@ const ytPlayerQueue = [];
 let cssRenderer = null;
 let cssScene = null;
 let ytOverlay = null;
+// Twitch players live OUTSIDE the CSS3D tree. Twitch's autoplay gate uses
+// IntersectionObserver v2 (trackVisibility) from inside the iframe; an element
+// inside a preserve-3d/perspective wrapper makes that observer report the
+// player as not visible, which permanently disables autoplay with
+// "Autoplay disabled ... style visibility". A plain, untransformed iframe that
+// tracks the panel's projected rect on screen autoplays fine, and it still sits
+// under the WebGL canvas, so punchScreens() keeps the world in front of it.
+let twitchLayer = null;
 
 // The YouTube IFrame API invokes window.onYouTubeIframeAPIReady exactly once
 // when its script finishes loading. On repeat visits the script is cached and
@@ -1034,6 +1046,7 @@ function attachYtVideo(data, group) {
         },
         player: null,
         iframe: null,
+        twFrame: null,
         provider: provider,
         cssObj: cssObj,
         shell: shell,
@@ -1059,14 +1072,17 @@ function mountScreenContent(entry) {
     entry.player = null;
     entry.iframe = null;
     entry.soundChip = null;
+    entry.twitchPending = false;
+    entry.twitchReady = false;
+    if (entry.twFrame) { entry.twFrame.remove(); entry.twFrame = null; }
     shell.innerHTML = '';
+    // The shell is only the dark backing behind the picture now; the Twitch
+    // iframe lives in its own screen-space layer so it can autoplay. Never let
+    // the 3D panel eat clicks.
+    shell.style.pointerEvents = 'none';
+    shell.style.cursor = 'default';
 
     const twitch = entry.provider === 'twitch';
-    // A Twitch player needs real clicks (its play button), so the shell has to
-    // accept pointer events. YouTube needs no interaction: stay click-through
-    // so the screen never blocks aiming or fishing.
-    shell.style.pointerEvents = twitch ? 'auto' : 'none';
-    shell.style.cursor = twitch ? 'pointer' : 'default';
 
     const frameEl = document.createElement('div');
     frameEl.style.width = '100%';
@@ -1076,8 +1092,25 @@ function mountScreenContent(entry) {
     entry.frameEl = frameEl;
 
     if (twitch) {
-        mountTwitch(entry);
-        if (!entry.twitchUnmuted) addSoundChip(shell, entry);
+        // Screen-space layer, positioned every frame from the panel corners.
+        // Mounting is deferred until the panel is actually on screen, so the
+        // player never starts inside a zero-size or off-screen element (Twitch
+        // latches its autoplay verdict at load time).
+        const twFrame = document.createElement('div');
+        twFrame.style.position = 'absolute';
+        twFrame.style.left = '0';
+        twFrame.style.top = '0';
+        twFrame.style.width = '640px';
+        twFrame.style.height = '360px';
+        twFrame.style.transformOrigin = '0 0';
+        twFrame.style.overflow = 'hidden';
+        twFrame.style.background = '#050505';
+        twFrame.style.pointerEvents = 'none';
+        twFrame.style.display = 'none';
+        ensureTwitchLayer().appendChild(twFrame);
+        entry.twFrame = twFrame;
+        entry.twitchPending = true;
+        if (!entry.twitchUnmuted) addSoundChip(twFrame, entry);
         return;
     }
 
@@ -1155,10 +1188,75 @@ window.twitchScreenAt = function (clientX, clientY) {
     return null;
 };
 
+// Layer for Twitch iframes: same z-index as the CSS3D overlay (2) but appended
+// after it, so the video paints over the black shell while staying under the
+// WebGL canvas (z-index 3). pointer-events stay off the layer itself; only the
+// iframe's frame box accepts clicks.
+function ensureTwitchLayer() {
+    if (twitchLayer && twitchLayer.isConnected) return twitchLayer;
+    twitchLayer = document.createElement('div');
+    twitchLayer.id = 'twitch-layer';
+    const s = twitchLayer.style;
+    s.position = 'absolute';
+    s.left = '0';
+    s.top = '0';
+    s.width = '100%';
+    s.height = '100%';
+    s.overflow = 'visible';
+    s.pointerEvents = 'none';
+    s.zIndex = '2';
+    const gc = document.getElementById('game-container') || document.body;
+    gc.appendChild(twitchLayer);
+    return twitchLayer;
+}
+
+// Project the panel's four corners to screen space and fit the untransformed
+// iframe into their bounding box. The punched hole is the exact perspective
+// quad, so the video is cropped to the housing's screen opening: no warped DOM
+// transform is needed, which is what keeps Twitch's autoplay check happy.
+function positionTwitchFrame(e) {
+    const frame = e && e.twFrame;
+    if (!frame || !e.mesh || typeof camera === 'undefined' || !camera) return false;
+    const ry = e.mesh.rotation.y + Math.PI;
+    const cx = e.mesh.position.x + Math.sin(ry) * VIDEO_FORWARD;
+    const cy = e.mesh.position.y + PANEL_Y;
+    const cz = e.mesh.position.z + Math.cos(ry) * VIDEO_FORWARD;
+    if (new THREE.Vector3(cx, cy, cz).applyMatrix4(camera.matrixWorldInverse).z > -0.2) return false;
+    const rx = Math.cos(ry), rz = -Math.sin(ry);
+    const hw = PANEL_W / 2, hh = PANEL_H / 2;
+    const corners = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([sx, sy]) => {
+        const v = new THREE.Vector3(
+            cx + rx * sx * hw, cy + sy * hh, cz + rz * sx * hw
+        ).project(camera);
+        return [(v.x * 0.5 + 0.5) * window.innerWidth, (1 - (v.y * 0.5 + 0.5)) * window.innerHeight];
+    });
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const c of corners) {
+        if (c[0] < minX) minX = c[0];
+        if (c[0] > maxX) maxX = c[0];
+        if (c[1] < minY) minY = c[1];
+        if (c[1] > maxY) maxY = c[1];
+    }
+    const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
+    const s = frame.style;
+    s.left = minX.toFixed(2) + 'px';
+    s.top = minY.toFixed(2) + 'px';
+    // Keep the iframe's own layout at 640x360 (Twitch refuses autoplay to
+    // players below its minimum size, and it measures the inner viewport) and
+    // map it onto the projected box with a plain 2D scale. No perspective or
+    // preserve-3d: that is what broke Twitch's IntersectionObserver v2 check.
+    s.width = '640px';
+    s.height = '360px';
+    s.transform = 'scale(' + (w / 640).toFixed(5) + ',' + (h / 360).toFixed(5) + ')';
+    e.twitchReady = true;
+    return true;
+}
+
 function mountTwitch(entry) {
-    if (!entry || !entry.frameEl) return;
+    if (!entry || !entry.twFrame) return;
     const ifr = buildTwitchIframe(entry);
-    entry.frameEl.appendChild(ifr);
+    entry.twFrame.appendChild(ifr);
+    entry.twFrame.style.display = 'block';
     entry.iframe = ifr;
 }
 
@@ -1182,13 +1280,22 @@ function buildTwitchIframe(entry) {
 // Reload the embed with sound. Triggered by a click on our own chip (a click in
 // the top document), which is what browsers require before unmuted playback.
 function unmuteTwitch(entry) {
-    if (!entry || entry.twitchUnmuted || !entry.frameEl) return;
+    if (!entry || entry.twitchUnmuted) return;
     entry.twitchUnmuted = true;
-    if (entry.iframe) entry.iframe.remove();
-    const ifr = buildTwitchIframe(entry);
-    entry.frameEl.appendChild(ifr);
-    entry.iframe = ifr;
     if (entry.soundChip) { entry.soundChip.remove(); entry.soundChip = null; }
+    if (!entry.iframe) return;   // still pending: the mount will start unmuted
+    entry.iframe.remove();
+    const ifr = buildTwitchIframe(entry);
+    entry.twFrame.appendChild(ifr);
+    entry.iframe = ifr;
+}
+
+// Mount a deferred Twitch player once its frame is really on screen.
+function mountPendingTwitch(entry) {
+    if (!entry || !entry.twitchPending) return;
+    if (!entry.twitchReady || !entry.__shown) return;
+    entry.twitchPending = false;
+    if (!entry.iframe) mountTwitch(entry);
 }
 
 // Small "sound" chip in the top-left corner of a Twitch screen. Beats relying
@@ -1198,8 +1305,9 @@ function addSoundChip(shell, entry) {
     const chip = document.createElement('div');
     chip.textContent = '\u{1F50A} SOUND';
     chip.style.position = 'absolute';
-    chip.style.left = '10px';
+    chip.style.left = '50%';
     chip.style.top = '10px';
+    chip.style.transform = 'translateX(-50%)';
     chip.style.padding = '4px 10px';
     chip.style.background = 'rgba(10, 10, 14, 0.72)';
     chip.style.border = '1px solid rgba(255,255,255,0.35)';
@@ -1363,8 +1471,23 @@ window.tickYtScreens = function () {
             e.cssObj.rotation.y = ry;
         }
         // One-sided panel: the picture only exists on the placer's side.
+        if (e.provider === 'twitch') {
+            const onScreen = positionTwitchFrame(e);
+            updateScreenFacing(e);
+            if (e.twFrame) {
+                // Never fade this layer: Chrome reports opacity:0 elements as
+                // not visible (IntersectionObserver v2), and Twitch latches its
+                // autoplay decision from that. When the camera is behind the
+                // panel the WebGL canvas simply isn't punched, so the housing
+                // covers the video anyway.
+                e.twFrame.style.opacity = '1';
+                const clickable = onScreen && !!e.__shown;
+                e.twFrame.style.pointerEvents = clickable ? 'auto' : 'none';
+            }
+            if (onScreen && e.__shown) mountPendingTwitch(e);
+            continue;   // no JS API: Twitch owns its audio
+        }
         updateScreenFacing(e);
-        if (e.provider === 'twitch') continue;   // no JS API: Twitch owns its audio
         try { window.updateYtAudio(e); } catch (err) { }
         try { window.tickYtSync(e, id); } catch (err) { }
     }
@@ -1397,8 +1520,12 @@ function updateScreenFacing(e) {
     const show = e.__facing;
     if (e.__shown === show) return;
     e.__shown = show;
-    e.shell.style.visibility = show ? 'visible' : 'hidden';
-    e.shell.style.pointerEvents = (show && e.provider === 'twitch') ? 'auto' : 'none';
+    // Use opacity, not visibility: hiding with visibility makes the browser
+    // report the frame as hidden, which is exactly what Twitch's autoplay gate
+    // looks for. The screen-space iframe layer is toggled the same way.
+    e.shell.style.visibility = 'visible';
+    e.shell.style.opacity = show ? '1' : '0';
+    e.shell.style.pointerEvents = 'none';
 }
 
 // ---------------------------------------------------------------------------
