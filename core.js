@@ -18,7 +18,7 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v12.134";
+const GAME_VERSION = "v12.135";
 
 // Save-file schema version. Bump whenever a change can't be read by older
 // code, and add a matching step in migrateSave() (ui.js). Kept separate from
@@ -300,13 +300,14 @@ const TOOLS = [
 // --- SCRATCH CARDS ---
 // Four tiers sold by the Scratch Dealer NPC. Each card prints five winning
 // numbers across the top and a 5x5 grid of the player's numbers, each with its
-// own prize underneath. Scratch the foil; any of your numbers that matches a
-// winning number pays the prize printed under it. `winChance` is the chance a
-// freshly printed card is a winner, `prizes` is the pool the matching number
-// pays from, and `spots` is the pool of smaller amounts printed under the
-// non-matching numbers. Expected payout sits a little under the ticket price
-// so the house keeps a thin edge, but the top prizes climb steeply by tier so
-// a low tier can never out-earn a high one.
+// own prize underneath. Scratch the foil; every one of your numbers that
+// matches a winning number pays the prize printed under it, and a winning card
+// can hold one to three matches. `winChance` is the chance a freshly printed
+// card is a winner, `prizes` is the pool the matching numbers pay from, and
+// `spots` is the pool of smaller amounts printed under the non-matching
+// numbers. Expected payout sits a little under the ticket price so the house
+// keeps a thin edge, but the top prizes climb steeply by tier so a low tier can
+// never out-earn a high one.
 const SCRATCH_TIERS = [
     {
         id: 'minnow', name: 'Minnow Scratcher', cost: 50,

@@ -1,8 +1,10 @@
 // --- SCRATCH CARDS ---
 // Lucky Lou's booth. A card prints five winning numbers across the top and a
 // 5x5 grid of "your numbers", each with its own prize underneath. Physically
-// scratch the silver foil off with the mouse (or a finger); any of your numbers
-// that matches a winning number pays the prize printed under it.
+// scratch the silver foil off with the mouse (or a finger); every one of your
+// numbers that matches a winning number pays the prize printed under it, and a
+// single card can hold several matches. The result is only revealed once all
+// 25 squares have been scratched.
 //
 // The foil is a canvas painted over the 25-cell grid. Scratching erases it with
 // destination-out, and the reveal check samples the canvas alpha to decide when
@@ -51,10 +53,28 @@ function scratchShuffle(arr) {
     return arr;
 }
 
-// Build a card. Exactly one of "your numbers" matches a winning number on a
-// winning card (and pays that cell's prize); losing cards never contain a
-// winning number. Numbers are drawn from 1-99 so the grid reads like a real
-// scratch-off rather than a tic-tac-toe board.
+// Split a total prize into `parts` positive whole-dollar amounts. Used so a
+// card with two or three matching numbers still pays the same total the card
+// was drawn for, just spread across the matches.
+function scratchSplitPrize(total, parts) {
+    if (parts <= 1 || total < parts) return [total];
+    const cuts = [];
+    while (cuts.length < parts - 1) {
+        const p = 1 + Math.floor(Math.random() * (total - 1));
+        if (cuts.indexOf(p) === -1) cuts.push(p);
+    }
+    cuts.sort((a, b) => a - b);
+    const out = [];
+    let prev = 0;
+    for (const p of cuts) { out.push(p - prev); prev = p; }
+    out.push(total - prev);
+    return out;
+}
+
+// Build a card. A winning card has one to three of "your numbers" matching
+// winning numbers, and those matches pay the card's prize split between them.
+// Losing cards never contain a winning number. Numbers are drawn from 1-99 so
+// the grid reads like a real scratch-off rather than a tic-tac-toe board.
 function makeScratchCard(tier) {
     const isWinner = Math.random() < tier.winChance;
     const prize = tier.prizes[Math.floor(Math.random() * tier.prizes.length)];
@@ -70,26 +90,43 @@ function makeScratchCard(tier) {
 
     let nums, spots;
     if (isWinner) {
-        nums = available.slice(0, SCRATCH_CELLS - 1);
+        // Most winners have a single match, but two or three are possible.
+        const roll = Math.random();
+        const wanted = roll < 0.6 ? 1 : (roll < 0.9 ? 2 : 3);
+        const shares = scratchSplitPrize(prize, wanted);
+        const matchCount = shares.length;
+        const matchNums = scratchShuffle(winning.slice()).slice(0, matchCount);
+
+        nums = available.slice(0, SCRATCH_CELLS - matchCount);
         spots = nums.map(pickSpot);
-        const at = Math.floor(Math.random() * SCRATCH_CELLS);
-        // The matching cell pays the card's real prize; the rest just print
-        // smaller amounts, exactly like a real ticket.
-        nums.splice(at, 0, winning[Math.floor(Math.random() * winning.length)]);
-        spots.splice(at, 0, prize);
+        // Insert the matching numbers with their share of the prize at random
+        // positions, then shuffle everything together below.
+        for (let m = 0; m < matchCount; m++) {
+            const at = Math.floor(Math.random() * (nums.length + 1));
+            nums.splice(at, 0, matchNums[m]);
+            spots.splice(at, 0, shares[m]);
+        }
     } else {
         nums = available.slice(0, SCRATCH_CELLS);
         spots = nums.map(pickSpot);
     }
 
-    // Shuffle number/prize pairs together so a matching cell can land anywhere.
+    // Shuffle number/prize pairs together so matching cells can land anywhere.
     const order = scratchShuffle([...Array(SCRATCH_CELLS).keys()]);
     return {
         cells: order.map(i => nums[i]),
         prizes: order.map(i => spots[i]),
         winning,
-        isWinner
+        isWinner,
+        matchCount: isWinner ? scratchHitTest(order.map(i => nums[i]), winning) : 0
     };
+}
+
+// Count how many of the given numbers match the winning set.
+function scratchHitTest(cells, winning) {
+    let n = 0;
+    for (const c of cells) if (winning.indexOf(c) !== -1) n++;
+    return n;
 }
 
 // Indices of the player's numbers that match a winning number.
@@ -418,28 +455,24 @@ function scratchUpdateProgress() {
         if (ScratchGame.revealed[i]) revealed++;
     }
 
-    const hits = scratchHighlightHits();
-    const revealedHit = hits.some(i => ScratchGame.revealed[i]);
-
     if (!ScratchGame.done) {
         const hint = scratchEl('scratch-hint');
-        if (hint) hint.textContent = `Scratched ${revealed} / ${SCRATCH_CELLS} squares. Match a winning number to win its prize.`;
+        if (hint) hint.textContent = revealed >= SCRATCH_CELLS
+            ? 'All squares scratched — revealing your result...'
+            : `Scratched ${revealed} / ${SCRATCH_CELLS} squares. Keep scratching to reveal your result.`;
     }
 
-    if (revealedHit) {
-        // A match pays immediately; clear the rest of the card so the player can
-        // see the winning number and the prize it matched.
-        scratchClearFoil();
-        scratchFinish();
-    } else if (revealed >= SCRATCH_CELLS) {
-        scratchFinish();
-    }
+    // The win is only declared once the whole card is clear, like a real
+    // scratch-off: no early payout and no highlights before the final reveal.
+    if (revealed >= SCRATCH_CELLS) scratchFinish();
 }
 
 function scratchFinish() {
     if (ScratchGame.tierIndex < 0 || ScratchGame.done) return;
     ScratchGame.done = true;
     ScratchGame.scratching = false;
+    // Clear any leftover foil so the finished card is fully readable.
+    scratchClearFoil();
 
     const hits = scratchHighlightHits();
     const payout = hits.reduce((sum, i) => sum + ScratchGame.prizes[i], 0);
@@ -450,10 +483,11 @@ function scratchFinish() {
         saveState.money = (Number(saveState.money) || 0) + payout;
         st.won += 1;
         st.biggest = Math.max(st.biggest, payout);
-        result.textContent = `WINNER! +$${payout.toLocaleString()}`;
+        const many = hits.length > 1 ? ` (${hits.length} matches)` : '';
+        result.textContent = `WINNER! +$${payout.toLocaleString()}${many}`;
         result.style.color = 'var(--p-good)';
         try { Sound.achievement(); } catch (e) { }
-        showToast(`Scratch card win: +$${payout.toLocaleString()}`, 'achievement');
+        showToast(`Scratch card win: +$${payout.toLocaleString()}${many}`, 'achievement');
     } else {
         result.textContent = 'NO MATCH — better luck next card!';
         result.style.color = 'var(--p-bad)';
