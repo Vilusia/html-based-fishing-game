@@ -4406,7 +4406,7 @@ function setupThreeJS() {
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 3000);
 
     // KEEP antialias: false for pixel art style
-    renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
 
     // --- SHADOW MAP ENABLED ---
     renderer.shadowMap.enabled = true;
@@ -4417,8 +4417,24 @@ function setupThreeJS() {
     // -----------------------
 
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 1);
     renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
     document.getElementById('game-container').appendChild(renderer.domElement);
+
+    // The WebGL canvas sits ABOVE the CSS3D video overlay (z-index 2 in
+    // props.js). Screens punch themselves out of the canvas alpha in
+    // punchScreens(), so the world renders in front of the video correctly.
+    // Pointer events stay off the canvas: all input is handled on `document`
+    // and this is what lets clicks reach a Twitch iframe underneath.
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.top = '0';
+    renderer.domElement.style.left = '0';
+    renderer.domElement.style.zIndex = '3';
+    renderer.domElement.style.pointerEvents = 'none';
+    // The canvas no longer receives the right-click that used to suppress the
+    // browser menu, so keep it off the game area at the container level.
+    const gameContainer = document.getElementById('game-container');
+    if (gameContainer) gameContainer.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // CSS3D overlay for the YouTube Screen prop (defined in props.js).
     if (window.initCssScene) window.initCssScene();
@@ -12503,6 +12519,10 @@ function animate() {
     }
 
     renderer.render(scene, camera);
+
+    // Punch the video quads out of the canvas alpha so world geometry in front
+    // of a screen stays visible (see punchScreens in props.js).
+    if (window.punchScreens) { try { window.punchScreens(); } catch (e) { } }
 }
 clock = new THREE.Clock();
 

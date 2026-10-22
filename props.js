@@ -1294,26 +1294,33 @@ window.tickYtScreens = function () {
         const e = ytPlayers[id];
         if (!e.mesh) continue;
         if (e.cssObj) {
-            // Panel sits relative to the housing mesh's world transform.
+            // Panel sits relative to the housing mesh's world transform. The
+            // video is nudged toward its readable side by VIDEO_FORWARD so it
+            // sits just in front of the housing's face; punchScreens() stamps
+            // the same plane out of the canvas alpha, and both must match.
+            const ry = e.mesh.rotation.y + Math.PI;
             e.cssObj.position.set(
-                e.mesh.position.x,
-                e.mesh.position.y + 3.55,
-                e.mesh.position.z
+                e.mesh.position.x + Math.sin(ry) * VIDEO_FORWARD,
+                e.mesh.position.y + PANEL_Y,
+                e.mesh.position.z + Math.cos(ry) * VIDEO_FORWARD
             );
-            e.cssObj.rotation.y = e.mesh.rotation.y + Math.PI; // iframe faces the front (canvas plane faces +Z)
+            e.cssObj.rotation.y = ry;
         }
-        // One-sided panel: the housing's front is its local +Z, so the picture
-        // is only visible while the camera is on that side of the screen.
+        // One-sided panel: the picture only exists on the placer's side.
         updateScreenFacing(e);
         if (e.provider === 'twitch') continue;   // no JS API: Twitch owns its audio
         try { window.updateYtAudio(e); } catch (err) { }
         try { window.tickYtSync(e, id); } catch (err) { }
-        // Occlusion: the video is a DOM overlay drawn above the WebGL scene,
-        // so hide it while any player stands in front of the screen and their
-        // character should be visible in front of it.
-        try { updateScreenOcclusion(e); } catch (err) { }
     }
 };
+
+// Panel + video geometry, shared by the housing, the CSS3D overlay and the
+// canvas-alpha punch below.
+const PANEL_Y = 3.55, PANEL_W = 6.3, PANEL_H = 3.545;
+// How far in front of the housing face the video plane sits. punchScreens()
+// erases canvas pixels *behind* this plane, so the housing's own front face
+// (which is 0.12 to 0.18 behind it) is punched out and the video shows there.
+const VIDEO_FORWARD = 0.22;
 
 // Show the video only from the front. tickYtScreens spins the CSS3D element by
 // PI relative to the housing, so the picture's readable side is
@@ -1338,101 +1345,72 @@ function updateScreenFacing(e) {
     e.shell.style.pointerEvents = (show && e.provider === 'twitch') ? 'auto' : 'none';
 }
 
-// Draw the player OVER the screen: the video is a DOM layer above WebGL, so a
-// character between the camera and the screen would be hidden behind it. For
-// every player on that line we project their sprite onto the screen plane and
-// stamp a faithful clone of their character art onto the video. The video
-// keeps playing underneath - no hiding, no fading.
-function updateScreenOcclusion(e) {
-    if (!e.mesh || !e.cssObj || !e.cssObj.element) return;
-    if (typeof camera === 'undefined' || !camera || !camera.position) return;
-    const shell = e.cssObj.element;
+// ---------------------------------------------------------------------------
+// SCREEN DEPTH PUNCH
+// ---------------------------------------------------------------------------
+// The WebGL canvas is composited ABOVE the video DOM layer. After the world is
+// drawn, each visible screen re-stamps its video rectangle into the alpha
+// buffer: the depth test passes only where the scene's depth is FARTHER than
+// the video plane, and those pixels are blended to zero alpha, so the browser
+// shows the video underneath. Any geometry nearer than the plane (terrain,
+// props, other players, sprites, particles) keeps its opaque pixels and
+// therefore draws in front of the video - real occlusion, no per-object clones.
+let punchScene = null;
+let punchMesh = null;
 
-    const cam = camera.position;
-    const SX = e.mesh.position.x, SZ = e.mesh.position.z;
-    const sy = e.mesh.position.y + 3.55;
-    // Ray-plane: screen plane faces the camera.
-    const Svx = SX - cam.x, Svy = sy - cam.y, Svz = SZ - cam.z;
-    const Slen = Math.sqrt(Svx * Svx + Svy * Svy + Svz * Svz);
-    if (Slen < 0.5) return;
-    // Plane normal (vertical screen => normal is horizontal).
-    const n = { x: Svx / Slen, y: 0, z: Svz / Slen };
-    const SdotN = Svx * n.x + Svz * n.z;
-
-    // Screen right vector from its placement yaw, and px-per-world on the plane.
-    const rot = e.mesh.rotation.y;
-    const rx = Math.cos(rot), rz = -Math.sin(rot);
-    const PXW = 320 / 3.15;    // shell half-width in px / world half-width (SCREEN_W/2)
-    const PXH = 180 / 1.7725;  // shell half-height in px / world half-height
-
-    const occluders = [];
-    const consider = (m, key) => {
-        if (!m || m.visible === false) return;
-        const sp = m.getObjectByName ? m.getObjectByName('playerSprite') : null;
-        if (!sp) return;
-        const dx = m.position.x - cam.x, dy = m.position.y - cam.y, dz = m.position.z - cam.z;
-        const denom = dx * n.x + dz * n.z;
-        if (denom <= 0.05) return;              // not heading to the plane
-        // t = distance to plane / distance to player (>1 when the player is
-        // closer than the screen, i.e. between camera and plane).
-        const t = SdotN / denom;
-        if (t < 1.02 || t > 20) return;
-        const worldH = (sp.scale && sp.scale.y) ? sp.scale.y : 2.2;
-        // Feet/head rays hit the plane here:
-        const feetPlaneY = cam.y + dy * t;
-        const headPlaneY = cam.y + (dy + worldH) * t;
-        const TfX = cam.x + dx * t, TfZ = cam.z + dz * t;
-        const lateral = (TfX - SX) * rx + (TfZ - SZ) * rz;
-        // Only require an in-front line position and a lateral position on the
-        // screen; vertical placement is handled by the projection itself (the
-        // clone is clipped to the screen by the shell's overflow).
-        if (Math.abs(lateral) > 4.2) return;
-        occluders.push({ key, sp, t, feetPlaneY, headPlaneY, lateral });
-    };
-
-    if (typeof player !== 'undefined' && player) consider(player, 'self');
-    if (typeof otherPlayers === 'object') {
-        for (const pid in otherPlayers) {
-            const m = otherPlayers[pid] && otherPlayers[pid].mesh;
-            if (m) consider(m, pid);
-        }
-    }
-
-    // Manage the overlay <img> per occluder.
-    if (!e.overlayImgs) e.overlayImgs = {};
-    const wanted = new Set(occluders.map(o => o.key));
-    for (const k in e.overlayImgs) {
-        if (!wanted.has(k)) { e.overlayImgs[k].remove(); delete e.overlayImgs[k]; }
-        else continue;
-    }
-    for (const o of occluders) {
-        let img = e.overlayImgs[o.key];
-        if (!img) {
-            img = document.createElement('img');
-            img.style.position = 'absolute';
-            img.style.transform = 'translateX(-50%)';
-            img.style.imageRendering = 'pixelated';
-            img.style.pointerEvents = 'none';
-            img.style.zIndex = '9';
-            shell.appendChild(img);
-            e.overlayImgs[o.key] = img;
-        }
-
-        const aspect = (o.sp.scale && o.sp.scale.y) ? (o.sp.scale.x / o.sp.scale.y) : 1;
-        const pxH = (o.headPlaneY - o.feetPlaneY) * PXH;   // projected world height
-        img.style.height = pxH + 'px';
-        img.style.width = (pxH * aspect) + 'px';
-        img.style.left = (320 + o.lateral * PXW) + 'px';
-        img.style.top = (180 + (sy - o.headPlaneY) * PXH) + 'px';
-        const src = o.sp.material && o.sp.material.map && o.sp.material.map.image;
-        if (!src) continue;
-        // Refresh the sprite art no more than 4x/sec per player.
-        if (img.__src !== src || Date.now() - (img.__ts || 0) > 250) {
-            try { img.src = src.toDataURL('image/png'); } catch (err) { continue; }
-            img.__src = src; img.__ts = Date.now();
-        }
-    }
+function ensurePunchRig() {
+    if (punchScene) return;
+    punchScene = new THREE.Scene();
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 1,
+        depthTest: true,
+        depthWrite: false,
+        depthFunc: THREE.LessDepth,   // pass where the video plane is NEARER
+        fog: false
+    });
+    // Erase (multiply the destination by zero) instead of drawing colour.
+    mat.blending = THREE.CustomBlending;
+    mat.blendSrc = THREE.ZeroFactor;
+    mat.blendDst = THREE.ZeroFactor;
+    mat.blendEquation = THREE.AddEquation;
+    punchMesh = new THREE.Mesh(new THREE.PlaneGeometry(PANEL_W, PANEL_H), mat);
+    punchMesh.frustumCulled = false;
+    punchScene.add(punchMesh);
 }
+
+// Called from animate() right after renderer.render(scene, camera).
+window.punchScreens = function () {
+    if (typeof renderer === 'undefined' || !renderer || !camera) return;
+    let anyVisible = false;
+    for (const id in ytPlayers) {
+        if (ytPlayers[id] && ytPlayers[id].__shown) { anyVisible = true; break; }
+    }
+    if (!anyVisible) return;
+    ensurePunchRig();
+
+    const prevAutoClear = renderer.autoClear;
+    renderer.autoClear = false;      // keep the colour + depth buffers
+    try {
+        for (const id in ytPlayers) {
+            const e = ytPlayers[id];
+            if (!e || !e.mesh || !e.__shown) continue;
+            const ry = e.mesh.rotation.y + Math.PI;
+            punchMesh.position.set(
+                e.mesh.position.x + Math.sin(ry) * VIDEO_FORWARD,
+                e.mesh.position.y + PANEL_Y,
+                e.mesh.position.z + Math.cos(ry) * VIDEO_FORWARD
+            );
+            punchMesh.rotation.y = ry;
+            punchMesh.updateMatrixWorld(true);
+            renderer.render(punchScene, camera);
+        }
+    } finally {
+        renderer.autoClear = prevAutoClear;
+    }
+};
 
 // Browsers refuse to unmute cross-origin media before any user interaction.
 // The game gets pointer/key events constantly, so re-apply unmute on each of
