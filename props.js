@@ -823,6 +823,14 @@ function spawnPropMesh(data) {
     // a YouTube Screen's video) can find the prop's data and its placer.
     mesh.userData.propData = data;
 
+    // Furniture the player can jump onto. Height is in the prop's local space
+    // (the seat plank's top face); ui.js turns this into a floor when the player
+    // is over the footprint and at/above it.
+    if (data.type === 'chair') {
+        mesh.userData.standTop = 1.25;
+        mesh.userData.standHalf = 0.8;
+    }
+
     if (typeof broadcastSound === 'function') {
         broadcastSound('footstep', 0);
     }

@@ -11815,6 +11815,29 @@ function removePlayer(pid) {
 const MOBILE_FPS_INTERVAL = 1000 / 60; // 60 FPS = ~16.67ms per frame
 let lastFrameTime = 0;
 
+// Highest furniture surface (currently chair seats) the player can stand on at
+// (x, z). `feetY` gates the test: a chair only becomes a floor once the feet are
+// at/above its plank, so walking past or standing beside one does not pop the
+// player up onto it - jumping does.
+function standableTopAt(x, z, feetY) {
+    if (typeof props === 'undefined' || !props) return -Infinity;
+    let top = -Infinity;
+    for (const id in props) {
+        const m = props[id];
+        if (!m || !m.userData || m.userData.standTop === undefined) continue;
+        const half = m.userData.standHalf || 0.7;
+        const dx = x - m.position.x, dz = z - m.position.z;
+        // Into the prop's local frame (props only rotate around Y).
+        const c = Math.cos(m.rotation.y), s = Math.sin(m.rotation.y);
+        const lx = dx * c - dz * s;
+        const lz = dx * s + dz * c;
+        if (Math.abs(lx) > half + 0.3 || Math.abs(lz) > half + 0.3) continue;
+        const topY = m.position.y + m.userData.standTop;
+        if (feetY >= topY - 0.15 && topY > top) top = topY;
+    }
+    return top;
+}
+
 function animate() {
     requestAnimationFrame(animate);
 
@@ -11843,25 +11866,9 @@ function animate() {
     if (npcLavaBait) updateSpriteDirection(npcLavaBait, camera.position);
 
     // --- AUDIO LISTENER ---
-    if (audioCtx && camera) {
-        // OPTIMIZATION: Reuse vector
-        const forward = _optVec1;
-        camera.getWorldDirection(forward);
-        if (audioCtx.listener.forwardX) {
-            audioCtx.listener.positionX.value = camera.position.x;
-            audioCtx.listener.positionY.value = camera.position.y;
-            audioCtx.listener.positionZ.value = camera.position.z;
-            audioCtx.listener.forwardX.value = forward.x;
-            audioCtx.listener.forwardY.value = forward.y;
-            audioCtx.listener.forwardZ.value = forward.z;
-            audioCtx.listener.upX.value = camera.up.x;
-            audioCtx.listener.upY.value = camera.up.y;
-            audioCtx.listener.upZ.value = camera.up.z;
-        } else {
-            audioCtx.listener.setPosition(camera.position.x, camera.position.y, camera.position.z);
-            audioCtx.listener.setOrientation(forward.x, forward.y, forward.z, camera.up.x, camera.up.y, camera.up.z);
-        }
-    }
+    // Moved to updateAudioListener() in audio.js: the listener follows the
+    // player's head (not the third-person camera) and is updated just before the
+    // draw, after this frame's movement.
 
     // --- PORTAL LOGIC ---
     if (voidPortalMesh) {
@@ -11929,6 +11936,10 @@ function animate() {
                     if (surface - bed > SHALLOW_DEPTH) floorY = surface;
                 }
             }
+            // Placed furniture: a chair's seat is solid ground once you are over
+            // it and have jumped up to plank height.
+            const seatY = standableTopAt(player.position.x, player.position.z, player.position.y);
+            if (seatY > floorY) floorY = seatY;
         }
 
         // 2. KNOCKBACK (PvP)
