@@ -10593,6 +10593,14 @@ function setupInputs() {
         if (isMobile) return;
         if (e.target === ci || e.target.closest('.btn') || e.target.closest('.overlay-screen') || e.target.closest('.stat-row') || e.target.closest('#bait-ui')) return;
         if (audioCtx.state === 'suspended') audioCtx.resume();
+        if (e.button === 0 && window.twitchScreenAt) {
+            const tw = window.twitchScreenAt(e.clientX, e.clientY);
+            if (tw) {
+                // Clicking a Twitch screen is a sound request, not a cast.
+                if (typeof tw.soundChip !== 'undefined' && tw.soundChip) tw.soundChip.click();
+                return;
+            }
+        }
         if (e.button === 0) { isLeftMouseDown = true; handleAction(true); }
         else if (e.button === 2) { isRightMouseDown = true; renderer.domElement.requestPointerLock(); }
     };

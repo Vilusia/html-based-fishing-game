@@ -1058,6 +1058,7 @@ function mountScreenContent(entry) {
     try { if (entry.player && entry.player.destroy) entry.player.destroy(); } catch (e) { }
     entry.player = null;
     entry.iframe = null;
+    entry.soundChip = null;
     shell.innerHTML = '';
 
     const twitch = entry.provider === 'twitch';
@@ -1076,7 +1077,7 @@ function mountScreenContent(entry) {
 
     if (twitch) {
         mountTwitch(entry);
-        addClickToPlayHint(shell);
+        if (!entry.twitchUnmuted) addSoundChip(shell, entry);
         return;
     }
 
@@ -1109,19 +1110,60 @@ function twitchEmbedUrl(entry) {
     const q = [];
     if (d.twitchKind === 'video' && d.twitchId) q.push('video=' + encodeURIComponent(d.twitchId));
     else q.push('channel=' + encodeURIComponent(d.twitchId || ''));
-    // Click-to-play on purpose. Twitch's autoplay policy only allows a muted
-    // player that is actually visible, and it still refuses in many cases
-    // ("Autoplay disabled ... style visibility"). Starting with autoplay off
-    // means the player paints its own play button; the click is a real user
-    // gesture, so Twitch starts playback with sound and never logs the error.
-    q.push('autoplay=false');
-    q.push('muted=false');
+    // Muted autoplay is the only form of autoplay every browser allows inside a
+    // cross-origin iframe, so the stream always starts on its own. Sound is an
+    // explicit opt-in: the in-world SOUND chip reloads the embed with
+    // muted=false in response to a real click in the top document.
+    q.push('autoplay=true');
+    q.push('muted=' + (entry.twitchUnmuted ? 'false' : 'true'));
     twitchParents().forEach(p => q.push('parent=' + encodeURIComponent(p)));
     return 'https://player.twitch.tv/?' + q.join('&');
 }
 
+// Is (clientX, clientY) on a visible Twitch screen? Used as a fallback path for
+// starting sound: clicks over a cross-origin iframe never reach this document,
+// but if anything ever swallows them we still catch the click here.
+window.twitchScreenAt = function (clientX, clientY) {
+    if (typeof camera === 'undefined' || !camera || typeof ytPlayers === 'undefined') return null;
+    for (const id in ytPlayers) {
+        const e = ytPlayers[id];
+        if (!e || e.provider !== 'twitch' || !e.__shown || !e.mesh) continue;
+        const ry = e.mesh.rotation.y + Math.PI;
+        const cx = e.mesh.position.x + Math.sin(ry) * VIDEO_FORWARD;
+        const cy = e.mesh.position.y + PANEL_Y;
+        const cz = e.mesh.position.z + Math.cos(ry) * VIDEO_FORWARD;
+        const rx = Math.cos(ry), rz = -Math.sin(ry);
+        const hw = PANEL_W / 2, hh = PANEL_H / 2;
+        // Ignore panels behind (or practically on) the camera: their projected
+        // corners mirror across the screen and would match everything.
+        if (new THREE.Vector3(cx, cy, cz).applyMatrix4(camera.matrixWorldInverse).z > -0.2) continue;
+        const quad = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([sx, sy]) => {
+            const v = new THREE.Vector3(
+                cx + rx * sx * hw, cy + sy * hh, cz + rz * sx * hw
+            ).project(camera);
+            return [(v.x * 0.5 + 0.5) * window.innerWidth, (1 - (v.y * 0.5 + 0.5)) * window.innerHeight];
+        });
+        // Point in quad via consistent cross-product signs.
+        let inside = true;
+        for (let i = 0; i < 4; i++) {
+            const a = quad[i], b = quad[(i + 1) % 4];
+            const cross = (b[0] - a[0]) * (clientY - a[1]) - (b[1] - a[1]) * (clientX - a[0]);
+            if (cross < 0) { inside = false; break; }
+        }
+        if (inside) return e;
+    }
+    return null;
+};
+
 function mountTwitch(entry) {
     if (!entry || !entry.frameEl) return;
+    const ifr = buildTwitchIframe(entry);
+    entry.frameEl.appendChild(ifr);
+    entry.iframe = ifr;
+}
+
+// Shared iframe construction so the unmute reload keeps every attribute.
+function buildTwitchIframe(entry) {
     const ifr = document.createElement('iframe');
     ifr.src = twitchEmbedUrl(entry);
     ifr.title = 'Twitch stream';
@@ -1134,32 +1176,46 @@ function mountTwitch(entry) {
     ifr.setAttribute('allowfullscreen', '');
     ifr.setAttribute('frameborder', '0');
     ifr.setAttribute('scrolling', 'no');
-    entry.frameEl.appendChild(ifr);
-    entry.iframe = ifr;
+    return ifr;
 }
 
-// Small "click to play" chip so players know the Twitch screen needs a click.
-// pointer-events:none so it never swallows the click that starts playback.
-function addClickToPlayHint(shell) {
-    const hint = document.createElement('div');
-    hint.textContent = 'CLICK TO PLAY';
-    hint.style.position = 'absolute';
-    hint.style.left = '50%';
-    hint.style.bottom = '14px';
-    hint.style.transform = 'translateX(-50%)';
-    hint.style.padding = '6px 14px';
-    hint.style.background = 'rgba(10, 10, 14, 0.72)';
-    hint.style.border = '1px solid rgba(255,255,255,0.35)';
-    hint.style.borderRadius = '999px';
-    hint.style.color = '#fff';
-    hint.style.font = '700 18px/1.2 monospace';
-    hint.style.letterSpacing = '0.08em';
-    hint.style.pointerEvents = 'none';
-    hint.style.zIndex = '10';
-    hint.style.transition = 'opacity 0.6s ease';
-    shell.appendChild(hint);
-    setTimeout(() => { hint.style.opacity = '0'; }, 20000);
-    setTimeout(() => { hint.remove(); }, 21000);
+// Reload the embed with sound. Triggered by a click on our own chip (a click in
+// the top document), which is what browsers require before unmuted playback.
+function unmuteTwitch(entry) {
+    if (!entry || entry.twitchUnmuted || !entry.frameEl) return;
+    entry.twitchUnmuted = true;
+    if (entry.iframe) entry.iframe.remove();
+    const ifr = buildTwitchIframe(entry);
+    entry.frameEl.appendChild(ifr);
+    entry.iframe = ifr;
+    if (entry.soundChip) { entry.soundChip.remove(); entry.soundChip = null; }
+}
+
+// Small "sound" chip in the top-left corner of a Twitch screen. Beats relying
+// on the player's own controls: this is our DOM, in the top document, so the
+// click always reaches it and counts as a real user gesture.
+function addSoundChip(shell, entry) {
+    const chip = document.createElement('div');
+    chip.textContent = '\u{1F50A} SOUND';
+    chip.style.position = 'absolute';
+    chip.style.left = '10px';
+    chip.style.top = '10px';
+    chip.style.padding = '4px 10px';
+    chip.style.background = 'rgba(10, 10, 14, 0.72)';
+    chip.style.border = '1px solid rgba(255,255,255,0.35)';
+    chip.style.borderRadius = '999px';
+    chip.style.color = '#fff';
+    chip.style.font = '700 14px/1.2 monospace';
+    chip.style.letterSpacing = '0.06em';
+    chip.style.cursor = 'pointer';
+    chip.style.pointerEvents = 'auto';
+    chip.style.zIndex = '11';
+    chip.onclick = (ev) => {
+        ev.stopPropagation();
+        unmuteTwitch(entry);
+    };
+    shell.appendChild(chip);
+    entry.soundChip = chip;
 }
 
 // Mount the actual YouTube player. Passed the DOM ELEMENT (not an id) so it
