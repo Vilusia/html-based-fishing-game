@@ -858,14 +858,14 @@ function removePropFromWorld(id) {
 // heartbeats. The placer also broadcasts a small ytSync heartbeat every 2s to
 // correct clock skew; everyone else applies it.
 //
-// Twitch: muted autoplay, but the player lives in an untransformed screen-space
-// layer that tracks the panel (see twitchLayer below). Twitch's autoplay gate
-// runs IntersectionObserver v2 inside its iframe and refuses players it cannot
-// see: anything inside a perspective/preserve-3d wrapper, an element that is
-// faded out, or a player smaller than its minimum size all get
-// "Autoplay disabled ... style visibility". A plain 640x360 iframe that is
-// actually on screen passes, so the video is fitted to the panel's projected
-// box with a 2D scale and the depth punch crops it to the housing opening.
+// Twitch: muted autoplay, but the player lives in its own screen-space layer
+// that tracks the panel (see twitchLayer below). Twitch's autoplay gate runs
+// IntersectionObserver v2 inside its iframe and refuses players it cannot see:
+// anything faded out, clipped away, inside a preserve-3d wrapper, or smaller
+// than its minimum size gets "Autoplay disabled ... style visibility". So the
+// iframe keeps a real 640x360 layout, is never faded, and is mapped onto the
+// panel with a flat projective (matrix3d homography) transform - no perspective
+// or preserve-3d context - while the depth punch crops it to the opening.
 // The SOUND chip reloads the embed unmuted on a real top-document click.
 //
 // Rendering: iframes cannot be blitted into WebGL (cross-origin), so they live
@@ -1221,10 +1221,11 @@ function ensureTwitchLayer() {
     return twitchLayer;
 }
 
-// Project the panel's four corners to screen space and fit the untransformed
-// iframe into their bounding box. The punched hole is the exact perspective
-// quad, so the video is cropped to the housing's screen opening: no warped DOM
-// transform is needed, which is what keeps Twitch's autoplay check happy.
+// Project the panel's four corners to screen space and map the 640x360 player
+// onto that quad. The punched hole is the same perspective quad, so the picture
+// sits exactly in the housing's screen opening: it turns and foreshortens with
+// the prop instead of looking like an upright rectangle sliding behind a tilted
+// window. The clip box is the quad's bounding box (also the click area).
 function positionTwitchFrame(e) {
     const frame = e && e.twFrame;
     if (!frame || !e.mesh || typeof camera === 'undefined' || !camera) return false;
@@ -1256,27 +1257,40 @@ function positionTwitchFrame(e) {
     s.width = w.toFixed(2) + 'px';
     s.height = h.toFixed(2) + 'px';
     // The player keeps a 640x360 layout (Twitch refuses autoplay below its
-    // minimum size, and it measures the inner viewport), then a *uniform* 2D
-    // scale covers the box and is centred. Measure the panel at its centre line
-    // rather than using the bounding box: in perspective the bbox grows as the
-    // near edge gets closer, which looked like the picture zooming in while the
-    // screen turned. One scale for both axes also stops it squashing.
+    // minimum size, and it measures the inner viewport) and is then mapped onto
+    // the projected quad with a projective transform (homography). This is the
+    // only mapping that makes the picture line up with the housing's opening at
+    // any angle: a plain scale left the upright rectangle "rotating" inside the
+    // tilted frame, and scaling the bounding box squashed or zoomed it.
     if (e.twVideoWrap) {
-        const proj = (px, py, pz) => {
-            const v = new THREE.Vector3(px, py, pz).project(camera);
-            return [(v.x * 0.5 + 0.5) * window.innerWidth, (1 - (v.y * 0.5 + 0.5)) * window.innerHeight];
-        };
-        const topMid = proj(cx, cy + hh, cz);
-        const botMid = proj(cx, cy - hh, cz);
-        const leftMid = proj(cx - rx * hw, cy, cz - rz * hw);
-        const rightMid = proj(cx + rx * hw, cy, cz + rz * hw);
-        const wC = Math.abs(rightMid[0] - leftMid[0]);
-        const hC = Math.abs(topMid[1] - botMid[1]);
-        const scale = Math.max(0.02, Math.max(wC / 640, hC / 360));
-        const tx = (w - 640 * scale) / 2;
-        const ty = (h - 360 * scale) / 2;
-        e.twVideoWrap.style.transform =
-            'translate(' + tx.toFixed(2) + 'px,' + ty.toFixed(2) + 'px) scale(' + scale.toFixed(5) + ')';
+        // corners are TL, TR, BR, BL in viewport pixels; the element's own
+        // origin is the clip box's top-left, so subtract it.
+        const [TL, TR, BR, BL] = corners;
+        const ax = TL[0] - minX, ay = TL[1] - minY;
+        const bx = TR[0] - minX, by = TR[1] - minY;
+        const gx = BR[0] - minX, gy = BR[1] - minY;
+        const dx = BL[0] - minX, dy = BL[1] - minY;
+        // Unit square -> quad, then fold the 640x360 element scale into it.
+        const dx1 = bx - gx, dx2 = dx - gx, dx3 = ax - bx + gx - dx;
+        const dy1 = by - gy, dy2 = dy - gy, dy3 = ay - by + gy - dy;
+        const det = dx1 * dy2 - dx2 * dy1;
+        let p = 0, q = 0;
+        if (Math.abs(dx3) > 1e-8 || Math.abs(dy3) > 1e-8) {
+            if (Math.abs(det) < 1e-8) return false;   // degenerate projection
+            p = (dx3 * dy2 - dx2 * dy3) / det;
+            q = (dx1 * dy3 - dx3 * dy1) / det;
+        }
+        const a = bx - ax + p * bx;
+        const b = dx - ax + q * dx;
+        const d = by - ay + p * by;
+        const f2 = dy - ay + q * dy;
+        const n = (v) => (Math.abs(v) < 1e-9 ? '0' : v.toFixed(6));
+        e.twVideoWrap.style.transform = 'matrix3d(' + [
+            n(a / 640), n(d / 640), '0', n(p / 640),
+            n(b / 360), n(f2 / 360), '0', n(q / 360),
+            '0', '0', '1', '0',
+            n(ax), n(ay), '0', '1'
+        ].join(',') + ')';
     }
     e.twitchReady = true;
     return true;
