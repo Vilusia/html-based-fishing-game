@@ -11825,14 +11825,20 @@ function standableTopAt(x, z, feetY) {
     for (const id in props) {
         const m = props[id];
         if (!m || !m.userData || m.userData.standTop === undefined) continue;
-        const half = m.userData.standHalf || 0.7;
+        // standTop/standHalf are LOCAL values; the chair group is scaled down
+        // after it is built, so the real seat is scale-multiplied.
+        const sx = m.scale ? m.scale.x : 1;
+        const sy = m.scale ? m.scale.y : 1;
+        const sz = m.scale ? m.scale.z : 1;
+        const halfX = (m.userData.standHalf || 0.7) * sx;
+        const halfZ = (m.userData.standHalf || 0.7) * sz;
         const dx = x - m.position.x, dz = z - m.position.z;
         // Into the prop's local frame (props only rotate around Y).
         const c = Math.cos(m.rotation.y), s = Math.sin(m.rotation.y);
         const lx = dx * c - dz * s;
         const lz = dx * s + dz * c;
-        if (Math.abs(lx) > half + 0.3 || Math.abs(lz) > half + 0.3) continue;
-        const topY = m.position.y + m.userData.standTop;
+        if (Math.abs(lx) > halfX + 0.15 || Math.abs(lz) > halfZ + 0.15) continue;
+        const topY = m.position.y + m.userData.standTop * sy;
         if (feetY >= topY - 0.15 && topY > top) top = topY;
     }
     return top;
