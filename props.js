@@ -1311,11 +1311,17 @@ function positionTwitchFrame(e) {
 
 function mountTwitch(entry) {
     if (!entry || !entry.twVideoWrap) return;
-    const ifr = buildTwitchIframe(entry);
+    // Only start with sound if the listener is already within earshot. A screen
+    // seen from far away (or mounted after a deferred sound opt-in) must stay
+    // muted; the proximity loop unmutes it on approach.
+    const near = twitchListenerDistance(entry) <= TWITCH_AUDIO_OUT;
+    const ifr = buildTwitchIframe(entry, !entry.twitchUnmuted || !near);
     entry.twVideoWrap.appendChild(ifr);
     entry.twFrame.style.display = 'block';
     entry.iframe = ifr;
-    entry.twitchAudioOn = !!entry.twitchUnmuted;
+    entry.twitchAudioOn = !!entry.twitchUnmuted && near;
+    entry.twitchFarMuted = !near;
+    if (near) entry.twitchWasNear = true;
 }
 
 // Shared iframe construction so the unmute reload keeps every attribute.
@@ -1348,14 +1354,32 @@ function swapTwitchIframe(entry) {
     entry.twitchSwapAt = Date.now();
 }
 
+// Where the listener's ears are for screen audio: the player, not the camera
+// (the third-person camera trails behind and can be much farther from a wall).
+function twitchListenerDistance(e) {
+    if (!e || !e.mesh) return 999;
+    if (typeof player !== 'undefined' && player && player.position) {
+        return player.position.distanceTo(e.mesh.position);
+    }
+    if (typeof camera !== 'undefined' && camera && camera.position) {
+        return camera.position.distanceTo(e.mesh.position);
+    }
+    return 999;
+}
+
 // Reload the embed with sound. Triggered by a click on our own chip (a click in
 // the top document), which is what browsers require before unmuted playback.
+// If the listener is currently out of earshot we remember the opt-in but leave
+// the embed muted; the proximity loop reloads it with sound on approach.
 function unmuteTwitch(entry) {
     if (!entry || entry.twitchUnmuted) return;
     entry.twitchUnmuted = true;
-    entry.twitchAudioOn = true;
+    const near = twitchListenerDistance(entry) <= TWITCH_AUDIO_OUT;
+    entry.twitchAudioOn = near;
+    entry.twitchFarMuted = !near;
+    if (near) entry.twitchWasNear = true;
     if (entry.soundChip) { entry.soundChip.remove(); entry.soundChip = null; }
-    if (!entry.iframe) return;   // still pending: the mount will start unmuted
+    if (!entry.iframe || !near) return;
     entry.iframe.remove();
     const ifr = buildTwitchIframe(entry);
     entry.twVideoWrap.appendChild(ifr);
@@ -1379,19 +1403,34 @@ const TWITCH_AUDIO_OUT = (typeof MAX_VOICE_DISTANCE === 'number') ? MAX_VOICE_DI
 const TWITCH_AUDIO_IN = TWITCH_AUDIO_OUT * 0.8;
 function updateTwitchAudioRange(e) {
     if (!e || !e.iframe || e.twitchPending || !e.twitchReady) return;
-    if (!e.twitchUnmuted) { e.twitchAudioOn = false; return; }
     if (Date.now() - (e.twitchSwapAt || 0) < 800) return;
-    if (typeof camera === 'undefined' || !camera || !camera.position || !e.mesh) return;
-    // Same ear point the WebAudio listener uses (the player, not the camera).
-    const dist = ((typeof player !== 'undefined' && player && player.position)
-        ? player.position
-        : camera.position).distanceTo(e.mesh.position);
-    if (e.twitchAudioOn && dist > TWITCH_AUDIO_OUT) {
-        e.twitchAudioOn = false;
-        swapTwitchIframe(e);
-    } else if (!e.twitchAudioOn && dist < TWITCH_AUDIO_IN) {
-        e.twitchAudioOn = true;
-        swapTwitchIframe(e);
+    if (typeof camera === 'undefined' || !camera || !camera.position) return;
+    const dist = twitchListenerDistance(e);
+
+    if (dist > TWITCH_AUDIO_OUT) {
+        // Once the listener has been in earshot, force the embed back to muted
+        // whenever they leave. This also covers a viewer who unmuted with
+        // Twitch's own controls: that state is inside the cross-origin player
+        // and cannot be read from here, so reload it muted instead of assuming
+        // it is already silent.
+        if (e.twitchWasNear && !e.twitchFarMuted) {
+            e.twitchFarMuted = true;
+            e.twitchAudioOn = false;
+            swapTwitchIframe(e);
+        }
+        return;
+    }
+
+    if (dist <= TWITCH_AUDIO_OUT) e.twitchWasNear = true;
+
+    // Only restore sound inside the tighter return radius. Without the opt-in
+    // (SOUND chip) the embed simply stays muted.
+    if (dist < TWITCH_AUDIO_IN && e.twitchFarMuted) {
+        e.twitchFarMuted = false;
+        if (e.twitchUnmuted) {
+            e.twitchAudioOn = true;
+            swapTwitchIframe(e);
+        }
     }
 }
 
@@ -1693,50 +1732,53 @@ window.punchScreens = function () {
     }
 };
 
-// Browsers refuse to unmute cross-origin media before any user interaction.
-// The game gets pointer/key events constantly, so re-apply unmute on each of
-// them; volume (set per frame from distance) still controls audibility.
-['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
-    document.addEventListener(ev, () => {
-        for (const id in ytPlayers) {
-            const entry = ytPlayers[id];
-            const p = entry && entry.player;
-            try {
-                if (!p) continue;
-                if (p.isMuted && p.isMuted()) {
-                    p.unMute();
-                    p.playVideo && p.playVideo();
-                }
-            } catch (err) { }
-        }
-    }, true);
-});
-
-window.updateYtAudio = function (e) {
-    if (!e.player) return;
+// Target YouTube volume (0-100) for a screen, from the listener's distance.
+// Same ear point as the WebAudio listener above, and the same falloff as
+// proximity voice. YouTube audio lives in its own iframe and bypasses the
+// game's WebAudio master gain, so the Master and "Video Screens" sliders are
+// applied here by hand.
+function ytTargetVolume(e) {
     let dist = 999;
-    // Same ear point as the WebAudio listener above.
     if (typeof player !== 'undefined' && player && player.position && e.mesh) {
         dist = player.position.distanceTo(e.mesh.position);
     } else if (typeof camera !== 'undefined' && camera && e.mesh) {
         dist = camera.position.distanceTo(e.mesh.position);
     }
     const vol = Math.pow(Math.max(0, 1 - dist / MAX_VOICE_DISTANCE), 1.5);
-    // Personal ceilings. YouTube audio lives in its own iframe and therefore
-    // bypasses the game's WebAudio master gain, so both the Master slider and
-    // the "Video Screens" slider are applied here by hand.
     const num = (v, d) => (typeof v === 'number' && isFinite(v)) ? v : d;
     const master = (typeof saveState !== 'undefined') ? num(saveState.masterVolume, 1) : 1;
     const screen = (typeof saveState !== 'undefined') ? num(saveState.screenVolume, 1) : 1;
-    const volInt = Math.round(vol * Math.max(0, Math.min(1, master * screen)) * 100);
-    const p = e.player;
+    return Math.round(vol * Math.max(0, Math.min(1, master * screen)) * 100);
+}
 
-    // YouTube
+// Browsers refuse to unmute cross-origin media before any user interaction.
+// The game gets pointer/key events constantly, so this is where the autoplay
+// unlock happens. IMPORTANT: only unlock when the listener is actually in
+// earshot. Walking uses keydown events, and an unconditional unmute here used
+// to switch a screen the player had walked away from straight back on at its
+// old volume, making the distance mute look broken.
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
+    document.addEventListener(ev, () => {
+        for (const id in ytPlayers) {
+            const entry = ytPlayers[id];
+            if (!entry || !entry.player) continue;
+            if (ytTargetVolume(entry) <= 1) continue;
+            try { window.updateYtAudio(entry); } catch (err) { }
+        }
+    }, true);
+});
+
+window.updateYtAudio = function (e) {
+    if (!e.player) return;
+    const volInt = ytTargetVolume(e);
+    const p = e.player;
     if (!p.setVolume) return;
     try {
+        // Keep the iframe's own volume in step even while muted, so an unmute
+        // (ours or the browser's) can never blast audio from across the map.
+        p.setVolume(volInt);
         if (volInt > 1) {
             if (p.isMuted && p.isMuted()) p.unMute();
-            p.setVolume(volInt);
         } else if (!p.isMuted || p.isMuted() === false) {
             p.mute();
         }
