@@ -1,19 +1,24 @@
 // --- SCRATCH CARDS ---
-// Lucky Lou's booth. Buy a card, physically scratch the silver foil off with
-// the mouse (or a finger) until the nine numbers underneath are exposed, and
-// match three of the same number to win the prize printed on the card.
+// Lucky Lou's booth. A card prints five winning numbers across the top and a
+// 5x5 grid of "your numbers", each with its own prize underneath. Physically
+// scratch the silver foil off with the mouse (or a finger); any of your numbers
+// that matches a winning number pays the prize printed under it.
 //
-// The foil is a canvas painted over the number grid. Scratching erases it with
+// The foil is a canvas painted over the 25-cell grid. Scratching erases it with
 // destination-out, and the reveal check samples the canvas alpha to decide when
-// a square has truly been scratched rather than just clicked once.
+// a cell has truly been scratched rather than just clicked once.
+
+const SCRATCH_COLS = 5;
+const SCRATCH_ROWS = 5;
+const SCRATCH_CELLS = SCRATCH_COLS * SCRATCH_ROWS;
 
 const ScratchGame = {
     tierIndex: -1,
-    cells: [],
-    prize: 0,
+    cells: [],       // the 25 numbers under the foil
+    prizes: [],      // prize printed under each of the 25 numbers
+    winning: [],     // five winning numbers shown across the top
     done: false,
-    foundTriple: false,
-    revealed: new Array(9).fill(false),
+    revealed: new Array(SCRATCH_CELLS).fill(false),
     scratching: false,
     lastPt: null,
     lastSound: 0,
@@ -46,40 +51,68 @@ function scratchShuffle(arr) {
     return arr;
 }
 
-function scratchHasTriple(cells) {
-    const counts = {};
-    for (const n of cells) {
-        counts[n] = (counts[n] || 0) + 1;
-        if (counts[n] >= 3) return true;
-    }
-    return false;
-}
-
-// Build a card. Winning cards get three matching numbers and a prize; losing
-// cards are dealt from a bag holding at most two of each number, so they can
-// never accidentally contain a triple.
+// Build a card. Exactly one of "your numbers" matches a winning number on a
+// winning card (and pays that cell's prize); losing cards never contain a
+// winning number. Numbers are drawn from 1-99 so the grid reads like a real
+// scratch-off rather than a tic-tac-toe board.
 function makeScratchCard(tier) {
-    const cells = new Array(9).fill(0);
     const isWinner = Math.random() < tier.winChance;
     const prize = tier.prizes[Math.floor(Math.random() * tier.prizes.length)];
 
+    const bag = [];
+    for (let n = 1; n <= 99; n++) bag.push(n);
+    scratchShuffle(bag);
+    const winning = bag.slice(0, SCRATCH_COLS);
+    const available = bag.slice(SCRATCH_COLS);
+
+    const spotPool = (tier.spots && tier.spots.length) ? tier.spots : tier.prizes;
+    const pickSpot = () => spotPool[Math.floor(Math.random() * spotPool.length)];
+
+    let nums, spots;
     if (isWinner) {
-        const matchNum = 1 + Math.floor(Math.random() * 9);
-        const spots = scratchShuffle([0, 1, 2, 3, 4, 5, 6, 7, 8]).slice(0, 3);
-        for (const s of spots) cells[s] = matchNum;
-        const bag = [];
-        for (let n = 1; n <= 9; n++) { if (n !== matchNum) bag.push(n, n); }
-        scratchShuffle(bag);
-        let bi = 0;
-        for (let i = 0; i < 9; i++) if (cells[i] === 0) cells[i] = bag[bi++];
+        nums = available.slice(0, SCRATCH_CELLS - 1);
+        spots = nums.map(pickSpot);
+        const at = Math.floor(Math.random() * SCRATCH_CELLS);
+        // The matching cell pays the card's real prize; the rest just print
+        // smaller amounts, exactly like a real ticket.
+        nums.splice(at, 0, winning[Math.floor(Math.random() * winning.length)]);
+        spots.splice(at, 0, prize);
     } else {
-        const bag = [];
-        for (let n = 1; n <= 9; n++) bag.push(n, n);
-        scratchShuffle(bag);
-        for (let i = 0; i < 9; i++) cells[i] = bag[i];
+        nums = available.slice(0, SCRATCH_CELLS);
+        spots = nums.map(pickSpot);
     }
 
-    return { cells, prize, isWinner };
+    // Shuffle number/prize pairs together so a matching cell can land anywhere.
+    const order = scratchShuffle([...Array(SCRATCH_CELLS).keys()]);
+    return {
+        cells: order.map(i => nums[i]),
+        prizes: order.map(i => spots[i]),
+        winning,
+        isWinner
+    };
+}
+
+// Indices of the player's numbers that match a winning number.
+function scratchHitCells() {
+    const hits = [];
+    for (let i = 0; i < SCRATCH_CELLS; i++) {
+        if (ScratchGame.winning.indexOf(ScratchGame.cells[i]) !== -1) hits.push(i);
+    }
+    return hits;
+}
+
+// Highlight matching cells and the winning-number chip they matched.
+function scratchHighlightHits() {
+    const hits = scratchHitCells();
+    const gridEls = scratchEl('scratch-grid').querySelectorAll('.scratch-cell');
+    const winEls = scratchEl('scratch-winning-nums').querySelectorAll('.win-chip');
+    const hitNums = new Set(hits.map(i => ScratchGame.cells[i]));
+
+    hits.forEach(i => { if (gridEls[i]) gridEls[i].classList.add('hit'); });
+    winEls.forEach(chip => {
+        if (hitNums.has(Number(chip.dataset.num))) chip.classList.add('hit');
+    });
+    return hits;
 }
 
 function scratchBalanceText() {
@@ -216,14 +249,14 @@ function paintScratchFoil() {
     ctx.save();
     ctx.globalAlpha = 0.32;
     ctx.fillStyle = '#2f333a';
-    ctx.font = 'bold 38px monospace';
+    ctx.font = 'bold 34px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.translate(w / 2, h / 2);
     ctx.rotate(-0.05);
     ctx.fillText('SCRATCH HERE', 0, -10);
-    ctx.font = 'bold 17px monospace';
-    ctx.fillText('MATCH 3 NUMBERS TO WIN', 0, 26);
+    ctx.font = 'bold 15px monospace';
+    ctx.fillText('MATCH A WINNING NUMBER', 0, 26);
     ctx.restore();
 }
 
@@ -235,27 +268,49 @@ function startScratchCard(index, resuming) {
         const card = makeScratchCard(tier);
         ScratchGame.tierIndex = index;
         ScratchGame.cells = card.cells;
-        ScratchGame.prize = card.prize;
+        ScratchGame.prizes = card.prizes;
+        ScratchGame.winning = card.winning;
         ScratchGame.done = false;
-        ScratchGame.foundTriple = false;
-        ScratchGame.revealed = new Array(9).fill(false);
+        ScratchGame.revealed = new Array(SCRATCH_CELLS).fill(false);
         ScratchGame.scratching = false;
         ScratchGame.lastPt = null;
 
+        const winBox = scratchEl('scratch-winning-nums');
+        winBox.innerHTML = '';
+        card.winning.forEach((num) => {
+            const chip = document.createElement('div');
+            chip.className = 'win-chip';
+            chip.dataset.num = String(num);
+            chip.textContent = num;
+            winBox.appendChild(chip);
+        });
+
         const grid = scratchEl('scratch-grid');
         const canvas = scratchEl('scratch-canvas');
-        grid.querySelectorAll('.scratch-num').forEach(n => n.remove());
-        card.cells.forEach((num) => {
+        grid.querySelectorAll('.scratch-cell').forEach(n => n.remove());
+        card.cells.forEach((num, i) => {
             const cell = document.createElement('div');
-            cell.className = 'scratch-num';
-            cell.textContent = num;
+            cell.className = 'scratch-cell';
+            cell.dataset.num = String(num);
+
+            const nEl = document.createElement('span');
+            nEl.className = 'n';
+            nEl.textContent = num;
+
+            const pEl = document.createElement('span');
+            pEl.className = 'p';
+            pEl.textContent = '$' + card.prizes[i].toLocaleString();
+
+            cell.appendChild(nEl);
+            cell.appendChild(pEl);
             grid.insertBefore(cell, canvas);
         });
 
         paintScratchFoil();
     }
 
-    scratchEl('scratch-prize').textContent = `WIN $${ScratchGame.prize.toLocaleString()}`;
+    const topPrize = Math.max.apply(null, tier.prizes);
+    scratchEl('scratch-prize').textContent = `WIN UP TO $${topPrize.toLocaleString()}`;
     const result = scratchEl('scratch-result');
     result.textContent = '';
     result.style.color = 'var(--p-gold)';
@@ -290,7 +345,7 @@ function scratchStroke(evt) {
     const prev = ScratchGame.lastPt || p;
 
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.lineWidth = 56;
+    ctx.lineWidth = 52;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
@@ -298,7 +353,7 @@ function scratchStroke(evt) {
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 28, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 26, 0, Math.PI * 2);
     ctx.fill();
 
     ScratchGame.lastPt = p;
@@ -323,12 +378,12 @@ function scratchCheck() {
     const ctx = c.getContext('2d');
     const w = c.width, h = c.height;
     const data = ctx.getImageData(0, 0, w, h).data;
-    const cw = w / 3, ch = h / 3;
+    const cw = w / SCRATCH_COLS, ch = h / SCRATCH_ROWS;
     let changed = false;
 
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < SCRATCH_CELLS; i++) {
         if (ScratchGame.revealed[i]) continue;
-        const col = i % 3, row = Math.floor(i / 3);
+        const col = i % SCRATCH_COLS, row = Math.floor(i / SCRATCH_COLS);
         const x0 = Math.floor(col * cw + cw * 0.18);
         const x1 = Math.ceil(col * cw + cw * 0.82);
         const y0 = Math.floor(row * ch + ch * 0.18);
@@ -354,44 +409,29 @@ function scratchClearFoil() {
     const c = scratchEl('scratch-canvas');
     if (!c) return;
     c.getContext('2d').clearRect(0, 0, c.width, c.height);
-    for (let i = 0; i < 9; i++) ScratchGame.revealed[i] = true;
+    ScratchGame.revealed = new Array(SCRATCH_CELLS).fill(true);
 }
 
 function scratchUpdateProgress() {
-    const cells = ScratchGame.cells;
-    const counts = {};
     let revealed = 0;
-    for (let i = 0; i < 9; i++) {
-        if (!ScratchGame.revealed[i]) continue;
-        revealed++;
-        const n = cells[i];
-        counts[n] = (counts[n] || 0) + 1;
+    for (let i = 0; i < SCRATCH_CELLS; i++) {
+        if (ScratchGame.revealed[i]) revealed++;
     }
 
-    // Highlight any number that has three copies showing.
+    const hits = scratchHighlightHits();
+    const revealedHit = hits.some(i => ScratchGame.revealed[i]);
+
     if (!ScratchGame.done) {
         const hint = scratchEl('scratch-hint');
-        if (hint) hint.textContent = `Scratched ${revealed} / 9 squares. Match 3 numbers to win.`;
-    }
-    const numEls = scratchEl('scratch-grid').querySelectorAll('.scratch-num');
-    let triple = false;
-    for (const key in counts) {
-        if (counts[key] >= 3) {
-            triple = true;
-            for (let i = 0; i < 9; i++) {
-                if (ScratchGame.revealed[i] && cells[i] === Number(key) && numEls[i]) {
-                    numEls[i].classList.add('matched');
-                }
-            }
-        }
+        if (hint) hint.textContent = `Scratched ${revealed} / ${SCRATCH_CELLS} squares. Match a winning number to win its prize.`;
     }
 
-    if (triple) {
-        // Finish immediately and show the player the winning line.
-        ScratchGame.foundTriple = true;
+    if (revealedHit) {
+        // A match pays immediately; clear the rest of the card so the player can
+        // see the winning number and the prize it matched.
         scratchClearFoil();
         scratchFinish();
-    } else if (revealed >= 9) {
+    } else if (revealed >= SCRATCH_CELLS) {
         scratchFinish();
     }
 }
@@ -401,18 +441,19 @@ function scratchFinish() {
     ScratchGame.done = true;
     ScratchGame.scratching = false;
 
-    const won = scratchHasTriple(ScratchGame.cells);
+    const hits = scratchHighlightHits();
+    const payout = hits.reduce((sum, i) => sum + ScratchGame.prizes[i], 0);
     const st = scratchStats();
     const result = scratchEl('scratch-result');
 
-    if (won) {
-        saveState.money = (Number(saveState.money) || 0) + ScratchGame.prize;
+    if (payout > 0) {
+        saveState.money = (Number(saveState.money) || 0) + payout;
         st.won += 1;
-        st.biggest = Math.max(st.biggest, ScratchGame.prize);
-        result.textContent = `WINNER! +$${ScratchGame.prize.toLocaleString()}`;
+        st.biggest = Math.max(st.biggest, payout);
+        result.textContent = `WINNER! +$${payout.toLocaleString()}`;
         result.style.color = 'var(--p-good)';
         try { Sound.achievement(); } catch (e) { }
-        showToast(`Scratch card win: +$${ScratchGame.prize.toLocaleString()}`, 'achievement');
+        showToast(`Scratch card win: +$${payout.toLocaleString()}`, 'achievement');
     } else {
         result.textContent = 'NO MATCH — better luck next card!';
         result.style.color = 'var(--p-bad)';

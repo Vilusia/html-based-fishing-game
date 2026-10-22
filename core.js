@@ -18,7 +18,7 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v12.133";
+const GAME_VERSION = "v12.134";
 
 // Save-file schema version. Bump whenever a change can't be read by older
 // code, and add a matching step in migrateSave() (ui.js). Kept separate from
@@ -298,31 +298,38 @@ const TOOLS = [
 ];
 
 // --- SCRATCH CARDS ---
-// Four tiers sold by the Scratch Dealer NPC. Each card is a 3x3 grid of
-// numbers; match three of the same number to win the prize printed on the
-// card. `winChance` is the chance that a freshly printed card is a winner, and
-// `prizes` is the pool a winning card pays from. Expected payout sits a little
-// under the ticket price so the house keeps a thin edge, but the top prizes
-// climb steeply by tier so a low tier can never out-earn a high one.
+// Four tiers sold by the Scratch Dealer NPC. Each card prints five winning
+// numbers across the top and a 5x5 grid of the player's numbers, each with its
+// own prize underneath. Scratch the foil; any of your numbers that matches a
+// winning number pays the prize printed under it. `winChance` is the chance a
+// freshly printed card is a winner, `prizes` is the pool the matching number
+// pays from, and `spots` is the pool of smaller amounts printed under the
+// non-matching numbers. Expected payout sits a little under the ticket price
+// so the house keeps a thin edge, but the top prizes climb steeply by tier so
+// a low tier can never out-earn a high one.
 const SCRATCH_TIERS = [
     {
         id: 'minnow', name: 'Minnow Scratcher', cost: 50,
         winChance: 0.25, prizes: [30, 60, 120, 250, 500],
+        spots: [5, 10, 20, 30, 50, 60, 120, 250],
         color: '#4fc3f7'
     },
     {
         id: 'reef', name: 'Reef Scratcher', cost: 250,
         winChance: 0.25, prizes: [150, 300, 600, 1250, 2500],
+        spots: [25, 50, 100, 150, 300, 600, 1250],
         color: '#4dd0a8'
     },
     {
         id: 'marlin', name: 'Marlin Scratcher', cost: 1000,
         winChance: 0.22, prizes: [600, 1200, 2500, 5000, 12000],
+        spots: [100, 250, 500, 600, 1200, 2500, 5000],
         color: '#e0a23c'
     },
     {
         id: 'kraken', name: 'Kraken Scratcher', cost: 5000,
         winChance: 0.18, prizes: [3000, 6000, 12000, 25000, 75000],
+        spots: [500, 1000, 2000, 3000, 6000, 12000, 25000],
         color: '#c060e0'
     }
 ];
