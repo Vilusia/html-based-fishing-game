@@ -18,7 +18,7 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v12.132";
+const GAME_VERSION = "v12.133";
 
 // Save-file schema version. Bump whenever a change can't be read by older
 // code, and add a matching step in migrateSave() (ui.js). Kept separate from
@@ -297,6 +297,36 @@ const TOOLS = [
     { id: 'boat', name: 'Rowboat', icon: 'ðŸ›¶', price: 2500, notEquippable: true },
 ];
 
+// --- SCRATCH CARDS ---
+// Four tiers sold by the Scratch Dealer NPC. Each card is a 3x3 grid of
+// numbers; match three of the same number to win the prize printed on the
+// card. `winChance` is the chance that a freshly printed card is a winner, and
+// `prizes` is the pool a winning card pays from. Expected payout sits a little
+// under the ticket price so the house keeps a thin edge, but the top prizes
+// climb steeply by tier so a low tier can never out-earn a high one.
+const SCRATCH_TIERS = [
+    {
+        id: 'minnow', name: 'Minnow Scratcher', cost: 50,
+        winChance: 0.25, prizes: [30, 60, 120, 250, 500],
+        color: '#4fc3f7'
+    },
+    {
+        id: 'reef', name: 'Reef Scratcher', cost: 250,
+        winChance: 0.25, prizes: [150, 300, 600, 1250, 2500],
+        color: '#4dd0a8'
+    },
+    {
+        id: 'marlin', name: 'Marlin Scratcher', cost: 1000,
+        winChance: 0.22, prizes: [600, 1200, 2500, 5000, 12000],
+        color: '#e0a23c'
+    },
+    {
+        id: 'kraken', name: 'Kraken Scratcher', cost: 5000,
+        winChance: 0.18, prizes: [3000, 6000, 12000, 25000, 75000],
+        color: '#c060e0'
+    }
+];
+
 // --- SKILL SYSTEM ---
 // XP required for each level 1-99 (RuneScape-style exponential curve, slow progression)
 const SKILL_XP_TABLE = (function () {
@@ -508,6 +538,7 @@ const DEFAULT_SAVE_STATE = {
     progressViewedAt: 0,    // ts of the last time the Progress panel was opened
     fisherHinted: false,    // shown the "talk to the Old Fisher" nudge yet?
     propsPlaced: 0,         // Lifetime prop placements (props themselves aren't saved)
+    scratchStats: { played: 0, won: 0, biggest: 0 }, // Lucky Lou's scratch cards
 
     // Debug
     debugMode: false,

@@ -156,6 +156,24 @@ const Sound = {
             nodes = { output: gain };
         }
 
+        else if (soundName === 'scratch') {
+            // Dry scratch of a coin on card stock: a short band-passed noise
+            // burst. `variant` shifts the band so repeated strokes do not sound
+            // like a machine gun.
+            const { noise, gain } = createNoiseGain(0.07);
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 1600 + (variant % 3) * 700;
+            filter.Q.value = 0.8;
+            noise.disconnect();
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.gain.setValueAtTime(0.06, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+            noise.start();
+            nodes = { output: gain };
+        }
+
         else if (['jump', 'cast', 'splash', 'meow', 'chat', 'reel', 'sail'].includes(soundName)) {
             if (soundName === 'jump') {
                 const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();

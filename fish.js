@@ -619,7 +619,7 @@ const MAX_ZOOM = 20;
 
 // --- GAME STATE & WORLD ---
 let isMobile = false;
-let npcMerchant, npcStylist, npcBait, interactTarget = null;
+let npcMerchant, npcStylist, npcBait, npcScratch, interactTarget = null;
 let interactScreenId = null;   // prop id of the nearby YouTube Screen (if any)
 let npcLavaMerchant, npcLavaStylist, npcLavaBait;
 let treeColliders = [];

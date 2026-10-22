@@ -5025,6 +5025,12 @@ function createNPCs() {
     npcFisher.lookAt(0, 0, 0);
     scene.add(npcFisher);
 
+    // 7. Scratch Dealer (Main World - east shore, just north of the Merchant)
+    npcScratch = createPlayerMesh('#F2B01E', "Lucky Lou", 'tophat', '#000000', 'fox');
+    npcScratch.position.set(LAKE_RADIUS + 3, 0, -9);
+    npcScratch.lookAt(0, 0, 0);
+    scene.add(npcScratch);
+
     // Add Icons
     addIcon(npcLavaKeeper, '🌋');
     addIcon(npcMerchant, '$');
@@ -5032,6 +5038,7 @@ function createNPCs() {
     addIcon(npcBait, '🪱');
     addIcon(npcTutorial, '❓');
     addIcon(npcFisher, '🎣');
+    addIcon(npcScratch, '\uD83C\uDF9F\uFE0F');
 
     // --- LAVA WORLD NPCs (Fixed Height) ---
     // Moved Y from -2.5 to 0 so they stand ON the floor
@@ -5064,7 +5071,7 @@ function createNPCs() {
     // Move the NPCs to wherever the level editor placed them.
     if (window.CUSTOM_LEVEL && window.Level) {
         const lv = window.CUSTOM_LEVEL;
-        const byType = { merchant: npcMerchant, stylist: npcStylist, bait: npcBait, tutorial: npcTutorial, lava: npcLavaKeeper, fisher: npcFisher };
+        const byType = { merchant: npcMerchant, stylist: npcStylist, bait: npcBait, tutorial: npcTutorial, lava: npcLavaKeeper, fisher: npcFisher, scratch: npcScratch };
         lv.npcs.forEach((n) => {
             const mesh = byType[n.type];
             if (!mesh) return;
@@ -10512,6 +10519,7 @@ function setupInputs() {
             else if (interactTarget === 'bait') toggleBaitShop();
             else if (interactTarget === 'tutorial') toggleTutorial();
             else if (interactTarget === 'fisher') talkToFisher();
+            else if (interactTarget === 'scratch') toggleScratchShop();
             else if (interactTarget === 'ytscreen' && typeof window.changeScreenVideo === 'function') window.changeScreenVideo(interactScreenId);
             else if (interactTarget === 'lava_keeper') {
                 if (saveState.lavaUnlocked) {
@@ -10804,6 +10812,7 @@ function setupInputs() {
         else if (interactTarget === 'bait') toggleBaitShop();
         else if (interactTarget === 'tutorial') toggleTutorial();
         else if (interactTarget === 'fisher') talkToFisher();
+        else if (interactTarget === 'scratch') toggleScratchShop();
         else if (interactTarget === 'ytscreen' && typeof window.changeScreenVideo === 'function') window.changeScreenVideo(interactScreenId);
 
         // --- ADDED LAVA KEEPER CHECK FOR MOBILE ---
@@ -11865,6 +11874,7 @@ function animate() {
     if (npcBait) updateSpriteDirection(npcBait, camera.position);
     if (npcTutorial) updateSpriteDirection(npcTutorial, camera.position);
     if (npcFisher) updateSpriteDirection(npcFisher, camera.position);
+    if (npcScratch) updateSpriteDirection(npcScratch, camera.position);
     if (npcLavaKeeper) updateSpriteDirection(npcLavaKeeper, camera.position);
     // NEW: Update Lava World NPC Sprites
     if (npcLavaMerchant) updateSpriteDirection(npcLavaMerchant, camera.position);
@@ -12349,6 +12359,7 @@ function animate() {
             const dBait = player.position.distanceTo(npcBait.position);
             const dLava = npcLavaKeeper ? player.position.distanceTo(npcLavaKeeper.position) : 999;
             const dFisher = npcFisher ? player.position.distanceTo(npcFisher.position) : 999;
+            const dScratch = npcScratch ? player.position.distanceTo(npcScratch.position) : 999;
 
             if (dMerchant < 3) {
                 canSell = true; interactTarget = 'merchant';
@@ -12385,6 +12396,12 @@ function animate() {
                 interactTarget = 'fisher';
                 prompt.innerText = "PRESS E TO TALK";
                 if (btn) btn.innerText = "TALK";
+                prompt.style.display = 'block';
+            }
+            else if (dScratch < 3) {
+                interactTarget = 'scratch';
+                prompt.innerText = "PRESS E FOR SCRATCH CARDS";
+                if (btn) btn.innerText = "SCRATCH";
                 prompt.style.display = 'block';
             }
         }
@@ -13652,6 +13669,14 @@ function loadSave() {
 
             // Basic stats
             if (d.money !== undefined) { const n = Number(d.money); saveState.money = Number.isFinite(n) ? n : 0; }
+            if (d.scratchStats && typeof d.scratchStats === 'object') {
+                const ss = d.scratchStats;
+                saveState.scratchStats = {
+                    played: Math.max(0, Number(ss.played) || 0),
+                    won: Math.max(0, Number(ss.won) || 0),
+                    biggest: Math.max(0, Number(ss.biggest) || 0)
+                };
+            }
             if (d.inventory) {
                 // Repair on load: entries must be objects with primitive fields.
                 // A hostile or hand-edited save must not be able to carry nulls
@@ -17229,6 +17254,8 @@ function toggleHud() {
     togglePlayerLabels(npcLavaMerchant);
     togglePlayerLabels(npcLavaStylist);
     togglePlayerLabels(npcLavaBait);
+    togglePlayerLabels(npcFisher);
+    togglePlayerLabels(npcScratch);
 
     // Ghost
     if (ghostMesh) togglePlayerLabels(ghostMesh);
