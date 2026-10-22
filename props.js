@@ -1048,6 +1048,8 @@ function attachYtVideo(data, group) {
         iframe: null,
         twFrame: null,
         twVideoWrap: null,
+        twitchAudioOn: false,
+        twitchSwapAt: 0,
         provider: provider,
         cssObj: cssObj,
         shell: shell,
@@ -1149,7 +1151,7 @@ function twitchParents() {
     return parents;
 }
 
-function twitchEmbedUrl(entry) {
+function twitchEmbedUrl(entry, mutedOverride) {
     const d = entry.data || {};
     const q = [];
     if (d.twitchKind === 'video' && d.twitchId) q.push('video=' + encodeURIComponent(d.twitchId));
@@ -1157,9 +1159,12 @@ function twitchEmbedUrl(entry) {
     // Muted autoplay is the only form of autoplay every browser allows inside a
     // cross-origin iframe, so the stream always starts on its own. Sound is an
     // explicit opt-in: the in-world SOUND chip reloads the embed with
-    // muted=false in response to a real click in the top document.
+    // muted=false in response to a real click in the top document. The embed is
+    // also swapped back to muted when the listener walks out of earshot - the
+    // iframe owns its own audio, so that is the only volume control we have.
+    const muted = (typeof mutedOverride === 'boolean') ? mutedOverride : !entry.twitchUnmuted;
     q.push('autoplay=true');
-    q.push('muted=' + (entry.twitchUnmuted ? 'false' : 'true'));
+    q.push('muted=' + (muted ? 'true' : 'false'));
     twitchParents().forEach(p => q.push('parent=' + encodeURIComponent(p)));
     return 'https://player.twitch.tv/?' + q.join('&');
 }
@@ -1302,12 +1307,13 @@ function mountTwitch(entry) {
     entry.twVideoWrap.appendChild(ifr);
     entry.twFrame.style.display = 'block';
     entry.iframe = ifr;
+    entry.twitchAudioOn = !!entry.twitchUnmuted;
 }
 
 // Shared iframe construction so the unmute reload keeps every attribute.
-function buildTwitchIframe(entry) {
+function buildTwitchIframe(entry, mutedOverride) {
     const ifr = document.createElement('iframe');
-    ifr.src = twitchEmbedUrl(entry);
+    ifr.src = twitchEmbedUrl(entry, mutedOverride);
     ifr.title = 'Twitch stream';
     ifr.style.width = '100%';
     ifr.style.height = '100%';
@@ -1321,11 +1327,25 @@ function buildTwitchIframe(entry) {
     return ifr;
 }
 
+// Swap the embed for a fresh one with the wanted mute state. The player is
+// cross-origin, so its audio cannot be faded from here: reloading a muted or
+// unmuted embed is the only way to follow the listener's distance.
+function swapTwitchIframe(entry) {
+    if (!entry || !entry.twVideoWrap) return;
+    const old = entry.iframe;
+    const ifr = buildTwitchIframe(entry, !entry.twitchAudioOn);
+    entry.twVideoWrap.appendChild(ifr);
+    if (old) old.remove();
+    entry.iframe = ifr;
+    entry.twitchSwapAt = Date.now();
+}
+
 // Reload the embed with sound. Triggered by a click on our own chip (a click in
 // the top document), which is what browsers require before unmuted playback.
 function unmuteTwitch(entry) {
     if (!entry || entry.twitchUnmuted) return;
     entry.twitchUnmuted = true;
+    entry.twitchAudioOn = true;
     if (entry.soundChip) { entry.soundChip.remove(); entry.soundChip = null; }
     if (!entry.iframe) return;   // still pending: the mount will start unmuted
     entry.iframe.remove();
@@ -1340,6 +1360,31 @@ function mountPendingTwitch(entry) {
     if (!entry.twitchReady || !entry.__shown) return;
     entry.twitchPending = false;
     if (!entry.iframe) mountTwitch(entry);
+}
+
+// Twitch audio lives inside the cross-origin embed, so distance has to be
+// enforced by swapping embeds: muted once the listener is past the voice range,
+// unmuted again (if the player opted in with the SOUND chip) once they return.
+// Separate in/out distances plus a short minimum interval stop it flapping when
+// someone hovers at the boundary.
+const TWITCH_AUDIO_OUT = (typeof MAX_VOICE_DISTANCE === 'number') ? MAX_VOICE_DISTANCE : 50;
+const TWITCH_AUDIO_IN = TWITCH_AUDIO_OUT * 0.8;
+function updateTwitchAudioRange(e) {
+    if (!e || !e.iframe || e.twitchPending || !e.twitchReady) return;
+    if (!e.twitchUnmuted) { e.twitchAudioOn = false; return; }
+    if (Date.now() - (e.twitchSwapAt || 0) < 800) return;
+    if (typeof camera === 'undefined' || !camera || !camera.position || !e.mesh) return;
+    // Same ear point the WebAudio listener uses (the player, not the camera).
+    const dist = ((typeof player !== 'undefined' && player && player.position)
+        ? player.position
+        : camera.position).distanceTo(e.mesh.position);
+    if (e.twitchAudioOn && dist > TWITCH_AUDIO_OUT) {
+        e.twitchAudioOn = false;
+        swapTwitchIframe(e);
+    } else if (!e.twitchAudioOn && dist < TWITCH_AUDIO_IN) {
+        e.twitchAudioOn = true;
+        swapTwitchIframe(e);
+    }
 }
 
 // Small "sound" chip in the top-left corner of a Twitch screen. Beats relying
@@ -1529,6 +1574,7 @@ window.tickYtScreens = function () {
                 e.twFrame.style.pointerEvents = clickable ? 'auto' : 'none';
             }
             if (onScreen && e.__shown) mountPendingTwitch(e);
+            updateTwitchAudioRange(e);
             continue;   // no JS API: Twitch owns its audio
         }
         updateScreenFacing(e);
@@ -1661,10 +1707,11 @@ window.punchScreens = function () {
 window.updateYtAudio = function (e) {
     if (!e.player) return;
     let dist = 999;
-    if (typeof camera !== 'undefined' && camera && typeof camera.position !== 'undefined') {
-        dist = camera.position.distanceTo(e.mesh.position);
-    } else if (typeof player !== 'undefined' && player) {
+    // Same ear point as the WebAudio listener above.
+    if (typeof player !== 'undefined' && player && player.position && e.mesh) {
         dist = player.position.distanceTo(e.mesh.position);
+    } else if (typeof camera !== 'undefined' && camera && e.mesh) {
+        dist = camera.position.distanceTo(e.mesh.position);
     }
     const vol = Math.pow(Math.max(0, 1 - dist / MAX_VOICE_DISTANCE), 1.5);
     // Personal ceilings. YouTube audio lives in its own iframe and therefore

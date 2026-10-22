@@ -12519,11 +12519,15 @@ function animate() {
         } else fishingLine.visible = false;
     }
 
+    // Spatial audio: put the listener on the camera so distance falloff is
+    // measured from the player, not from the world origin.
+    if (window.updateAudioListener) { try { window.updateAudioListener(camera); } catch (e) { } }
+
     // CSS3D overlay (YouTube Screen prop): keep DOM iframes glued to the scene
     // and audio volume laced to proximity — runs before the WebGL draw.
-    if (window.tickYtScreens && cssRenderer) {
+    if (window.tickYtScreens) {
         try { window.tickYtScreens(); } catch (e) { }
-        cssRenderer.render(cssScene, camera);
+        if (cssRenderer) cssRenderer.render(cssScene, camera);
     }
 
     renderer.render(scene, camera);

@@ -59,6 +59,43 @@ const createPanner = (pos) => {
     return panner;
 };
 
+// --- AUDIO LISTENER ---
+// Panners place sounds in world space, so the listener has to sit on the local
+// player's ears. It was never moved off the origin, which meant distance
+// attenuation was measured from (0,0,0): sounds got quieter the farther the
+// player was from the map centre, regardless of who made them.
+function updateAudioListener(cam) {
+    if (!audioCtx || !cam || !cam.position) return;
+    const l = audioCtx.listener;
+    if (!l) return;
+    const now = audioCtx.currentTime;
+    // Ears sit on the player (third-person camera hangs behind them), so the
+    // player's own footsteps/meows are not attenuated by the camera offset.
+    const p = (typeof player !== 'undefined' && player && player.position)
+        ? { x: player.position.x, y: player.position.y + 1.5, z: player.position.z }
+        : cam.position;
+    const m = cam.matrixWorld && cam.matrixWorld.elements;
+    // Camera basis: +X right, +Y up, -Z forward.
+    const fx = m ? -m[8] : 0, fy = m ? -m[9] : 0, fz = m ? -m[10] : -1;
+    const ux = m ? m[4] : 0, uy = m ? m[5] : 1, uz = m ? m[6] : 0;
+    if (l.positionX) {
+        // Smooth so teleports/quick camera snaps do not click.
+        l.positionX.setTargetAtTime(p.x, now, 0.02);
+        l.positionY.setTargetAtTime(p.y, now, 0.02);
+        l.positionZ.setTargetAtTime(p.z, now, 0.02);
+        l.forwardX.setTargetAtTime(fx, now, 0.02);
+        l.forwardY.setTargetAtTime(fy, now, 0.02);
+        l.forwardZ.setTargetAtTime(fz, now, 0.02);
+        l.upX.setTargetAtTime(ux, now, 0.02);
+        l.upY.setTargetAtTime(uy, now, 0.02);
+        l.upZ.setTargetAtTime(uz, now, 0.02);
+    } else {
+        l.setPosition(p.x, p.y, p.z);
+        l.setOrientation(fx, fy, fz, ux, uy, uz);
+    }
+}
+window.updateAudioListener = updateAudioListener;
+
 // --- PROCEDURAL SOUND ENGINE ---
 const Sound = {
     playSpatial: (soundName, pos, variant = 0) => {
@@ -173,14 +210,20 @@ const Sound = {
         }
 
         else if (soundName === 'catch') {
+            // The fanfare's four notes share one output node, so it goes through
+            // the panner below like every other sound. (It used to connect
+            // straight to the SFX bus, which made it audible across the whole
+            // map.)
+            const out = audioCtx.createGain();
+            out.gain.setValueAtTime(1, now);
             [440, 554, 659, 880].forEach((f, i) => {
                 const osc = audioCtx.createOscillator(); osc.type = 'triangle'; const gain = audioCtx.createGain();
                 osc.frequency.setValueAtTime(f, now + i * 0.1); gain.gain.setValueAtTime(0.1, now + i * 0.1); gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.1 + 0.3);
                 osc.connect(gain);
-                gain.connect(targetGain);
+                gain.connect(out);
                 osc.start(now + i * 0.1); osc.stop(now + i * 0.1 + 0.3);
             });
-            return;
+            nodes = { output: out };
         }
 
 
