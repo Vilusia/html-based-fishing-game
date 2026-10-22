@@ -29,9 +29,8 @@ and `localStorage`.
 | Game page | `https://play.htmlfishing.com` (repo files at the **root**) | Cloudflare-tunnel ingress → the folder these files are copied to |
 | Lobby directory | `https://master.gaywebfishing.org` → `localhost:8081` | Same tunnel, separate ingress rule; blueprints `Master Server Code/master_server.py` |
 
-- Deployment is a manual file copy to the tunnel target folder — pushing to
-  git does not update the live site. Bump cache pins (`bump-pins.ps1`) before
-  copying any edited `.js`/`index.html`, then hard-refresh once.
+- Deployment: run `.\deploy.ps1` (see One-command deploy below). It bumps
+  cache pins, commits, pushes, and fast-forwards the server's clone.
 - `core.js`'s domain guard accepts anything on `gaywebfishing.org` or
   `htmlfishing.com` (substring match, all subdomains included).
 - Steps for the new `play.htmlfishing.com` host: in Cloudflare, add the DNS
@@ -39,6 +38,40 @@ and `localStorage`.
   the same tunnel), and add the ingress rule
   `play.htmlfishing.com → http://localhost:PORT` alongside
   `master.gaywebfishing.org → http://localhost:8081`.
+
+### One-command deploy (`deploy.ps1`)
+
+Make the server's web folder a git clone, then publishing is a single command:
+
+```powershell
+.\deploy.ps1
+```
+
+It bumps cache pins (`node bump-pins.js`), commits, pushes, then runs
+`git pull --ff-only` on the server over SSH.
+
+Options:
+
+- `-SshTarget administrator@204.12.227.121` and
+  `-RemotePath /var/www/html-fishing` to override the defaults.
+- `-Scp` copies files directly instead of pulling from GitHub (for a server
+  that cannot reach GitHub).
+- `-NoCommit` deploys whatever is already pushed.
+
+One-time server setup:
+
+```bash
+git clone https://github.com/Vilusia/html-fishing.git /var/www/html-fishing
+```
+
+Key-based SSH from this PC (so nothing prompts for a password):
+
+```powershell
+ssh-keygen -t ed25519
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh administrator@gpu-jkey "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+```
+
+`bump-pins.js` is the cross-platform (node) replacement for `bump-pins.ps1`.
 
 ---
 
