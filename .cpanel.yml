@@ -1,0 +1,23 @@
+---
+# cPanel Git deployment.
+#
+# cPanel requires this file at the repository root before it will let you
+# "Deploy HEAD Commit". Tasks run from the repository root, so every path below
+# is relative to the clone.
+#
+# DEPLOYPATH is the document root that htmlfishing.com serves. It is normally
+# $HOME/public_html — change it to $HOME/public_html/html-fishing if your game
+# lives in a subfolder.
+#
+# Music files are intentionally not copied: Music/ is gitignored (large
+# binaries) and must be uploaded once as a lowercase "music/" folder, because
+# Linux paths are case-sensitive and the game requests "music/<track>.ogg".
+deployment:
+  tasks:
+    - export DEPLOYPATH=$HOME/public_html/
+    - /bin/mkdir -p "$DEPLOYPATH"
+    - /bin/cp -f index.html editor.html "$DEPLOYPATH"
+    - /bin/cp -f core.js ui.js props.js fish.js ocean.js worldgen.js "$DEPLOYPATH"
+    - /bin/cp -f character3d.js networking.js audio.js progression.js "$DEPLOYPATH"
+    - /bin/cp -f level-loader.js icons.js editor.js "$DEPLOYPATH"
+    - /bin/cp -f patreon_banner.png "$DEPLOYPATH"
