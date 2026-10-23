@@ -53,12 +53,12 @@ const ACHIEVEMENTS = [
         check: c => pct(c.uniqueSpecies, 10)
     },
     {
-        id: 'species_25', name: 'Ichthyologist', desc: 'Discover 25 fish species',
-        check: c => pct(c.uniqueSpecies, 25)
+        id: 'species_25', name: 'Ichthyologist', desc: 'Discover 40 fish species',
+        check: c => pct(c.uniqueSpecies, 40)
     },
     {
-        id: 'species_40', name: 'Encyclopedic', desc: 'Discover 40 fish species',
-        check: c => pct(c.uniqueSpecies, 40)
+        id: 'species_40', name: 'Encyclopedic', desc: 'Discover 75 fish species',
+        check: c => pct(c.uniqueSpecies, 75)
     },
     {
         id: 'tier_shining', name: 'Shining Example', desc: 'Catch a shining fish',
