@@ -13861,6 +13861,16 @@ function setupHotbar() {
         icon.id = `hotbar-icon-${i}`;
         slot.appendChild(icon);
 
+        slot.addEventListener('mouseenter', (e) => {
+            const entry = saveState.hotbar ? saveState.hotbar[i] : null;
+            showItemTooltip(getItemTooltipText(entry), e.clientX, e.clientY);
+        });
+        slot.addEventListener('mousemove', (e) => {
+            const entry = saveState.hotbar ? saveState.hotbar[i] : null;
+            showItemTooltip(getItemTooltipText(entry), e.clientX, e.clientY);
+        });
+        slot.addEventListener('mouseleave', () => hideItemTooltip());
+
         container.appendChild(slot);
     }
     if (saveState.activeHotbarIndex === undefined) saveState.activeHotbarIndex = 0;
@@ -15277,7 +15287,52 @@ function addFishToInventory(fish) {
     const empty = saveState.invSlots.findIndex(s => s === null);
     if (empty !== -1) saveState.invSlots[empty] = { type: 'fish', name: fish.name, color: fish.color, size: fish.size || 1, count: 1 };
 }
-function ensureInventorySlots() {
+function getItemTooltipText(entry) {
+    if (!entry) return '';
+    if (entry.type === 'fish') {
+        const f = (typeof getFishByName === 'function') ? getFishByName(entry.name) : null;
+        const lines = [entry.name];
+        if (f) {
+            lines.push('Rarity: ' + f.rarity);
+            lines.push('Zone: ' + (f.zone || 'lake'));
+            lines.push('Shape: ' + (f.shape || 'fish'));
+            lines.push('Drain: ' + f.drain);
+            lines.push('Price: $' + f.price);
+            if (f.chance) lines.push('Chance: ' + f.chance);
+        } else {
+            lines.push('Rarity: ' + (entry.rarity || 'Common'));
+        }
+        if (entry.count && entry.count > 1) lines.push('Count: ' + entry.count);
+        return lines.join('\\n');
+    }
+    if (entry.type === 'tool') {
+        const tool = TOOLS.find(t => t.id === entry.id);
+        const name = tool ? tool.name : entry.id;
+        let extra = '';
+        if (entry.id === 'boat') extra = '\\nPress R in water to use.';
+        return name + (tool && tool.desc ? '\\n' + tool.desc : '') + extra;
+    }
+    return '';
+}
+
+function showItemTooltip(text, x, y) {
+    const el = document.getElementById('item-tooltip');
+    if (!el) return;
+    if (!text) { el.style.display = 'none'; return; }
+    el.innerText = text;
+    el.style.display = 'block';
+    const pad = 12;
+    let left = x + pad, top = y + pad;
+    if (left + 260 > window.innerWidth) left = x - 260 - pad;
+    if (top + 120 > window.innerHeight) top = y - 120 - pad;
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+}
+
+function hideItemTooltip() {
+    const el = document.getElementById('item-tooltip');
+    if (el) el.style.display = 'none';
+}
     if (!Array.isArray(saveState.invSlots) || saveState.invSlots.length !== 50) {
         saveState.invSlots = new Array(50).fill(null);
         const counts = {};
@@ -15307,7 +15362,6 @@ function ensureInventorySlots() {
             }
         }
     }
-}
 
 function renderInventoryGrid() {
     ensureInventorySlots();
@@ -15342,8 +15396,20 @@ function renderInventoryGrid() {
         }
         // Drag handlers
         slot.addEventListener('dragstart', (e) => {
+            const entry = saveState.invSlots[i];
+            if (entry && entry.type === 'tool' && entry.id === 'boat') { e.preventDefault(); return; }
             e.dataTransfer.setData('text/plain', JSON.stringify({ from: 'inv', index: i }));
         });
+        // Tooltip
+        slot.addEventListener('mouseenter', (e) => {
+            const entry = saveState.invSlots[i];
+            showItemTooltip(getItemTooltipText(entry), e.clientX, e.clientY);
+        });
+        slot.addEventListener('mousemove', (e) => {
+            const entry = saveState.invSlots[i];
+            showItemTooltip(getItemTooltipText(entry), e.clientX, e.clientY);
+        });
+        slot.addEventListener('mouseleave', () => hideItemTooltip());
         slot.addEventListener('dragover', (e) => { e.preventDefault(); });
         slot.addEventListener('drop', (e) => {
             e.preventDefault();
