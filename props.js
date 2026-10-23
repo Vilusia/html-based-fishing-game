@@ -122,7 +122,7 @@ function placeProp(type) {
         if (!url) return; // cancelled
         src = parseScreenSource(String(url).trim());
         if (!src) {
-            showToast('That does not look like a YouTube or Twitch URL.', 'error');
+            showToast('Use a real YouTube or Twitch link (youtube.com, youtu.be, twitch.tv).', 'error');
             return;
         }
     }
@@ -914,14 +914,112 @@ window.onYouTubeIframeAPIReady = markYtApiReady;
 // If the API is already present, we missed the callback: treat it as ready now.
 if (window.YT && typeof window.YT.Player === 'function') markYtApiReady();
 
-// Accepts every common YouTube URL form; returns an 11-char id or null.
+// --- Stream source validation ---------------------------------------------
+// A screen only ever mounts a canonical video id or channel name. The pasted
+// text must be a real link on an allowlisted YouTube/Twitch host: checking the
+// parsed hostname (instead of searching the raw string) rejects tricks such as
+// `youtube.com.evil.example`, `evil.example/?v=<id>`, or a bare 11-char id.
+function toHttpUrl(input) {
+    let raw = String(input || '').trim();
+    if (!raw) return null;
+    if (raw.startsWith('//')) {
+        raw = 'https:' + raw;
+    } else if (!/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+        // Scheme-less links are fine, bare ids/channel names are not.
+        if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?:[:/?#]|$)/.test(raw)) return null;
+        raw = 'https://' + raw;
+    }
+    let u;
+    try { u = new URL(raw); } catch (e) { return null; }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    // Legit links never carry credentials or a non-default port.
+    if (u.username || u.password || u.port) return null;
+    return u;
+}
+
+const YT_HOSTS = new Set([
+    'youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
+    'youtu.be', 'youtube-nocookie.com', 'www.youtube-nocookie.com'
+]);
+const TWITCH_HOSTS = new Set([
+    'twitch.tv', 'www.twitch.tv', 'm.twitch.tv', 'go.twitch.tv', 'player.twitch.tv'
+]);
+
+// Accepts the common YouTube video URL forms; returns an 11-char id or null.
 function ytParseVideoId(input) {
-    if (!input) return null;
-    if (/^[A-Za-z0-9_-]{11}$/.test(input)) return input;
-    let m = input.match(/(?:v=|\/v\/|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
-    if (m) return m[1];
-    m = input.match(/^https?:\/\/www\.youtube-nocookie\.com\/embed\/([A-Za-z0-9_-]{11})/);
-    if (m) return m[1];
+    const u = toHttpUrl(input);
+    if (!u) return null;
+    const host = u.hostname.toLowerCase();
+    if (!YT_HOSTS.has(host)) return null;
+    const segs = u.pathname.split('/').filter(Boolean);
+    const valid = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(id);
+
+    // youtu.be/<id> (exactly one path segment)
+    if (host === 'youtu.be') {
+        return (segs.length === 1 && valid(segs[0])) ? segs[0] : null;
+    }
+    // youtube-nocookie.com/embed/<id>
+    if (host === 'youtube-nocookie.com' || host === 'www.youtube-nocookie.com') {
+        return (segs.length === 2 && segs[0] === 'embed' && valid(segs[1])) ? segs[1] : null;
+    }
+    // youtube.com/watch?v=<id>
+    if (segs.length === 1 && segs[0] === 'watch') {
+        const v = u.searchParams.get('v');
+        return valid(v) ? v : null;
+    }
+    // youtube.com/{embed,shorts,live,v}/<id>
+    if (segs.length === 2 && ['embed', 'shorts', 'live', 'v'].includes(segs[0]) && valid(segs[1])) {
+        return segs[1];
+    }
+    return null;
+}
+
+// Twitch channel names that are really site routes, not streamers.
+const TWITCH_RESERVED = new Set([
+    'directory', 'videos', 'settings', 'subscriptions', 'inventory', 'wallet',
+    'friends', 'drops', 'search', 'downloads', 'turbo', 'jobs', 'about',
+    'privacy', 'policies', 'collections', 'following', 'store', 'prime',
+    'creatorcamp', 'legal', 'contact', 'security', 'careers', 'press', 'blog',
+    'partners', 'affiliates', 'developers', 'api', 'embed', 'login', 'signup',
+    'p', 'video', 'channel', 'clips', 'clip', 'team', 'teams', 'schedule',
+    'events', 'community', 'dashboard', 'messages', 'whispers', 'notifications',
+    'logout', 'oauth', 'activate', 'help', 'support', 'safety', 'transparency',
+    'advertisers', 'extensions', 'bits', 'gift', 'gifts', 'redeem', 'rewards',
+    'squad', 'streamers', 'tags', 'games', 'music', 'podcasts', 'vods',
+    'highlights', 'payments', 'purchases'
+]);
+
+function isTwitchChannelName(s) {
+    return typeof s === 'string' && /^[A-Za-z0-9_]{1,25}$/.test(s) && !TWITCH_RESERVED.has(s.toLowerCase());
+}
+
+// Accepts twitch.tv/<channel>, twitch.tv/videos/<id> and player.twitch.tv
+// URLs. Returns { id, kind } or null.
+function twitchParseSource(input) {
+    const u = toHttpUrl(input);
+    if (!u) return null;
+    const host = u.hostname.toLowerCase();
+    if (!TWITCH_HOSTS.has(host)) return null;
+
+    // player.twitch.tv/?channel=<name> or ?video=<id>
+    if (host === 'player.twitch.tv') {
+        const video = u.searchParams.get('video');
+        if (video && /^\d{1,20}$/.test(video)) return { id: video, kind: 'video' };
+        const channel = u.searchParams.get('channel');
+        if (isTwitchChannelName(channel)) return { id: channel, kind: 'channel' };
+        return null;
+    }
+
+    const segs = u.pathname.split('/').filter(Boolean);
+    // twitch.tv/videos/<numeric vod id>
+    if (segs.length === 2 && segs[0] === 'videos' && /^\d{1,20}$/.test(segs[1])) {
+        return { id: segs[1], kind: 'video' };
+    }
+    // twitch.tv/<channel> (exactly one path segment; listings/clips are not
+    // a stream and are rejected)
+    if (segs.length === 1 && isTwitchChannelName(segs[0])) {
+        return { id: segs[0], kind: 'channel' };
+    }
     return null;
 }
 
@@ -938,40 +1036,28 @@ function parseScreenSource(input) {
     return null;
 }
 
-// Twitch channel names that are really site routes, not streamers.
-const TWITCH_RESERVED = new Set([
-    'directory', 'videos', 'settings', 'subscriptions', 'inventory', 'wallet',
-    'friends', 'drops', 'search', 'downloads', 'turbo', 'jobs', 'about',
-    'privacy', 'policies', 'collections', 'following', 'store', 'prime',
-    'creatorcamp', 'legal', 'contact', 'security', 'careers', 'press', 'blog',
-    'partners', 'affiliates', 'developers', 'api', 'embed', 'login', 'signup',
-    'p', 'video', 'channel'
-]);
+// Canonicalise source fields that arrived over the network. Prop records can
+// come from older clients, so the renderer validates them too instead of
+// trusting whatever id/provider strings are in the packet.
+function screenSourceFromData(data) {
+    if (!data) return null;
+    const ytId = (typeof data.videoId === 'string') ? data.videoId : '';
+    const twId = (typeof data.twitchId === 'string') ? data.twitchId : '';
+    const ytOk = /^[A-Za-z0-9_-]{11}$/.test(ytId);
+    const twVodOk = /^\d{1,20}$/.test(twId);
+    const twChOk = isTwitchChannelName(twId);
 
-// Accepts twitch.tv/<channel>, twitch.tv/videos/<id>, player.twitch.tv URLs and
-// a bare channel name. Returns { id, kind } or null.
-function twitchParseSource(input) {
-    const raw = String(input || '').trim();
-    if (!raw) return null;
-
-    // Already a player URL: player.twitch.tv/?channel=<name> or ?video=<id>
-    let m = raw.match(/[?&]video=(\d{1,20})\b/);
-    if (m) return { id: m[1], kind: 'video' };
-    m = raw.match(/[?&]channel=([A-Za-z0-9_]{1,25})\b/);
-    if (m && !TWITCH_RESERVED.has(m[1].toLowerCase())) return { id: m[1], kind: 'channel' };
-
-    // twitch.tv/videos/<numeric vod id>
-    m = raw.match(/(?:^|\/\/)(?:www\.|m\.)?twitch\.tv\/videos\/(\d{1,20})/i);
-    if (m) return { id: m[1], kind: 'video' };
-
-    // twitch.tv/<channel>
-    m = raw.match(/(?:^|\/\/)(?:www\.|m\.)?twitch\.tv\/([A-Za-z0-9_]{1,25})(?:[/?#]|$)/i);
-    if (m && !TWITCH_RESERVED.has(m[1].toLowerCase())) return { id: m[1], kind: 'channel' };
-
-    // Bare channel name
-    if (/^[A-Za-z0-9_]{1,25}$/.test(raw) && !TWITCH_RESERVED.has(raw.toLowerCase())) {
-        return { id: raw, kind: 'channel' };
+    if (data.provider === 'youtube') return ytOk ? { provider: 'youtube', id: ytId } : null;
+    if (data.provider === 'twitch') {
+        if (data.twitchKind === 'video') {
+            return twVodOk ? { provider: 'twitch', id: twId, twitchKind: 'video' } : null;
+        }
+        return twChOk ? { provider: 'twitch', id: twId, twitchKind: 'channel' } : null;
     }
+    // Legacy records without a provider field.
+    if (ytOk) return { provider: 'youtube', id: ytId };
+    if (twVodOk) return { provider: 'twitch', id: twId, twitchKind: 'video' };
+    if (twChOk) return { provider: 'twitch', id: twId, twitchKind: 'channel' };
     return null;
 }
 
@@ -995,9 +1081,11 @@ window.initCssScene = function () {
 
 // Wire the video element + CSS3D object for a screen prop.
 function attachYtVideo(data, group) {
-    const provider = (data.provider === 'twitch' || data.twitchId) ? 'twitch'
-        : ((data.videoId) ? 'youtube' : null);
-    if (!provider) return;
+    // Never mount anything that is not a canonical YouTube/Twitch source, even
+    // if a malformed record arrived from an older or modified peer.
+    const src = screenSourceFromData(data);
+    if (!src) return;
+    const provider = src.provider;
     if (typeof THREE.CSS3DObject === 'undefined') {
         // The examples renderer did not load (CDN blocked). Without it there is
         // no way to show the video in-scene; the housing still spawns.
@@ -1046,9 +1134,9 @@ function attachYtVideo(data, group) {
     const entry = {
         data: {
             provider: provider,
-            videoId: data.videoId || null,
-            twitchId: data.twitchId || null,
-            twitchKind: data.twitchKind || 'channel',
+            videoId: provider === 'youtube' ? src.id : null,
+            twitchId: provider === 'twitch' ? src.id : null,
+            twitchKind: provider === 'twitch' ? src.twitchKind : null,
             startedAt: data.startedAt || Date.now(),
             placer: data.placer || ''
         },
@@ -1836,7 +1924,7 @@ window.changeScreenVideo = function (propId) {
     const url = window.prompt('Paste a new YouTube or Twitch URL for this screen:', '');
     if (!url) return;
     const src = parseScreenSource(String(url).trim());
-    if (!src) { showToast('That does not look like a YouTube or Twitch URL.', 'error'); return; }
+    if (!src) { showToast('Use a real YouTube or Twitch link (youtube.com, youtu.be, twitch.tv).', 'error'); return; }
 
     const msg = {
         type: 'ytChange',
@@ -1889,16 +1977,15 @@ window.applyYtChange = function (data) {
     const e = ytPlayers[id];
     if (!e) return; // no screen with this id here
 
-    const provider = (data.provider === 'twitch' || data.twitchId) ? 'twitch'
-        : ((data.videoId) ? 'youtube' : null);
-    if (!provider) return;
+    const src = screenSourceFromData(data);
+    if (!src) return;
 
-    e.provider = provider;
+    e.provider = src.provider;
     e.data = {
-        provider: provider,
-        videoId: data.videoId || null,
-        twitchId: data.twitchId || null,
-        twitchKind: data.twitchKind || 'channel',
+        provider: src.provider,
+        videoId: src.provider === 'youtube' ? src.id : null,
+        twitchId: src.provider === 'twitch' ? src.id : null,
+        twitchKind: src.provider === 'twitch' ? src.twitchKind : null,
         startedAt: data.startedAt || Date.now(),
         placer: data.placer || (e.data && e.data.placer) || ''
     };
