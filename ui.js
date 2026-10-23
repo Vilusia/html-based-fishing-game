@@ -392,25 +392,6 @@ function updateMerchantUI(container) {
                 Sell All Fish ($${totalFishValue})
             </button>
 
-            <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Flowers (click to sell one)</h3>
-            <div id="merchant-flower-grid" style="display:grid; grid-template-columns: repeat(6, 1fr); gap:6px; margin-bottom:20px; margin-top: 10px; max-height:160px; overflow-y:auto; padding:8px; background:var(--p-sunken); border:2px solid var(--p-line);">
-                ${(() => {
-                    const slots = (saveState.invSlots || []).filter(s => s && s.type === 'flower');
-                    if (slots.length === 0) return '<div style="color:var(--p-text-dim); grid-column:1/-1;">No flowers to sell.</div>';
-                    return slots.map(s => {
-                        const ft = FLOWER_TYPES.find(f => f.id === s.id);
-                        const price = ft ? ft.price : 1;
-                        const count = s.count || 1;
-                        return `<div style="width:50px;height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;cursor:pointer;border:1px solid var(--p-line);background:var(--p-face-2);"
-                            onclick="sellOneFlower('${s.id}')">
-                            <div style="width:20px;height:20px;border-radius:50%;background:${s.color || '#fff'};"></div>
-                            <div style="font-size:9px; color:#fff; position:absolute; bottom:2px; right:4px; background:rgba(0,0,0,0.7); padding:0 2px;">x${count}</div>
-                            <div style="font-size:9px; color:var(--p-gold);">$${price}</div>
-                        </div>`;
-                    }).join('');
-                })()}
-            </div>
-
             <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Other</h3>
             <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px; margin-top: 10px;">
                 <button class="btn-lg" onclick="actionSellWood()" ${totalWoodCount === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
@@ -665,6 +646,14 @@ window.actionSellFlowers = function () {
     // Server Authority Check
 
     saveState.flowerInventory = {};
+    // Clear invSlots flowers
+    if (Array.isArray(saveState.invSlots)) {
+        for (let i = 0; i < saveState.invSlots.length; i++) {
+            if (saveState.invSlots[i] && saveState.invSlots[i].type === 'flower') saveState.invSlots[i] = null;
+        }
+        const items = saveState.invSlots.filter(s => s !== null);
+        for (let i = 0; i < saveState.invSlots.length; i++) saveState.invSlots[i] = i < items.length ? items[i] : null;
+    }
     saveState.money += total;
     saveGame();
     Sound.sell();
