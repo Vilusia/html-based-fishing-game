@@ -226,7 +226,16 @@
             font-size: clamp(14px, 2vmin, 18px);
         }
 
-        /* --- UNIFIED TOP BUTTONS --- */
+        /* Guided tour highlight */
+        .guided-highlight {
+            outline: 3px solid #ffd700 !important;
+            box-shadow: 0 0 12px #ffd700 !important;
+            animation: guidedPulse 1s infinite alternate;
+        }
+        @keyframes guidedPulse {
+            from { box-shadow: 0 0 8px #ffd700; }
+            to { box-shadow: 0 0 20px #ffea00; }
+        }
         #btn-settings,
         #btn-host-panel,
         #btn-journal,
@@ -3743,14 +3752,8 @@
                 <button id="btn-host-panel" onclick="toggleHostPanel()" style="display:none;">🛡️</button>
                 <button id="btn-players" onclick="togglePlayerList()">👥</button>
                 <button id="btn-props-ui" onclick="togglePropsUI()">Props</button>
-                <button id="btn-skills-ui" onclick="toggleSkillsUI()">Skills</button>
-                <button id="btn-cook-ui" onclick="toggleCookingUI()">Cook</button>
 
                 <div class="stat-box">
-                    <span id="money-display">$0</span>
-                    <button id="btn-journal" onclick="toggleJournal()">Journal</button>
-                    <button id="btn-inventory" onclick="toggleInventory()">Inventory</button>
-                    <button id="btn-progress" onclick="toggleProgress()">Progress</button>
 
 
                     <button class="btn-lg btn-danger" id="btn-admin-login"
@@ -3797,7 +3800,13 @@
             <b>O</b> <span>Undo Prop</span>
             <b>H</b> <span>Hide HUD</span>
         </div>
-        <div id="notification-area"></div>
+        <div id="guided-tour" style="display:none; position:fixed; bottom:120px; left:50%; transform:translateX(-50%); z-index:10002; background:var(--p-face); border:2px solid var(--p-line); padding:12px 16px; max-width:420px; text-align:center;">
+        <div id="guided-tour-text" style="margin-bottom:10px; font-size:14px;"></div>
+        <div style="display:flex; gap:8px; justify-content:center;">
+            <button class="btn-sm" onclick="guidedTourNext()">Next</button>
+            <button class="btn-sm" onclick="guidedTourSkip()">Skip</button>
+        </div>
+    </div>
         <div id="npc-prompt">PRESS E TO INTERACT</div>
         <div id="chat-ui" style="display: none;">
             <div id="chat-messages"></div>
@@ -3939,7 +3948,7 @@
     <script src="networking.js?v=12.75"></script>
     <script src="audio.js?v=12.84"></script>
     <script src="progression.js?v=52"></script>
-    <script src="ui.js?v=12.207"></script>
+    <script src="ui.js?v=12.208"></script>
     <script src="props.js?v=12.124"></script>
     <script src="level-loader.js?v=48"></script>
     <script src="scratch.js?v=46"></script>

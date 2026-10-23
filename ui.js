@@ -15491,6 +15491,61 @@ window.toggleTutorial = function () {
     }
 }
 
+// --- GUIDED TOUR ---
+let guidedTourStep = 0;
+const GUIDED_TOUR_STEPS = [
+    { text: "Welcome to HTML Fishing! Use WASD to walk around the island.", target: null },
+    { text: "Press TAB to open the menu. From there you can open Journal, Inventory, Progress, Skills, Cooking, and Player List.", target: '#btn-inventory' },
+    { text: "Walk to the lake (the big water) and press 1 for the Rod, then click to cast.", target: '#hotbar-container' },
+    { text: "When a fish bites, a minigame starts. Keep the marker in the green zone by holding click. Reel it in!", target: null },
+    { text: "Caught fish go to your Inventory (Tab → Inventory). Drag them to the hotbar to keep your favorites.", target: null },
+    { text: "Press 1-0 to switch hotbar slots. Holding a fish and clicking won't fish; use the rod slot to fish.", target: null },
+    { text: "Sell fish to the Merchant for money, buy better rods/bait, and unlock new zones (ponds, ocean, lava, void).", target: null },
+    { text: "Level up skills (Fishing, Mining, Lumberjack, etc.) for bonuses. Check Progress for achievements and quests.", target: null },
+    { text: "You're ready! Explore, fish, and have fun. (Skip anytime.)", target: null }
+];
+
+function guidedTourHighlight(el) {
+    document.querySelectorAll('.guided-highlight').forEach(e => e.classList.remove('guided-highlight'));
+    if (el) el.classList.add('guided-highlight');
+}
+
+function guidedTourShow() {
+    const box = document.getElementById('guided-tour');
+    const text = document.getElementById('guided-tour-text');
+    if (!box || !text) return;
+    if (guidedTourStep >= GUIDED_TOUR_STEPS.length) { guidedTourSkip(); return; }
+    const step = GUIDED_TOUR_STEPS[guidedTourStep];
+    text.innerText = step.text;
+    box.style.display = 'block';
+    // highlight target
+    let targetEl = null;
+    if (step.target) targetEl = document.querySelector(step.target);
+    guidedTourHighlight(targetEl);
+}
+
+function guidedTourNext() {
+    guidedTourStep++;
+    if (guidedTourStep >= GUIDED_TOUR_STEPS.length) { guidedTourSkip(); return; }
+    guidedTourShow();
+}
+
+function guidedTourSkip() {
+    const box = document.getElementById('guided-tour');
+    if (box) box.style.display = 'none';
+    guidedTourHighlight(null);
+    saveState.tutorialDone = true;
+    if (typeof saveGame === 'function') saveGame();
+}
+
+// Auto-start for new players
+setTimeout(() => {
+    if (!saveState.tutorialDone && document.getElementById('guided-tour')) {
+        guidedTourStep = 0;
+        guidedTourShow();
+    }
+}, 2000);
+
 // --- OLD FISHER DIALOGUE ---
 // A rotating set of tips so the lakeside NPC is more than decoration.
 let fisherTipIndex = 0;
