@@ -12453,6 +12453,25 @@ function animate() {
         }
     }
 
+    // Random void portal spawns on custom levels (host only), on the main island.
+    if (window.CUSTOM_LEVEL && window.Level && isHost && !isInVoid && !isInLavaWorld && !voidPortalMesh) {
+        if (!portalSpawnTimer) portalSpawnTimer = Date.now() + 60000 + Math.random() * 60000;
+        if (Date.now() > portalSpawnTimer) {
+            portalSpawnTimer = Date.now() + 120000 + Math.random() * 180000;
+            const lvl = window.CUSTOM_LEVEL;
+            const half = lvl.size / 2;
+            let sx = 0, sz = 0, found = false;
+            for (let i = 0; i < 50; i++) {
+                const cx = Math.random() * lvl.size - half;
+                const cz = Math.random() * lvl.size - half;
+                if (!window.Level.inBounds(lvl, cx, cz)) continue;
+                if (window.Level.isWater(lvl, cx, cz)) continue;
+                sx = cx; sz = cz; found = true; break;
+            }
+            if (found) spawnPortal(sx, sz);
+        }
+    }
+
     updateVoiceVisuals();
     updateGhost();
 

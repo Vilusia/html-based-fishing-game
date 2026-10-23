@@ -676,6 +676,7 @@ let lastIslandPos = new THREE.Vector3(25, 0, 0);
 let nextPortalSpawn = Date.now() + 600000;
 let portalDespawnTime = 0;
 let portalCooldown = 0;
+let portalSpawnTimer = 0;
 
 // Sailing: true while the player is afloat in their rowboat. While sailing the
 // water collision is ignored and the player skims the lake surface, so they can
