@@ -156,6 +156,21 @@ const Sound = {
             nodes = { output: gain };
         }
 
+        else if (soundName === 'swim') {
+            const { noise, gain } = createNoiseGain(0.18);
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 600;
+            filter.Q.value = 0.7;
+            noise.disconnect();
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+            noise.start();
+            nodes = { output: gain };
+        }
+
         else if (soundName === 'scratch') {
             // Dry scratch of a coin on card stock: a short band-passed noise
             // burst. `variant` shifts the band so repeated strokes do not sound

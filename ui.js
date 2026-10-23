@@ -12795,7 +12795,13 @@ function animate() {
                     sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, 0, 10 * dt);
                 }
                 if (audioCtx.currentTime - lastFootstepTime > 0.35) {
-                    broadcastSound('footstep');
+                    const inDeepWater = (() => {
+                        if (isSailing || isInVoid || isInLavaWorld) return false;
+                        const s = waterSurfaceAt(player.position.x, player.position.z);
+                        const b = getTerrainHeight(player.position.x, player.position.z);
+                        return s !== null && s - b > SHALLOW_DEPTH;
+                    })();
+                    broadcastSound(inDeepWater ? 'swim' : 'footstep');
                     lastFootstepTime = audioCtx.currentTime;
                 }
                 SailAudio.setActive(false);
@@ -12824,7 +12830,15 @@ function animate() {
         // 4. GRAVITY
         if (player.position.y > floorY) playerVelocity.y -= GRAVITY * dt;
         if (player.position.y <= floorY) {
-            if (player.position.y < floorY && playerVelocity.y < 0) broadcastSound('footstep');
+            if (player.position.y < floorY && playerVelocity.y < 0) {
+                const inDeepWater = (() => {
+                    if (isSailing || isInVoid || isInLavaWorld) return false;
+                    const s = waterSurfaceAt(player.position.x, player.position.z);
+                    const b = getTerrainHeight(player.position.x, player.position.z);
+                    return s !== null && s - b > SHALLOW_DEPTH;
+                })();
+                broadcastSound(inDeepWater ? 'splash' : 'footstep');
+            }
             player.position.y = floorY; playerVelocity.y = 0;
             if (controls.jump && !isProne && !isDiving) {
                 playerVelocity.y = JUMP_FORCE;
