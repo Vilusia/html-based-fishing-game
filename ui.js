@@ -2889,6 +2889,21 @@ function handleDataFromClient(clientId, data) {
             if (data.id !== myPeerId) displayChatMessage(data.name, data.text, data.id);
             broadcastToClients(data);
 
+        } else if (data.type === 'screenQueueAdd') {
+            const entry = ytPlayers[data.propId];
+            if (entry && entry.data) {
+                if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
+                entry.data.queue.push({ provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null });
+            }
+            broadcastToClients(data);
+
+        } else if (data.type === 'screenQueueRemove') {
+            const entry = ytPlayers[data.propId];
+            if (entry && entry.data && Array.isArray(entry.data.queue)) {
+                if (data.idx >= 0 && data.idx < entry.data.queue.length) entry.data.queue.splice(data.idx, 1);
+            }
+            broadcastToClients(data);
+
         } else if (data.type === 'skillLevel') {
             data.id = clientId;
             data.name = otherPlayers[clientId] ? otherPlayers[clientId].lastData.name : (data.name || 'Unknown');
@@ -3143,6 +3158,21 @@ function handleDataFromHost(data) {
         if (data.id !== myPeerId) {
             displayChatMessage(data.name, data.text, data.id);
         }
+    }
+    else if (data.type === 'screenQueueAdd') {
+        const entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
+        if (entry && entry.data) {
+            if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
+            entry.data.queue.push({ provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null });
+        }
+        if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
+    }
+    else if (data.type === 'screenQueueRemove') {
+        const entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
+        if (entry && entry.data && Array.isArray(entry.data.queue)) {
+            if (data.idx >= 0 && data.idx < entry.data.queue.length) entry.data.queue.splice(data.idx, 1);
+        }
+        if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
     }
     else if (data.type === 'skillLevel') {
         if (data.id !== myPeerId) {
@@ -11306,7 +11336,7 @@ function setupInputs() {
             else if (interactTarget === 'tutorial') toggleTutorial();
             else if (interactTarget === 'fisher') talkToFisher();
             else if (interactTarget === 'scratch') toggleScratchShop();
-            else if (interactTarget === 'ytscreen' && typeof window.changeScreenVideo === 'function') window.changeScreenVideo(interactScreenId);
+            else if (interactTarget === 'ytscreen' && typeof window.toggleScreenQueue === 'function') window.toggleScreenQueue(interactScreenId);
             else if (interactTarget === 'lava_keeper') {
                 if (saveState.lavaUnlocked) {
                     enterLavaWorld();

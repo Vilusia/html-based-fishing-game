@@ -3950,8 +3950,8 @@
     <script src="networking.js?v=12.115"></script>
     <script src="audio.js?v=12.124"></script>
     <script src="progression.js?v=92"></script>
-    <script src="ui.js?v=12.278"></script>
-    <script src="props.js?v=12.165"></script>
+    <script src="ui.js?v=12.279"></script>
+    <script src="props.js?v=12.166"></script>
     <script src="level-loader.js?v=88"></script>
     <script src="scratch.js?v=86"></script>
 
@@ -3974,6 +3974,18 @@
     </script>
     <!-- End Open Web Analytics Code -->
     <div id="item-tooltip" style="display:none; position:fixed; z-index:10003; background:var(--p-face-2); border:2px solid var(--p-line); padding:8px 10px; max-width:260px; font-size:12px; pointer-events:none; white-space:pre-line;"></div>
-    <div id="notification-area"></div>
+    <div id="screen-queue-overlay" class="overlay-screen">
+        <button class="close-x-btn" onclick="toggleScreenQueue()">×</button>
+        <div class="overlay-header">
+            <h2>Stream Queue</h2>
+            <div class="overlay-subtitle">Add videos; owner can remove.</div>
+        </div>
+        <div style="width:90%; max-width:560px; display:flex; gap:6px; margin:10px 0;">
+            <input type="text" id="screen-queue-input" placeholder="Paste YouTube/Twitch URL" style="flex:1;">
+            <button class="btn-sm" onclick="addScreenQueueFromInput()">Add</button>
+        </div>
+        <div id="screen-queue-list" style="width:90%; max-width:560px; max-height:50vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
+        <button class="btn-lg" onclick="toggleScreenQueue()" style="margin-top:15px;">CLOSE</button>
+    </div>
 
 </html>

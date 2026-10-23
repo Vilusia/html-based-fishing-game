@@ -149,6 +149,8 @@ function placeProp(type) {
         videoId: src && src.provider === 'youtube' ? src.id : null,
         twitchId: src && src.provider === 'twitch' ? src.id : null,
         twitchKind: src && src.provider === 'twitch' ? src.twitchKind : null,
+        queue: src ? [{ provider: src.provider, id: src.id, twitchKind: src.twitchKind || null }] : [],
+        queueIndex: 0,
         startedAt: startedAt,
         placer: String(myDeviceID || ''),
         timestamp: Date.now()
@@ -1658,6 +1660,9 @@ function createYtPlayer(entry) {
                         try { entry.player.pauseVideo(); } catch (err) { }
                         const lid = entry.data && entry.data.id;
                         if (lid && ytSyncLoops[lid]) { clearInterval(ytSyncLoops[lid]); delete ytSyncLoops[lid]; }
+                        if (typeof isHost !== 'undefined' && isHost) {
+                            setTimeout(() => advanceScreenQueue(propId), 500);
+                        }
                     }
                 }
             }
@@ -2060,7 +2065,138 @@ window.applyYtChange = function (data) {
     mountScreenContent(e);
 };
 
-// --- HOOK NETWORKING ---
+// --- STREAM QUEUE (appended) ---
+let activeScreenId = null;
+
+window.toggleScreenQueue = function (propId) {
+    if (propId) activeScreenId = propId;
+    const ui = document.getElementById('screen-queue-overlay');
+    if (!ui) return;
+    const opening = ui.style.display !== 'flex';
+    ui.style.display = opening ? 'flex' : 'none';
+    if (opening) {
+        if (typeof document.exitPointerLock === 'function') document.exitPointerLock();
+        renderScreenQueue();
+    }
+};
+
+function getScreenEntry(propId) {
+    return (typeof ytPlayers !== 'undefined' && ytPlayers[propId]) || null;
+}
+
+function renderScreenQueue() {
+    const list = document.getElementById('screen-queue-list');
+    if (!list || !activeScreenId) return;
+    const entry = getScreenEntry(activeScreenId);
+    const pd = entry ? entry.data : null;
+    const queue = (pd && Array.isArray(pd.queue)) ? pd.queue : [];
+    const isOwner = pd && (String(pd.placer || '') === String(myDeviceID || '') || (typeof isHost !== 'undefined' && isHost));
+    list.innerHTML = '';
+    if (queue.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.color = 'var(--p-text-dim)';
+        empty.innerText = 'Queue is empty. Add a video above.';
+        list.appendChild(empty);
+        return;
+    }
+    queue.forEach((q, idx) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px; border:1px solid var(--p-line); background:var(--p-face-2);';
+        const label = document.createElement('span');
+        label.innerText = (q.provider === 'youtube' ? 'YT' : 'TW') + ': ' + q.id;
+        row.appendChild(label);
+        const btns = document.createElement('div');
+        btns.style.display = 'flex';
+        btns.style.gap = '4px';
+        const playBtn = document.createElement('button');
+        playBtn.className = 'btn-sm';
+        playBtn.innerText = 'Play';
+        playBtn.onclick = () => playScreenQueueIndex(activeScreenId, idx);
+        btns.appendChild(playBtn);
+        if (isOwner) {
+            const rmBtn = document.createElement('button');
+            rmBtn.className = 'btn-sm';
+            rmBtn.innerText = 'Remove';
+            rmBtn.onclick = () => removeFromScreenQueue(activeScreenId, idx);
+            btns.appendChild(rmBtn);
+        }
+        row.appendChild(btns);
+        list.appendChild(row);
+    });
+}
+
+window.addScreenQueueFromInput = function () {
+    const input = document.getElementById('screen-queue-input');
+    if (!input) return;
+    const src = (typeof parseScreenSource === 'function') ? parseScreenSource(String(input.value || '').trim()) : null;
+    if (!src) { showToast('Use a real YouTube/Twitch link.', 'error'); return; }
+    if (!activeScreenId) { showToast('No screen selected.', 'error'); return; }
+    addToScreenQueue(activeScreenId, src);
+    input.value = '';
+    renderScreenQueue();
+};
+
+function addToScreenQueue(propId, src) {
+    const entry = getScreenEntry(propId);
+    if (!entry || !entry.data) return;
+    if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
+    entry.data.queue.push({ provider: src.provider, id: src.id, twitchKind: src.twitchKind || null });
+    const msg = { type: 'screenQueueAdd', propId: propId, src: src, placer: String(myDeviceID || '') };
+    if (typeof isHost !== 'undefined' && isHost) {
+        broadcastToClients(msg);
+    } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
+        hostConn.send(msg);
+    }
+}
+
+function removeFromScreenQueue(propId, idx) {
+    const entry = getScreenEntry(propId);
+    if (!entry || !entry.data || !Array.isArray(entry.data.queue)) return;
+    if (idx < 0 || idx >= entry.data.queue.length) return;
+    entry.data.queue.splice(idx, 1);
+    const msg = { type: 'screenQueueRemove', propId: propId, idx: idx, placer: String(myDeviceID || '') };
+    if (typeof isHost !== 'undefined' && isHost) {
+        broadcastToClients(msg);
+    } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
+        hostConn.send(msg);
+    }
+    renderScreenQueue();
+}
+
+function playScreenQueueIndex(propId, idx) {
+    const entry = getScreenEntry(propId);
+    if (!entry || !entry.data || !Array.isArray(entry.data.queue)) return;
+    if (idx < 0 || idx >= entry.data.queue.length) return;
+    const q = entry.data.queue[idx];
+    const src = { provider: q.provider, id: q.id, twitchKind: q.twitchKind };
+    entry.data.queue.splice(idx, 1);
+    entry.provider = src.provider;
+    entry.data.provider = src.provider;
+    entry.data.videoId = src.provider === 'youtube' ? src.id : null;
+    entry.data.twitchId = src.provider === 'twitch' ? src.id : null;
+    entry.data.twitchKind = src.provider === 'twitch' ? src.twitchKind : null;
+    entry.data.startedAt = Date.now();
+    entry.syncAt = null;
+    entry.syncRecvAt = null;
+    entry.ended = false;
+    if (typeof mountScreenContent === 'function') mountScreenContent(entry);
+    const msg = { type: 'ytChange', propId: propId, provider: src.provider, videoId: entry.data.videoId, twitchId: entry.data.twitchId, twitchKind: entry.data.twitchKind, startedAt: entry.data.startedAt, placer: String(myDeviceID || '') };
+    if (typeof isHost !== 'undefined' && isHost) {
+        broadcastToClients(msg);
+    } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
+        hostConn.send(msg);
+    }
+    renderScreenQueue();
+}
+
+// Auto-advance queue on YouTube end: host only
+// (hooked into onStateChange ENDED already sets ended; add advancement)
+function advanceScreenQueue(propId) {
+    const entry = getScreenEntry(propId);
+    if (!entry || !entry.data || !Array.isArray(entry.data.queue) || entry.data.queue.length === 0) return;
+    if (typeof isHost !== 'undefined' && !isHost) return;
+    playScreenQueueIndex(propId, 0);
+}
 // Prop sync over P2P is handled in ui.js (handleDataFromClient / handleDataFromHost),
 // which processes propPlaced / propRemoved / allProps. Nothing to hook here.
 
