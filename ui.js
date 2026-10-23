@@ -10577,17 +10577,6 @@ function makeRod(rodId) {
 // two apart.
 function makeHeldFish(fishName, color, size) {
     const s = size || 1.0;
-    if (window.Character3D && Character3D.buildFish) {
-        const g = Character3D.buildFish(fishName, color);
-        g.name = 'heldFishSprite';
-        g.userData.fishName = fishName;
-        g.userData.is3D = true;
-        g.position.set(0.6, 1.5, 0.5);
-        g.scale.setScalar(0.95 * s);
-        // Head along +X, rolled slightly so the flank faces the follow camera.
-        g.rotation.set(0.1, -0.35, 0.18);
-        return g;
-    }
     const fTex = createFishTexture(fishName, color);
     const fMat = new THREE.SpriteMaterial({ map: fTex, transparent: true, alphaTest: 0.5 });
     const sp = new THREE.Sprite(fMat);
