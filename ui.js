@@ -16203,7 +16203,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             { id: 'darkpond', name: 'Dark Pond', icon: 'moon', color: '#6b5aa8' },
             { id: 'ocean', name: 'Ocean', icon: 'wave', color: '#24557f' },
             { id: 'lava', name: 'Lava', icon: 'warn', color: '#c8534b' },
-            { id: 'secret', name: 'Secret', icon: 'star', color: '#e0a03a' },
+            { id: 'secret', name: 'Cave', icon: 'star', color: '#e0a03a' },
             { id: 'special', name: 'Special', icon: 'star', color: '#f2c14e' }
         ];
 

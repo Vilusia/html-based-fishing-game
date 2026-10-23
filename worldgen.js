@@ -46,7 +46,7 @@
         { id: 2, key: "river", name: "River", color: 0x5ec8e8, fish: "river" },
         { id: 3, key: "lightpond", name: "Light Pond", color: 0x8fe07a, fish: "lightpond" },
         { id: 4, key: "darkpond", name: "Dark Pond", color: 0x8a4fd0, fish: "darkpond" },
-        { id: 5, key: "cave", name: "Cave / Secret", color: 0xe0a03a, fish: "secret" }
+        { id: 5, key: "cave", name: "Cave", color: 0xe0a03a, fish: "secret" }
     ];
     const ZONE_BY_KEY = {};
     const ZONE_BY_ID = {};
