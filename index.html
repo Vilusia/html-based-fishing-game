@@ -3771,6 +3771,22 @@
             <b>H</b> <span>Hide HUD</span>
         </div>
         <div id="notification-area"></div>
+    <div id="tab-menu-overlay" class="overlay-screen">
+        <button class="close-x-btn" onclick="toggleTabMenu()">×</button>
+        <div class="overlay-header">
+            <h2>Menu</h2>
+            <div class="overlay-subtitle">Quick access to all panels</div>
+        </div>
+        <div id="panel-tabbar" style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin:10px 0;">
+            <button class="btn-sm" onclick="switchPanel('journal')">Journal</button>
+            <button class="btn-sm" onclick="switchPanel('inventory')">Inventory</button>
+            <button class="btn-sm" onclick="switchPanel('progress')">Progress</button>
+            <button class="btn-sm" onclick="switchPanel('skills')">Skills</button>
+            <button class="btn-sm" onclick="switchPanel('cooking')">Cooking</button>
+            <button class="btn-sm" onclick="switchPanel('playerlist')">Players</button>
+        </div>
+        <button class="btn-lg" onclick="toggleTabMenu()" style="margin-top: 15px;">CLOSE (Tab)</button>
+    </div>
         <div id="npc-prompt">PRESS E TO INTERACT</div>
         <div id="chat-ui" style="display: none;">
             <div id="chat-messages"></div>
