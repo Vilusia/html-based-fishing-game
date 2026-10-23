@@ -2893,7 +2893,8 @@ function handleDataFromClient(clientId, data) {
             const entry = ytPlayers[data.propId];
             if (entry && entry.data) {
                 if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
-                entry.data.queue.push({ provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null });
+                const item = data.item || (data.src ? { provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null, title: null, addedBy: data.placer } : null);
+                if (item) entry.data.queue.push(item);
             }
             broadcastToClients(data);
 
@@ -3163,7 +3164,8 @@ function handleDataFromHost(data) {
         const entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
         if (entry && entry.data) {
             if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
-            entry.data.queue.push({ provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null });
+            const item = data.item || (data.src ? { provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null, title: null, addedBy: data.placer } : null);
+            if (item) entry.data.queue.push(item);
         }
         if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
     }
