@@ -10911,62 +10911,24 @@ function attachSailBoat(group) {
 // A chunky, readable rowboat scaled to sit around the player. Built from boxes
 // and a hull shell so it reads clearly from the game's camera distance.
 function createBoatTexture() {
-    const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+    const c = document.createElement('canvas'); c.width = 32; c.height = 64;
     const ctx = c.getContext('2d');
-    ctx.clearRect(0, 0, 128, 64);
+    ctx.clearRect(0, 0, 32, 64);
 
-    const cx = 64, cy = 32;
     ctx.fillStyle = '#8B5A2B';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 58, 26, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(4, 4, 24, 56);
     ctx.strokeStyle = '#3E2723';
     ctx.lineWidth = 3;
-    ctx.stroke();
+    ctx.strokeRect(4, 4, 24, 56);
     ctx.fillStyle = '#6D4C41';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 46, 18, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(8, 10, 16, 44);
     ctx.fillStyle = '#5C3A1E';
-    ctx.fillRect(cx - 18, cy - 12, 8, 24);
-    ctx.fillRect(cx + 10, cy - 12, 8, 24);
+    ctx.fillRect(10, 18, 4, 12);
+    ctx.fillRect(18, 18, 4, 12);
+    ctx.fillRect(10, 34, 4, 12);
+    ctx.fillRect(18, 34, 4, 12);
     ctx.fillStyle = '#7A5230';
-    ctx.fillRect(8, cy - 2, 112, 4);
-    ctx.fillRect(8, cy + 6, 112, 4);
-    ctx.fillStyle = '#5C3A1E';
-    ctx.fillRect(4, cy - 6, 12, 10);
-    ctx.fillRect(112, cy - 6, 12, 10);
-
-    const t = new THREE.CanvasTexture(c);
-    t.magFilter = THREE.NearestFilter;
-    t.minFilter = THREE.NearestFilter;
-    return t;
-}
-
-function createBoatTexture() {
-    const c = document.createElement('canvas'); c.width = 64; c.height = 64;
-    const ctx = c.getContext('2d');
-    ctx.clearRect(0, 0, 64, 64);
-
-    const cx = 32, cy = 32;
-    // Square hull
-    ctx.fillStyle = '#8B5A2B';
-    ctx.fillRect(8, 8, 48, 48);
-    // Outline
-    ctx.strokeStyle = '#3E2723';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(8, 8, 48, 48);
-    // Inner hull
-    ctx.fillStyle = '#6D4C41';
-    ctx.fillRect(14, 14, 36, 36);
-    // Seats
-    ctx.fillStyle = '#5C3A1E';
-    ctx.fillRect(22, 20, 8, 24);
-    ctx.fillRect(34, 20, 8, 24);
-    // Oars
-    ctx.fillStyle = '#7A5230';
-    ctx.fillRect(4, 30, 56, 4);
-    ctx.fillRect(4, 36, 56, 4);
+    ctx.fillRect(2, 30, 28, 4);
 
     const t = new THREE.CanvasTexture(c);
     t.magFilter = THREE.NearestFilter;
@@ -10977,7 +10939,7 @@ function createBoatTexture() {
 function makeSailBoatMesh() {
     const tex = createBoatTexture();
     const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });
-    const sp = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), mat);
+    const sp = new THREE.Mesh(new THREE.PlaneGeometry(2, 3), mat);
     sp.name = 'sailBoat';
     sp.rotation.x = -Math.PI / 2;
     sp.position.y = 0.1;
