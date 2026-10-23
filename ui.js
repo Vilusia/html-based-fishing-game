@@ -3052,6 +3052,9 @@ function sendUpdate() {
     // Sailing state: lets every peer show the rowboat and stop this player's
     // walking animation while the boat is out.
     myData.sailing = isSailing;
+    // Dive/prone state for remote animation sync.
+    myData.dive = isDiving;
+    myData.prone = isProne;
 
     myData.bobberType = saveState.currentBobber;
 
@@ -13168,15 +13171,27 @@ function animate() {
         p.mesh.rotation.y = THREE.MathUtils.lerp(p.mesh.rotation.y, p.targetRot, 6 * dt);
         const s = p.mesh.getObjectByName("playerSprite");
         const remoteSailing = p.lastData && p.lastData.sailing;
+        const remoteDive = p.lastData && p.lastData.dive;
+        const remoteProne = p.lastData && p.lastData.prone;
         if (s) {
             updateSpriteDirection(p.mesh, camera.position);
-            if (isMoving && !remoteSailing) {
+            if (remoteDive) {
+                s.rotation.x = THREE.MathUtils.lerp(s.rotation.x, Math.PI / 3, 10 * dt);
+                s.rotation.z = THREE.MathUtils.lerp(s.rotation.z, 0, 10 * dt);
+                s.position.y = THREE.MathUtils.lerp(s.position.y, 0.6, 10 * dt);
+            } else if (remoteProne) {
+                s.rotation.x = THREE.MathUtils.lerp(s.rotation.x, Math.PI / 2, 10 * dt);
+                s.rotation.z = THREE.MathUtils.lerp(s.rotation.z, 0, 10 * dt);
+                s.position.y = THREE.MathUtils.lerp(s.position.y, 0.6, 10 * dt);
+            } else if (isMoving && !remoteSailing) {
                 const time = Date.now() * 0.012;
                 s.position.y = 1.46875 + Math.abs(Math.sin(time)) * 0.3;
                 s.rotation.z = Math.sin(time) * 0.15;
+                s.rotation.x = THREE.MathUtils.lerp(s.rotation.x, 0, 10 * dt);
             } else {
                 s.position.y = THREE.MathUtils.lerp(s.position.y, 1.46875, 10 * dt);
                 s.rotation.z = THREE.MathUtils.lerp(s.rotation.z, 0, 10 * dt);
+                s.rotation.x = THREE.MathUtils.lerp(s.rotation.x, 0, 10 * dt);
             }
         }
         if (p.bobberMesh && p.lineMesh) {
