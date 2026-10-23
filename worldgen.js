@@ -1158,9 +1158,11 @@
         group.add(terrain);
         const water = buildWaterMesh(level);
         group.add(water);
+        const zones = buildZoneOverlay(level);
+        if (zones) group.add(zones);
 
         scene.add(group);
-        return { group: group, terrain: terrain, water: water, oceanFloor: floor };
+        return { group: group, terrain: terrain, water: water, zones: zones, oceanFloor: floor };
     }
 
     window.WorldGen = {
