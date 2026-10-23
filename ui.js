@@ -13494,6 +13494,7 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         initPatreonBanner();
         setupHotbar();
+        setTimeout(setupHotbarDrag, 100);
     });
 } else {
     // DOM is already ready, run immediately
@@ -15248,6 +15249,46 @@ function renderInventoryGrid() {
             } catch (err) { }
         });
         box.appendChild(slot);
+    }
+    // Render hotbar drop row inside the overlay
+    const hb = document.getElementById('inventory-hotbar');
+    if (hb) {
+        hb.innerHTML = '';
+        for (let i = 0; i < 10; i++) {
+            const slot = document.createElement('div');
+            slot.style.cssText = 'width:44px;height:44px;background:var(--p-sunken);border:2px solid var(--p-line);display:flex;align-items:center;justify-content:center;position:relative;';
+            slot.dataset.hb = i;
+            const entry = saveState.hotbar[i];
+            if (entry && entry.type === 'fish') {
+                try {
+                    const tex = createFishTexture(entry.name, entry.color);
+                    const cv = document.createElement('canvas');
+                    cv.width = 36; cv.height = 36;
+                    cv.getContext('2d').drawImage(tex.image, 0, 0, 36, 36);
+                    slot.appendChild(cv);
+                } catch (e) { slot.innerText = '🐟'; }
+            } else if (entry && entry.type === 'tool') {
+                const tool = TOOLS.find(t => t.id === entry.id);
+                slot.innerHTML = (window.PX && PX.has(entry.id)) ? PX.icon(entry.id, 24) : (tool ? tool.icon : '?');
+            }
+            slot.addEventListener('dragover', (e) => e.preventDefault());
+            slot.addEventListener('drop', (e) => {
+                e.preventDefault();
+                try {
+                    const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                    if (data.from === 'inv') {
+                        const inv = saveState.invSlots[data.index];
+                        if (inv && inv.type === 'fish') {
+                            saveState.hotbar[i] = { type: 'fish', name: inv.name, color: inv.color, size: inv.size || 1 };
+                            renderInventoryGrid();
+                            updateHotbarVisuals();
+                            saveGame();
+                        }
+                    }
+                } catch (err) { }
+            });
+            hb.appendChild(slot);
+        }
     }
 }
 

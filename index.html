@@ -2968,6 +2968,8 @@
             <div class="overlay-subtitle">50 slots. Drag fish onto the hotbar to keep them handy.</div>
         </div>
         <div id="inventory-grid" class="grid-container" style="grid-template-columns: repeat(10, 1fr); max-width: 640px;"></div>
+        <div style="margin-top:10px; text-align:center; color:var(--p-text-dim); font-size:12px;">Drop onto hotbar:</div>
+        <div id="inventory-hotbar" style="display:flex; gap:6px; justify-content:center; margin-top:6px;"></div>
         <button class="btn-lg" onclick="toggleInventory()" style="margin-top: 15px;">CLOSE INVENTORY</button>
     </div>
 
@@ -3691,8 +3693,7 @@
                     <button id="btn-journal" onclick="toggleJournal()">Journal</button>
                     <button id="btn-inventory" onclick="toggleInventory()">Inventory</button>
                     <button id="btn-progress" onclick="toggleProgress()">Progress</button>
-                    <button id="btn-inventory-mobile" onclick="toggleMobileInventory()" style="margin-left: 5px;">
-                        Inventory</button>
+
 
                     <button class="btn-lg btn-danger" id="btn-admin-login"
                         style="font-size: 10px; padding: 4px 8px; margin-left: 5px;">ADMIN</button>
@@ -3737,9 +3738,6 @@
             <b>I</b> <span>Props</span>
             <b>O</b> <span>Undo Prop</span>
             <b>H</b> <span>Hide HUD</span>
-        </div>
-        <div id="fish-log"><b>Inventory:</b><br>
-            <div id="log-content">Empty.</div>
         </div>
         <div id="notification-area"></div>
         <div id="npc-prompt">PRESS E TO INTERACT</div>
@@ -3883,7 +3881,7 @@
     <script src="networking.js?v=12.54"></script>
     <script src="audio.js?v=12.63"></script>
     <script src="progression.js?v=31"></script>
-    <script src="ui.js?v=12.172"></script>
+    <script src="ui.js?v=12.173"></script>
     <script src="props.js?v=12.103"></script>
     <script src="level-loader.js?v=27"></script>
     <script src="scratch.js?v=25"></script>
