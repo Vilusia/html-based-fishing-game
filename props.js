@@ -837,6 +837,17 @@ function spawnPropMesh(data) {
         // Wire up the video (no-op if CSS3DRenderer/YouTube API unavailable).
         attachYtVideo(data, g);
     }
+    // Ensure a queue record exists even when no video is mounted yet, so the
+    // queue panel can manage screens placed without an initial URL.
+    if (data.type === 'screen') {
+        if (!Array.isArray(data.queue)) data.queue = [];
+        if (!ytPlayers[data.id]) {
+            ytPlayers[data.id] = { data: data, provider: data.provider || null, mesh: g, ended: false, queue: data.queue };
+        } else {
+            ytPlayers[data.id].data = data;
+            if (!Array.isArray(ytPlayers[data.id].data.queue)) ytPlayers[data.id].data.queue = data.queue;
+        }
+    }
 
     mesh = g;
     // Get terrain height for proper Y positioning
@@ -1177,6 +1188,7 @@ function attachYtVideo(data, group) {
             videoId: provider === 'youtube' ? src.id : null,
             twitchId: provider === 'twitch' ? src.id : null,
             twitchKind: provider === 'twitch' ? src.twitchKind : null,
+            queue: Array.isArray(data.queue) ? data.queue.slice() : [],
             startedAt: data.startedAt || Date.now(),
             placer: data.placer || ''
         },
