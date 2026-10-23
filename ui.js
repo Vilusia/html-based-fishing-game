@@ -15168,8 +15168,11 @@ function selectFish() {
         basePool = [...lakeFish, ...lavaFish];
     }
     else if (fishingZone === 'secret') {
-        // Secret pool: all non-conditional fish except trash
-        basePool = FISH_TYPES.filter(f => f.condition !== 'void' && f.condition !== 'rain' && f.name !== "Old Boot");
+        if (Math.random() < 0.40) {
+            basePool = FISH_TYPES.filter(f => f.condition === 'secret');
+        } else {
+            basePool = FISH_TYPES.filter(f => f.condition !== 'void' && f.condition !== 'rain' && f.condition !== 'secret' && f.name !== "Old Boot");
+        }
     }
     else if (isRaining && Math.random() < 0.40) {
         // Rain: chance for rain fish (mixed with lake fish)
@@ -16200,6 +16203,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             { id: 'darkpond', name: 'Dark Pond', icon: 'moon', color: '#6b5aa8' },
             { id: 'ocean', name: 'Ocean', icon: 'wave', color: '#24557f' },
             { id: 'lava', name: 'Lava', icon: 'warn', color: '#c8534b' },
+            { id: 'secret', name: 'Secret', icon: 'star', color: '#e0a03a' },
             { id: 'special', name: 'Special', icon: 'star', color: '#f2c14e' }
         ];
 
@@ -16234,6 +16238,10 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
                 // Special tab: rain/void conditional fish
                 if (zoneFilter === 'special') {
                     return fish.condition === 'rain' || fish.condition === 'void';
+                }
+                // Secret tab: cave fish (condition secret) only
+                if (zoneFilter === 'secret') {
+                    return fish.condition === 'secret' || fish.zone === 'secret';
                 }
                 // Lava tab: lava fish only
                 if (zoneFilter === 'lava') {

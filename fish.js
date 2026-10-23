@@ -124,7 +124,15 @@ const FISH_TYPES = [
     { name: "King Mackerel", rarity: "Uncommon", chance: 6, color: "#7A8A9A", drain: 34, price: 62, zone: "ocean", shape: "mackerel" },
     { name: "Snook", rarity: "Rare", chance: 3.5, color: "#9A9A8A", drain: 42, price: 145, zone: "ocean", shape: "bass" },
     { name: "Barramundi", rarity: "Rare", chance: 3, color: "#8A9A8A", drain: 44, price: 160, zone: "ocean", shape: "bass" },
-    { name: "Roosterfish", rarity: "Epic", chance: 1.0, color: "#6A8A7A", drain: 68, price: 520, zone: "ocean", shape: "mahi" }
+    { name: "Roosterfish", rarity: "Epic", chance: 1.0, color: "#6A8A7A", drain: 68, price: 520, zone: "ocean", shape: "mahi" },
+
+    // === CAVE / SECRET (real cave fish) ====================================
+    { name: "Mexican Tetra", rarity: "Common", chance: 22, color: "#B0A090", drain: 14, price: 12, condition: 'secret', zone: "secret", shape: "tetra" },
+    { name: "Ozark Cavefish", rarity: "Rare", chance: 6, color: "#D0C0A0", drain: 34, price: 90, condition: 'secret', zone: "secret", shape: "eel" },
+    { name: "Southern Cavefish", rarity: "Rare", chance: 5, color: "#C0B090", drain: 36, price: 100, condition: 'secret', zone: "secret", shape: "eel" },
+    { name: "Northern Cavefish", rarity: "Epic", chance: 2, color: "#A09070", drain: 52, price: 220, condition: 'secret', zone: "secret", shape: "eel" },
+    { name: "Toothless Blindcat", rarity: "Epic", chance: 1.5, color: "#D0D0C0", drain: 58, price: 260, condition: 'secret', zone: "secret", shape: "catfish" },
+    { name: "Widemouth Blindcat", rarity: "Legendary", chance: 0.6, color: "#E0E0D0", drain: 76, price: 700, condition: 'secret', zone: "secret", shape: "catfish" }
 ];
 
 // === RAIN POOL (real fish that bite in stormy weather) ====================
