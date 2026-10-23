@@ -53,12 +53,12 @@ const ACHIEVEMENTS = [
         check: c => pct(c.uniqueSpecies, 10)
     },
     {
-        id: 'species_50', name: 'Ichthyologist', desc: 'Discover 50 fish species',
-        check: c => pct(c.uniqueSpecies, 50)
+        id: 'species_25', name: 'Ichthyologist', desc: 'Discover 25 fish species',
+        check: c => pct(c.uniqueSpecies, 25)
     },
     {
-        id: 'species_200', name: 'Encyclopedic', desc: 'Discover 200 fish species',
-        check: c => pct(c.uniqueSpecies, 200)
+        id: 'species_40', name: 'Encyclopedic', desc: 'Discover 40 fish species',
+        check: c => pct(c.uniqueSpecies, 40)
     },
     {
         id: 'tier_shining', name: 'Shining Example', desc: 'Catch a shining fish',
@@ -443,7 +443,9 @@ function computeProgress() {
         // `zones` doubles as the quest contract: exact keys, even when unset.
         zones: Object.assign({ ocean: false, lake: false, river: false, lightpond: false, darkpond: false, secret: false, void: false, lava: false }, zones),
         totalCaught: inv.length,
-        uniqueSpecies: Object.keys(journal).length,
+        uniqueSpecies: (typeof countDiscoveredSpecies === 'function')
+            ? countDiscoveredSpecies(journal)
+            : Object.keys(journal).length,
         legendaryTotal,
         rareTotal,
         tiers,
@@ -484,6 +486,13 @@ function computeProgress() {
 function ensureProgression() {
     if (!saveState.achievements || typeof saveState.achievements !== 'object') {
         saveState.achievements = {};
+    }
+    // Migrate renamed species achievements so old saves keep their progress.
+    if (saveState.achievements['species_50'] && saveState.achievements['species_50'].unlocked && !saveState.achievements['species_25']) {
+        saveState.achievements['species_25'] = saveState.achievements['species_50'];
+    }
+    if (saveState.achievements['species_200'] && saveState.achievements['species_200'].unlocked && !saveState.achievements['species_40']) {
+        saveState.achievements['species_40'] = saveState.achievements['species_200'];
     }
     if (!saveState.bounties || typeof saveState.bounties !== 'object') {
         saveState.bounties = { day: '', items: [], lastClaimDay: '' };

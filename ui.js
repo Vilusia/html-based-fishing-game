@@ -9477,11 +9477,16 @@ function createFishTexture(fishName, colorHex) {
     const ctx = c.getContext('2d');
 
     let fishData = null;
-    if (typeof FISH_TYPES !== 'undefined') {
+    if (typeof getFishByName === 'function') {
+        fishData = getFishByName(fishName);
+    }
+    if (!fishData && typeof FISH_TYPES !== 'undefined') {
         fishData = FISH_TYPES.find(f => f.name === fishName);
     }
     const rarity = fishData ? fishData.rarity : "Common";
     const name = fishName.toLowerCase();
+    const shape = fishData && fishData.shape ? fishData.shape : '';
+    const isShape = (...list) => shape ? list.includes(shape) : false;
 
     // --- 1. Palette ---
     const OUTLINE = '#111219';
@@ -9500,7 +9505,7 @@ function createFishTexture(fishName, colorHex) {
     if (name.includes('golden') || name.includes('gold')) {
         baseCol = '#e8b923';
         fillStyle = linGrad([[0, '#fff3b0'], [0.45, '#f5c518'], [1, '#9c6b0a']]);
-    } else if (name.includes('rainbow')) {
+    } else if (name.includes('rainbow') && !isShape('trout')) {
         fillStyle = linGrad([[0, '#ff5c5c'], [0.18, '#ffb84c'], [0.38, '#fff06b'], [0.58, '#66e08a'], [0.8, '#59a7ff'], [1, '#a868ff']]);
     } else if (name.includes('void') || name.includes('cosmic')) {
         baseCol = '#241035';
@@ -9539,7 +9544,7 @@ function createFishTexture(fishName, colorHex) {
     const p = new Path2D();
 
     // TYPE: BOOT ("Old Boot")
-    if (name.includes('boot')) {
+    if (isShape('boot') || name.includes('boot')) {
         p.moveTo(22, 10); p.lineTo(37, 10); p.lineTo(38, 32);
         p.lineTo(52, 35); p.quadraticCurveTo(59, 38, 57, 47);
         p.lineTo(55, 56); p.lineTo(21, 56); p.lineTo(20, 42);
@@ -9562,7 +9567,7 @@ function createFishTexture(fishName, colorHex) {
         };
     }
     // TYPE: SEAHORSE
-    else if (name.includes('seahorse')) {
+    else if (isShape('seahorse') || name.includes('seahorse')) {
         p.moveTo(44, 12);
         p.quadraticCurveTo(51, 13, 49, 19);
         p.lineTo(54, 21);
@@ -9668,7 +9673,7 @@ function createFishTexture(fishName, colorHex) {
         }
     }
     // TYPE: EEL / SERPENT / WORM
-    else if (name.includes('eel') || name.includes('serpent') || name.includes('worm') || name.includes('leviathan') || name.includes('hydra')) {
+    else if (isShape('eel', 'loach', 'dragonfish', 'viperfish', 'gulper') || name.includes('eel') || name.includes('serpent') || name.includes('worm') || name.includes('leviathan') || name.includes('hydra') || name.includes('loach')) {
         p.moveTo(58, 22);
         p.bezierCurveTo(40, 12, 26, 40, 8, 30);
         p.lineTo(5, 38);
@@ -9677,7 +9682,7 @@ function createFishTexture(fishName, colorHex) {
         eye = { x: 53, y: 26, r: 2.4 };
     }
     // TYPE: RAY / MANTA / SKATE
-    else if (name.includes('ray') || name.includes('skate') || name.includes('manta')) {
+    else if (isShape('ray') || name.includes('ray') || name.includes('skate') || name.includes('manta')) {
         p.moveTo(32, 6);
         p.quadraticCurveTo(52, 16, 58, 32);
         p.quadraticCurveTo(46, 28, 32, 30);
@@ -9693,7 +9698,7 @@ function createFishTexture(fishName, colorHex) {
         };
     }
     // TYPE: SHARK / WHALE / ORCA
-    else if (name.includes('shark') || name.includes('whale') || name.includes('orca')) {
+    else if (isShape('shark') || name.includes('shark') || name.includes('whale') || name.includes('orca')) {
         const isWhale = name.includes('whale') || name.includes('orca');
         p.moveTo(58, 32);
         p.quadraticCurveTo(48, isWhale ? 21 : 22, 34, isWhale ? 21 : 22);
@@ -9713,7 +9718,7 @@ function createFishTexture(fishName, colorHex) {
         eye = { x: 49, y: 29, r: 2.4 };
     }
     // TYPE: SWORD / MARLIN / SAILFISH / PIKE
-    else if (name.includes('sword') || name.includes('marlin') || name.includes('pike') || name.includes('sail')) {
+    else if (isShape('pike', 'marlin', 'swordfish') || name.includes('sword') || name.includes('marlin') || name.includes('pike') || name.includes('sail')) {
         const isSail = name.includes('sail');
         p.moveTo(58, 30.5);
         p.lineTo(50, 28);
@@ -9739,7 +9744,7 @@ function createFishTexture(fishName, colorHex) {
         eye = { x: 47, y: 29, r: 2.4 };
     }
     // TYPE: PUFFERFISH
-    else if (name.includes('puffer')) {
+    else if (isShape('puffer') || name.includes('puffer')) {
         p.arc(31, 32, 14, 0, Math.PI * 2);
         behind = (g) => {
             g.lineCap = 'round';
@@ -9762,7 +9767,7 @@ function createFishTexture(fishName, colorHex) {
         };
     }
     // TYPE: ANGLERFISH
-    else if (name.includes('angler')) {
+    else if (isShape('angler') || name.includes('angler')) {
         p.moveTo(58, 32);
         p.quadraticCurveTo(50, 23, 34, 22);
         p.quadraticCurveTo(18, 22, 13, 32);
@@ -9783,8 +9788,364 @@ function createFishTexture(fishName, colorHex) {
         };
         eye = { x: 44, y: 30, r: 2.6 };
     }
+    // TYPE: PANFISH (bluegill etc.)
+    else if (isShape('panfish')) {
+        p.ellipse(31, 33, 15, 17, 0, 0, Math.PI * 2);
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            // spiny dorsal
+            for (let i = 0; i < 6; i++) {
+                const x = 23 + i * 4;
+                g.beginPath(); g.moveTo(x, 19); g.lineTo(x + 2, 8 + (i % 2) * 2); g.lineTo(x + 4, 19); g.closePath(); g.fill(); g.stroke();
+            }
+            // fan tail
+            g.beginPath(); g.moveTo(18, 29); g.quadraticCurveTo(2, 16, 5, 33); g.quadraticCurveTo(2, 50, 18, 38); g.closePath(); g.fill(); g.stroke();
+            // pectoral
+            g.beginPath(); g.moveTo(38, 34); g.quadraticCurveTo(33, 46, 44, 41); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 40, y: 27, r: 3 };
+    }
+    // TYPE: CATFISH / BULLHEAD
+    else if (isShape('catfish')) {
+        p.moveTo(58, 30);
+        p.quadraticCurveTo(50, 21, 34, 21);
+        p.quadraticCurveTo(24, 21, 18, 27);
+        p.lineTo(11, 24);
+        p.quadraticCurveTo(5, 30, 11, 38);
+        p.lineTo(18, 36);
+        p.quadraticCurveTo(24, 42, 36, 43);
+        p.quadraticCurveTo(50, 44, 58, 34);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            // tail
+            g.beginPath(); g.moveTo(11, 27); g.lineTo(2, 18); g.lineTo(5, 32); g.lineTo(2, 45); g.lineTo(12, 36); g.closePath(); g.fill(); g.stroke();
+            // long anal fin
+            g.beginPath(); g.moveTo(23, 43); g.quadraticCurveTo(33, 50, 49, 43); g.lineTo(40, 48); g.closePath(); g.fill(); g.stroke();
+        };
+        front = (g) => {
+            g.strokeStyle = OUTLINE; g.lineWidth = 1.6; g.lineCap = 'round';
+            const whiskers = [
+                [[56, 31], [63, 27], [61, 37]],
+                [[56, 33], [63, 39], [58, 44]],
+                [[53, 30], [59, 24], [56, 20]],
+                [[53, 35], [58, 43], [52, 47]]
+            ];
+            whiskers.forEach(w => {
+                g.beginPath(); g.moveTo(w[0][0], w[0][1]);
+                g.quadraticCurveTo(w[1][0], w[1][1], w[2][0], w[2][1]);
+                g.stroke();
+            });
+        };
+        eye = { x: 49, y: 26, r: 2.6 };
+    }
+    // TYPE: STURGEON
+    else if (isShape('sturgeon')) {
+        p.moveTo(60, 29);
+        p.lineTo(52, 27);
+        p.quadraticCurveTo(38, 20, 22, 24);
+        p.quadraticCurveTo(12, 27, 8, 33);
+        p.quadraticCurveTo(12, 39, 22, 42);
+        p.quadraticCurveTo(38, 46, 52, 35);
+        p.lineTo(60, 33);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            // heterocercal tail
+            g.beginPath(); g.moveTo(10, 31); g.lineTo(2, 14); g.lineTo(8, 32); g.lineTo(2, 48); g.lineTo(11, 36); g.closePath(); g.fill(); g.stroke();
+            // scutes
+            g.fillStyle = shadeColor(baseCol, 0.18);
+            for (let i = 0; i < 5; i++) {
+                const x = 20 + i * 7;
+                g.beginPath(); g.moveTo(x, 24); g.lineTo(x + 3, 19); g.lineTo(x + 6, 24); g.closePath(); g.fill(); g.stroke();
+            }
+        };
+        front = (g) => {
+            g.strokeStyle = OUTLINE; g.lineWidth = 1.4; g.lineCap = 'round';
+            g.beginPath(); g.moveTo(58, 31); g.quadraticCurveTo(62, 35, 58, 38); g.stroke();
+            g.beginPath(); g.moveTo(55, 34); g.quadraticCurveTo(58, 42, 51, 43); g.stroke();
+        };
+        eye = { x: 51, y: 27, r: 2.2 };
+    }
+    // TYPE: BETTA
+    else if (isShape('betta')) {
+        p.ellipse(32, 32, 11, 13, 0, 0, Math.PI * 2);
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            // huge flowing tail
+            g.beginPath(); g.moveTo(23, 24); g.quadraticCurveTo(4, 8, 2, 27); g.quadraticCurveTo(1, 34, 6, 38); g.quadraticCurveTo(1, 47, 23, 43); g.closePath(); g.fill(); g.stroke();
+            // dorsal
+            g.beginPath(); g.moveTo(27, 20); g.quadraticCurveTo(33, 3, 43, 20); g.closePath(); g.fill(); g.stroke();
+            // anal
+            g.beginPath(); g.moveTo(27, 44); g.quadraticCurveTo(34, 58, 44, 43); g.closePath(); g.fill(); g.stroke();
+        };
+        front = (g) => {
+            g.strokeStyle = finCol; g.lineWidth = 1.6; g.lineCap = 'round';
+            g.beginPath(); g.moveTo(34, 40); g.quadraticCurveTo(32, 51, 38, 57); g.stroke();
+            g.beginPath(); g.moveTo(37, 39); g.quadraticCurveTo(38, 50, 43, 55); g.stroke();
+        };
+        eye = { x: 39, y: 28, r: 2.6 };
+    }
+    // TYPE: ANGELFISH
+    else if (isShape('angelfish')) {
+        p.moveTo(52, 32);
+        p.quadraticCurveTo(46, 24, 38, 23);
+        p.lineTo(31, 10);
+        p.quadraticCurveTo(24, 20, 22, 30);
+        p.lineTo(16, 41);
+        p.quadraticCurveTo(24, 40, 30, 42);
+        p.quadraticCurveTo(38, 44, 44, 39);
+        p.quadraticCurveTo(50, 37, 52, 32);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(33, 14); g.lineTo(29, 3); g.lineTo(37, 12); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(27, 41); g.lineTo(22, 53); g.lineTo(34, 43); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(19, 28); g.quadraticCurveTo(3, 18, 7, 32); g.quadraticCurveTo(3, 47, 19, 37); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 43, y: 28, r: 2.8 };
+    }
+    // TYPE: PLECO (armoured catfish)
+    else if (isShape('pleco')) {
+        p.moveTo(58, 34);
+        p.quadraticCurveTo(48, 24, 30, 26);
+        p.quadraticCurveTo(18, 27, 12, 32);
+        p.quadraticCurveTo(18, 40, 30, 41);
+        p.quadraticCurveTo(48, 42, 58, 34);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(13, 28); g.lineTo(2, 20); g.lineTo(5, 32); g.lineTo(2, 44); g.lineTo(14, 36); g.closePath(); g.fill(); g.stroke();
+            // tall dorsal
+            g.beginPath(); g.moveTo(30, 26); g.lineTo(27, 10); g.lineTo(42, 25); g.closePath(); g.fill(); g.stroke();
+        };
+        front = (g) => {
+            g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+            for (let x = 22; x < 50; x += 6) {
+                g.beginPath(); g.moveTo(x, 27); g.lineTo(x + 2, 40); g.stroke();
+            }
+            g.fillStyle = shadeColor(baseCol, -0.28);
+            g.beginPath(); g.arc(54, 35, 3.2, 0, Math.PI * 2); g.fill();
+            g.strokeStyle = OUTLINE; g.lineWidth = 1; g.stroke();
+        };
+        eye = { x: 49, y: 29, r: 2.1 };
+    }
+    // TYPE: BOWFIN
+    else if (isShape('bowfin')) {
+        p.moveTo(57, 31);
+        p.quadraticCurveTo(48, 23, 34, 23);
+        p.quadraticCurveTo(22, 23, 15, 28);
+        p.lineTo(8, 24);
+        p.quadraticCurveTo(4, 32, 8, 39);
+        p.lineTo(15, 36);
+        p.quadraticCurveTo(22, 41, 34, 41);
+        p.quadraticCurveTo(48, 41, 57, 34);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            // long dorsal ribbon
+            g.beginPath(); g.moveTo(16, 25); g.quadraticCurveTo(32, 12, 48, 23); g.lineTo(45, 20); g.quadraticCurveTo(31, 14, 18, 23); g.closePath(); g.fill(); g.stroke();
+            // rounded tail
+            g.beginPath(); g.moveTo(10, 25); g.quadraticCurveTo(1, 19, 3, 33); g.quadraticCurveTo(1, 46, 11, 38); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 48, y: 27, r: 2.6 };
+    }
+    // TYPE: SNAKEHEAD
+    else if (isShape('snakehead')) {
+        p.moveTo(58, 31);
+        p.quadraticCurveTo(51, 25, 42, 25);
+        p.quadraticCurveTo(28, 25, 18, 29);
+        p.lineTo(9, 26);
+        p.quadraticCurveTo(5, 32, 9, 38);
+        p.lineTo(18, 35);
+        p.quadraticCurveTo(28, 40, 42, 39);
+        p.quadraticCurveTo(51, 39, 58, 34);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(17, 27); g.quadraticCurveTo(33, 19, 49, 27); g.lineTo(46, 24); g.quadraticCurveTo(31, 21, 19, 27); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(18, 36); g.quadraticCurveTo(33, 44, 47, 36); g.lineTo(43, 41); g.quadraticCurveTo(31, 45, 20, 39); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(10, 27); g.quadraticCurveTo(1, 22, 4, 33); g.quadraticCurveTo(1, 44, 11, 37); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 50, y: 27, r: 2.4 };
+    }
+    // TYPE: AROWANA
+    else if (isShape('arowana')) {
+        p.moveTo(59, 30);
+        p.quadraticCurveTo(50, 23, 36, 23);
+        p.quadraticCurveTo(24, 23, 16, 28);
+        p.lineTo(7, 22);
+        p.quadraticCurveTo(4, 32, 7, 42);
+        p.lineTo(16, 36);
+        p.quadraticCurveTo(24, 41, 36, 41);
+        p.quadraticCurveTo(50, 41, 59, 34);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(17, 27); g.quadraticCurveTo(31, 22, 43, 26); g.lineTo(40, 23); g.quadraticCurveTo(30, 22, 19, 26); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(16, 36); g.quadraticCurveTo(30, 42, 41, 37); g.lineTo(37, 41); g.quadraticCurveTo(29, 44, 18, 39); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(9, 26); g.lineTo(2, 17); g.lineTo(5, 32); g.lineTo(2, 47); g.lineTo(10, 38); g.closePath(); g.fill(); g.stroke();
+        };
+        front = (g) => {
+            g.strokeStyle = OUTLINE; g.lineWidth = 1.4; g.lineCap = 'round';
+            g.beginPath(); g.moveTo(57, 31); g.quadraticCurveTo(63, 28, 61, 24); g.stroke();
+            g.beginPath(); g.moveTo(57, 33); g.quadraticCurveTo(63, 37, 60, 41); g.stroke();
+        };
+        eye = { x: 50, y: 27, r: 2.5 };
+    }
+    // TYPE: TUNA / TREVALLY
+    else if (isShape('tuna', 'trevally')) {
+        p.moveTo(58, 32);
+        p.quadraticCurveTo(48, 22, 36, 22);
+        p.quadraticCurveTo(24, 22, 16, 28);
+        p.lineTo(12, 26);
+        p.lineTo(8, 15);
+        p.lineTo(6, 32);
+        p.lineTo(8, 49);
+        p.lineTo(12, 38);
+        p.lineTo(16, 36);
+        p.quadraticCurveTo(24, 42, 36, 42);
+        p.quadraticCurveTo(48, 42, 58, 32);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(25, 23); g.lineTo(29, 8); g.lineTo(39, 23); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(28, 39); g.lineTo(32, 51); g.lineTo(40, 39); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 49, y: 28, r: 2.8 };
+    }
+    // TYPE: MAHI-MAHI
+    else if (isShape('mahi')) {
+        p.moveTo(58, 31);
+        p.lineTo(53, 22);
+        p.quadraticCurveTo(42, 20, 30, 22);
+        p.quadraticCurveTo(20, 24, 14, 30);
+        p.lineTo(6, 20);
+        p.lineTo(10, 32);
+        p.lineTo(6, 46);
+        p.lineTo(14, 36);
+        p.quadraticCurveTo(20, 41, 30, 42);
+        p.quadraticCurveTo(42, 43, 53, 37);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            // long dorsal from forehead to tail
+            g.beginPath(); g.moveTo(51, 23); g.quadraticCurveTo(34, 8, 17, 28); g.lineTo(24, 23); g.quadraticCurveTo(37, 17, 48, 26); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(14, 31); g.lineTo(2, 20); g.lineTo(6, 32); g.lineTo(2, 45); g.lineTo(15, 37); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 49, y: 27, r: 2.7 };
+    }
+    // TYPE: LIONFISH
+    else if (isShape('lionfish')) {
+        p.ellipse(32, 33, 13, 15, 0, 0, Math.PI * 2);
+        behind = (g) => {
+            g.lineCap = 'round';
+            for (let pass = 0; pass < 2; pass++) {
+                g.strokeStyle = pass === 0 ? OUTLINE : finCol;
+                g.lineWidth = pass === 0 ? 3.2 : 1.5;
+                for (let i = 0; i < 14; i++) {
+                    const a = (i / 14) * Math.PI * 2;
+                    const x0 = 32 + Math.cos(a) * 12;
+                    const y0 = 33 + Math.sin(a) * 13;
+                    const x1 = 32 + Math.cos(a) * (22 + (i % 2) * 4);
+                    const y1 = 33 + Math.sin(a) * (23 + (i % 2) * 4);
+                    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+                }
+            }
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(19, 29); g.quadraticCurveTo(3, 20, 7, 33); g.quadraticCurveTo(3, 46, 20, 37); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 40, y: 28, r: 2.7 };
+    }
+    // TYPE: FLATFISH (halibut / flounder)
+    else if (isShape('flatfish')) {
+        p.moveTo(20, 20);
+        p.lineTo(43, 26);
+        p.lineTo(52, 32);
+        p.lineTo(43, 38);
+        p.lineTo(20, 44);
+        p.lineTo(7, 32);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(10, 28); g.lineTo(2, 22); g.lineTo(4, 32); g.lineTo(2, 42); g.lineTo(10, 36); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(21, 20); g.lineTo(27, 10); g.lineTo(35, 22); g.closePath(); g.fill(); g.stroke();
+        };
+        front = (g) => {
+            g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+            g.beginPath(); g.moveTo(15, 31); g.quadraticCurveTo(30, 27, 47, 31); g.stroke();
+            // both eyes on the upper side
+            [[40, 27], [46, 30]].forEach(([ex, ey]) => {
+                g.fillStyle = '#ffffff'; g.beginPath(); g.arc(ex, ey, 2.6, 0, Math.PI * 2); g.fill();
+                g.strokeStyle = OUTLINE; g.lineWidth = 1; g.stroke();
+                g.fillStyle = '#0d0f16'; g.beginPath(); g.arc(ex + 0.7, ey, 1.2, 0, Math.PI * 2); g.fill();
+            });
+        };
+        eye = null;
+    }
+    // TYPE: OARFISH
+    else if (isShape('oarfish')) {
+        p.moveTo(58, 29);
+        p.quadraticCurveTo(42, 25, 24, 28);
+        p.quadraticCurveTo(12, 30, 5, 33);
+        p.quadraticCurveTo(14, 35, 24, 36);
+        p.quadraticCurveTo(42, 38, 58, 33);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            // long dorsal ribbon
+            g.beginPath(); g.moveTo(52, 27); g.quadraticCurveTo(34, 17, 8, 29); g.lineTo(12, 31); g.quadraticCurveTo(36, 23, 52, 30); g.closePath(); g.fill(); g.stroke();
+            // head crest
+            g.beginPath(); g.moveTo(49, 26); g.lineTo(55, 14); g.lineTo(58, 27); g.closePath(); g.fill(); g.stroke();
+        };
+        eye = { x: 53, y: 29, r: 2.2 };
+    }
+    // TYPE: COELACANTH
+    else if (isShape('coelacanth')) {
+        p.moveTo(56, 31);
+        p.quadraticCurveTo(48, 21, 34, 21);
+        p.quadraticCurveTo(20, 21, 14, 28);
+        p.lineTo(6, 22);
+        p.lineTo(9, 32);
+        p.lineTo(6, 42);
+        p.lineTo(14, 36);
+        p.quadraticCurveTo(20, 43, 34, 43);
+        p.quadraticCurveTo(48, 43, 56, 33);
+        p.closePath();
+        behind = (g) => {
+            g.lineJoin = 'round';
+            g.fillStyle = finCol; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+            // lobed pectoral / pelvic fins
+            [[40, 36], [27, 38], [20, 34]].forEach(([fx, fy]) => {
+                g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx - 3, fy + 8); g.lineTo(fx + 5, fy + 5); g.closePath(); g.fill(); g.stroke();
+            });
+            // three-lobed tail
+            g.beginPath(); g.moveTo(12, 28); g.lineTo(2, 20); g.lineTo(7, 32); g.lineTo(2, 44); g.lineTo(12, 36); g.closePath(); g.fill(); g.stroke();
+            g.beginPath(); g.moveTo(12, 32); g.lineTo(3, 32); g.lineTo(8, 35); g.closePath(); g.fill(); g.stroke();
+        };
+        front = (g) => {
+            g.fillStyle = 'rgba(255,255,255,0.65)';
+            [[24, 28], [33, 25], [41, 30], [30, 34], [45, 34]].forEach(([sx, sy]) => {
+                g.beginPath(); g.arc(sx, sy, 1.5, 0, Math.PI * 2); g.fill();
+            });
+        };
+        eye = { x: 49, y: 27, r: 2.6 };
+    }
     // TYPE: ROUND (koi, goldfish, sunfish, discus, betta, flounder...)
-    else if (name.includes('sunfish') || name.includes('discus') || name.includes('koi') || name.includes('goldfish') || name.includes('betta') || name.includes('pleco') || name.includes('flounder') || name.includes('bluegill')) {
+    else if (isShape('goldfish', 'discus', 'sunfish', 'clownfish', 'tang') || name.includes('sunfish') || name.includes('discus') || name.includes('koi') || name.includes('goldfish') || name.includes('betta') || name.includes('pleco') || name.includes('flounder') || name.includes('bluegill')) {
         p.ellipse(30, 32, 16, 18, 0, 0, Math.PI * 2);
         behind = (g) => {
             g.lineJoin = 'round';
@@ -9841,10 +10202,26 @@ function createFishTexture(fishName, colorHex) {
         }
     }
 
-    // Name-driven patterns
-    if (name.includes('clown')) {
+    // Shape / species patterns
+    if (name.includes('clown') || isShape('clownfish')) {
         ctx.fillStyle = 'rgba(255,255,255,0.92)';
         [20, 32, 44].forEach(bx => ctx.fillRect(bx, 0, 4, 64));
+    } else if (isShape('perch', 'mackerel', 'arowana', 'discus', 'lionfish', 'panfish', 'snakehead')) {
+        ctx.fillStyle = isShape('lionfish') ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.18)';
+        for (let x = 12; x < 58; x += 8) ctx.fillRect(x, 0, 4, 64);
+    } else if (isShape('trout', 'salmon', 'cod', 'catfish', 'flatfish')) {
+        ctx.fillStyle = 'rgba(0,0,0,0.24)';
+        for (let i = 0; i < 16; i++) {
+            ctx.beginPath(); ctx.arc(8 + (i * 37) % 48, 10 + (i * 23) % 42, 2.2, 0, Math.PI * 2); ctx.fill();
+        }
+    } else if (isShape('tetra')) {
+        ctx.fillStyle = 'rgba(220,60,40,0.55)';
+        ctx.fillRect(0, 37, 64, 18);
+    } else if (isShape('coelacanth')) {
+        ctx.fillStyle = 'rgba(255,255,255,0.65)';
+        [[24, 28], [33, 25], [41, 30], [30, 34], [45, 34]].forEach(([sx, sy]) => {
+            ctx.beginPath(); ctx.arc(sx, sy, 1.6, 0, Math.PI * 2); ctx.fill();
+        });
     } else if (name.includes('striped')) {
         ctx.fillStyle = 'rgba(0,0,0,0.18)';
         for (let x = 12; x < 58; x += 8) ctx.fillRect(x, 0, 4, 64);
@@ -14288,42 +14665,59 @@ function selectFish() {
 
     // 1. Filter Pool based on Zone
     let basePool = [];
+    let mixedZone = false;
 
     if (fishingZone === 'void') {
-        // Void logic: mostly void fish
-        if (Math.random() < 0.40) {
-            basePool = FISH_TYPES.filter(f => f.condition === 'void');
+        // Void: 25% void fish, 75% lake fish
+        if (Math.random() < 0.25) {
+            basePool = VOID_FISH.map(f => ({ ...f, _zoneFish: true }));
         } else {
-            basePool = FISH_TYPES.filter(f => !f.condition);
+            basePool = getFishForZone('lake');
         }
     }
     else if (fishingZone === 'lava') {
-        // Lava world: combine Regular Fish + Lava Fish
-        basePool = [...FISH_TYPES.filter(f => !f.condition), ...LAVA_FISH];
+        // Lava world: lake fish (real) + lava fish (rare)
+        mixedZone = true;
+        const lakeFish = getFishForZone('lake');
+        const lavaFish = LAVA_FISH.map(f => ({ ...f, _zoneFish: true }));
+        basePool = [...lakeFish, ...lavaFish];
     }
     else if (fishingZone === 'secret') {
         // Secret pool: all non-conditional fish except trash
         basePool = FISH_TYPES.filter(f => f.condition !== 'void' && f.condition !== 'rain' && f.name !== "Old Boot");
     }
     else if (isRaining && Math.random() < 0.40) {
-        // Rain: chance for rain fish
-        basePool = FISH_TYPES.filter(f => f.condition === 'rain');
+        // Rain: chance for rain fish (mixed with lake fish)
+        if (Math.random() < 0.30) {
+            basePool = RAIN_FISH.map(f => ({ ...f, _zoneFish: true }));
+        } else {
+            basePool = getFishForZone('lake');
+        }
     }
     else {
         // --- ZONE-SPECIFIC FISH POOLS ---
-        // Map fishing zones to fish zone categories
-        let zoneCategory = 'lake'; // Default
+        let zoneCategory = 'lake';
         if (fishingZoneCategory) zoneCategory = fishingZoneCategory;
         else if (fishingZone === 'ocean') zoneCategory = 'ocean';
         else if (fishingZone === 'pond') {
-            // Differentiate light pond vs dark pond by player position
             const distToDarkPond = Math.sqrt(Math.pow(player.position.x - 60, 2) + Math.pow(player.position.z - 50, 2));
             zoneCategory = distToDarkPond < 30 ? 'darkpond' : 'lightpond';
         }
         else if (fishingZone === 'lake') zoneCategory = 'lake';
 
-        // Get zone-specific fish
-        basePool = getFishForZone(zoneCategory);
+        if (zoneCategory === 'ocean') {
+            basePool = getFishForZone('ocean');
+        } else if (zoneCategory === 'lake') {
+            basePool = getFishForZone('lake');
+        } else {
+            // Light/Dark pond: mostly lake fish, zone fish rare
+            mixedZone = true;
+            const lakeFish = getFishForZone('lake');
+            const zoneFish = getFishForZone(zoneCategory)
+                .filter(f => f.zone === zoneCategory)
+                .map(f => ({ ...f, _zoneFish: true }));
+            basePool = [...lakeFish, ...zoneFish];
+        }
     }
 
     // Safety check
@@ -14361,6 +14755,11 @@ function selectFish() {
         // (Quality of Life: Don't catch boots with Magic Lure)
         if (fish.rarity === 'Common' && bait.power >= 10) {
             chance *= 0.1; // Reduce common junk chance significantly
+        }
+
+        // Low percent for zone-specific fish in mixed zones
+        if (mixedZone && fish._zoneFish) {
+            chance *= 0.33;
         }
 
         pool.push({ ...fish, chance: chance });
@@ -15759,7 +16158,9 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
 
         // --- RODS TAB ---
         else if (shopMode === 'rods') {
-            const uniqueFishCount = Object.keys(saveState.journal).length;
+            const uniqueFishCount = (typeof countDiscoveredSpecies === 'function')
+                ? countDiscoveredSpecies(saveState.journal)
+                : Object.keys(saveState.journal).length;
             const sortedRods = [...ROD_TYPES].sort((a, b) => {
                 if (a.price === b.price) return (a.unlockCount || 0) - (b.unlockCount || 0);
                 return a.price - b.price;
@@ -16158,7 +16559,9 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         container.appendChild(pDiv);
 
         // --- 2. RENDER BAITS ---
-        const uniqueCount = Object.keys(saveState.journal).length;
+        const uniqueCount = (typeof countDiscoveredSpecies === 'function')
+            ? countDiscoveredSpecies(saveState.journal)
+            : Object.keys(saveState.journal).length;
 
         BAIT_TYPES.forEach(bait => {
             if (bait.id === 'none') return;

@@ -1,78 +1,100 @@
 // --- FISH DEFINITIONS ---
+//
+// A curated roster of real species (plus the Old Boot).  Every standard catch
+// is a fish you could actually find in the wild; the rain pool is real weather-
+// sensitive fish, the void pool is real deep-sea fish, and the lava pool is the
+// fantasy exception for the lava world.
+//
+// zone:  lake | lightpond | darkpond | ocean
+// shape: which procedural model the 2D journal icon and 3D held fish use.
 
 const FISH_TYPES = [
-    // COMMONS (Base ~ $5 - $15)
-    { name: "Old Boot", rarity: "Common", chance: 30, color: "#554433", drain: 10, price: 5 },
-    { name: "Guppy", rarity: "Common", chance: 25, color: "#ADD8E6", drain: 12, price: 8 },
-    { name: "Sardine", rarity: "Common", chance: 25, color: "#A0A0A0", drain: 15, price: 10 },
-    { name: "Bluegill", rarity: "Common", chance: 20, color: "#4682B4", drain: 18, price: 12 },
-    { name: "Carp", rarity: "Common", chance: 15, color: "#B8860B", drain: 20, price: 15 },
+    // --- JUNK (found everywhere) ---
+    { name: "Old Boot", rarity: "Common", chance: 30, color: "#554433", drain: 10, price: 5, zone: "lake", shape: "boot" },
 
-    // UNCOMMON (Base ~ $30 - $60)
-    { name: "Bass", rarity: "Uncommon", chance: 12, color: "#556B2F", drain: 25, price: 30 },
-    { name: "Trout", rarity: "Uncommon", chance: 10, color: "#8FBC8F", drain: 28, price: 40 },
-    { name: "Catfish", rarity: "Uncommon", chance: 8, color: "#800000", drain: 32, price: 50 },
-    { name: "Salmon", rarity: "Uncommon", chance: 8, color: "#FA8072", drain: 35, price: 60 },
+    // === LAKE (freshwater) =================================================
+    // Commons
+    { name: "Bluegill", rarity: "Common", chance: 26, color: "#4E7E9E", drain: 14, price: 10, zone: "lake", shape: "panfish" },
+    { name: "Yellow Perch", rarity: "Common", chance: 24, color: "#C9A227", drain: 16, price: 14, zone: "lake", shape: "perch" },
+    { name: "Common Carp", rarity: "Common", chance: 20, color: "#9C7A3C", drain: 20, price: 20, zone: "lake", shape: "carp" },
+    // Uncommon
+    { name: "Largemouth Bass", rarity: "Uncommon", chance: 11, color: "#5C7A45", drain: 26, price: 38, zone: "lake", shape: "bass" },
+    { name: "Rainbow Trout", rarity: "Uncommon", chance: 10, color: "#B5687A", drain: 28, price: 48, zone: "lake", shape: "trout" },
+    { name: "Channel Catfish", rarity: "Uncommon", chance: 8, color: "#6F6252", drain: 34, price: 62, zone: "lake", shape: "catfish" },
+    // Rare / epic
+    { name: "Northern Pike", rarity: "Rare", chance: 4.5, color: "#4F6B3F", drain: 44, price: 150, zone: "lake", shape: "pike" },
+    { name: "Lake Sturgeon", rarity: "Epic", chance: 1.4, color: "#7C7B6A", drain: 62, price: 450, zone: "lake", shape: "sturgeon" },
 
-    // RARE (Base ~ $100 - $200)
-    { name: "Pike", rarity: "Rare", chance: 6, color: "#2E8B57", drain: 38, price: 100 },
-    { name: "Clownfish", rarity: "Rare", chance: 5, color: "#FF4500", drain: 40, price: 125 },
-    { name: "Tuna", rarity: "Rare", chance: 4, color: "#000080", drain: 45, price: 150 },
-    { name: "Jellyfish", rarity: "Rare", chance: 3, color: "#E6E6FA", drain: 48, price: 175 },
+    // === LIGHT POND (small, colourful fish) ================================
+    { name: "Guppy", rarity: "Common", chance: 28, color: "#6FC7DF", drain: 12, price: 8, zone: "lightpond", shape: "guppy" },
+    { name: "Neon Tetra", rarity: "Common", chance: 26, color: "#4FA7E6", drain: 12, price: 10, zone: "lightpond", shape: "tetra" },
+    { name: "Goldfish", rarity: "Common", chance: 20, color: "#F0A23A", drain: 16, price: 16, zone: "lightpond", shape: "goldfish" },
+    { name: "Betta", rarity: "Uncommon", chance: 10, color: "#A04ABF", drain: 26, price: 45, zone: "lightpond", shape: "betta" },
+    { name: "Angelfish", rarity: "Rare", chance: 5, color: "#D9C17A", drain: 36, price: 140, zone: "lightpond", shape: "angelfish" },
+    { name: "Discus", rarity: "Epic", chance: 1.4, color: "#D9663A", drain: 56, price: 450, zone: "lightpond", shape: "discus" },
 
-    // EPIC (Base ~ $300 - $600)
-    { name: "Pufferfish", rarity: "Epic", chance: 3, color: "#F0E68C", drain: 50, price: 300 },
-    { name: "Swordfish", rarity: "Epic", chance: 2, color: "#708090", drain: 55, price: 400 },
-    { name: "Stingray", rarity: "Epic", chance: 1.5, color: "#778899", drain: 60, price: 500 },
-    { name: "Anglerfish", rarity: "Epic", chance: 1.2, color: "#4B0082", drain: 65, price: 600 },
+    // === DARK POND (nocturnal / odd freshwater fish) ======================
+    { name: "Black Bullhead", rarity: "Common", chance: 24, color: "#3F3A34", drain: 20, price: 18, zone: "darkpond", shape: "catfish" },
+    { name: "Bowfin", rarity: "Uncommon", chance: 10, color: "#4E5A45", drain: 30, price: 60, zone: "darkpond", shape: "bowfin" },
+    { name: "Snakehead", rarity: "Rare", chance: 5, color: "#5A4A36", drain: 44, price: 150, zone: "darkpond", shape: "snakehead" },
+    { name: "Electric Eel", rarity: "Epic", chance: 1.2, color: "#7B7448", drain: 62, price: 520, zone: "darkpond", shape: "eel" },
+    { name: "Silver Arowana", rarity: "Legendary", chance: 0.5, color: "#C9CDD2", drain: 78, price: 1800, zone: "darkpond", shape: "arowana" },
 
-    // LEGENDARY (Base ~ $1000+)
-    { name: "Shark", rarity: "Legendary", chance: 1.0, color: "#2F4F4F", drain: 70, price: 1000 },
-    { name: "Seahorse", rarity: "Legendary", chance: 0.8, color: "#FF69B4", drain: 75, price: 1500 },
-    { name: "Golden Koi", rarity: "Legendary", chance: 0.5, color: "#FFD700", drain: 80, price: 2500 }
+    // === OCEAN (saltwater) =================================================
+    // Commons
+    { name: "Atlantic Mackerel", rarity: "Common", chance: 26, color: "#6E9AA8", drain: 16, price: 14, zone: "ocean", shape: "mackerel" },
+    { name: "Atlantic Cod", rarity: "Common", chance: 22, color: "#A89A78", drain: 18, price: 18, zone: "ocean", shape: "cod" },
+    // Uncommon
+    { name: "Yellowfin Tuna", rarity: "Uncommon", chance: 10, color: "#C8A63A", drain: 30, price: 55, zone: "ocean", shape: "tuna" },
+    { name: "Atlantic Salmon", rarity: "Uncommon", chance: 9, color: "#C98C7E", drain: 32, price: 65, zone: "ocean", shape: "salmon" },
+    // Rare
+    { name: "Mahi-Mahi", rarity: "Rare", chance: 5, color: "#3FAF7A", drain: 42, price: 140, zone: "ocean", shape: "mahi" },
+    { name: "Clownfish", rarity: "Rare", chance: 4.5, color: "#F06A2A", drain: 38, price: 125, zone: "ocean", shape: "clownfish" },
+    { name: "Regal Blue Tang", rarity: "Rare", chance: 4.5, color: "#2E6FD0", drain: 38, price: 140, zone: "ocean", shape: "tang" },
+    { name: "Pacific Halibut", rarity: "Rare", chance: 4, color: "#8A7E66", drain: 42, price: 170, zone: "ocean", shape: "flatfish" },
+    // Epic
+    { name: "Blue Marlin", rarity: "Epic", chance: 1.5, color: "#3C5FA8", drain: 64, price: 480, zone: "ocean", shape: "marlin" },
+    { name: "Swordfish", rarity: "Epic", chance: 1.3, color: "#5F6B78", drain: 66, price: 520, zone: "ocean", shape: "swordfish" },
+    { name: "Ocean Sunfish", rarity: "Epic", chance: 1.1, color: "#8A8F86", drain: 68, price: 560, zone: "ocean", shape: "sunfish" },
+    { name: "Lionfish", rarity: "Epic", chance: 1.2, color: "#B34A3C", drain: 60, price: 500, zone: "ocean", shape: "lionfish" },
+    { name: "Porcupine Pufferfish", rarity: "Epic", chance: 1.1, color: "#B7A66A", drain: 60, price: 460, zone: "ocean", shape: "puffer" },
+    { name: "Manta Ray", rarity: "Epic", chance: 1.2, color: "#3A4650", drain: 62, price: 540, zone: "ocean", shape: "ray" },
+    // Legendary
+    { name: "Seahorse", rarity: "Legendary", chance: 0.6, color: "#D98A3A", drain: 72, price: 1200, zone: "ocean", shape: "seahorse" },
+    { name: "Great White Shark", rarity: "Legendary", chance: 0.5, color: "#6B7378", drain: 80, price: 2000, zone: "ocean", shape: "shark" },
+    { name: "Oarfish", rarity: "Legendary", chance: 0.5, color: "#BFC7CC", drain: 78, price: 2200, zone: "ocean", shape: "oarfish" },
+    { name: "Coelacanth", rarity: "Legendary", chance: 0.4, color: "#4A5A6A", drain: 82, price: 2600, zone: "ocean", shape: "coelacanth" }
 ];
 
-// --- LAVA WORLD FISH GENERATION (250 VARIANTS) ---
-const LAVA_FISH = [];
+// === RAIN POOL (real fish that bite in stormy weather) ====================
+const RAIN_FISH = [
+    { name: "Weather Loach", rarity: "Common", chance: 50, color: "#7A6A4A", drain: 16, price: 18, condition: 'rain', shape: "loach" },
+    { name: "Silver Carp", rarity: "Rare", chance: 30, color: "#B8C4C8", drain: 42, price: 95, condition: 'rain', shape: "carp" },
+    { name: "Blue Catfish", rarity: "Epic", chance: 15, color: "#4A5A78", drain: 66, price: 240, condition: 'rain', shape: "catfish" },
+    { name: "Giant Trevally", rarity: "Legendary", chance: 5, color: "#8A9AA0", drain: 86, price: 650, condition: 'rain', shape: "trevally" }
+];
 
-(function generateLavaFish() {
-    // 5 Prefixes * 50 Bases = 250 New Fish
-    const prefixes = [
-        { text: "Charred", rarity: "Common", col: "#2a1d1d", priceMult: 0.5 },
-        { text: "Molten", rarity: "Uncommon", col: "#ff4500", priceMult: 0.8 },
-        { text: "Obsidian", rarity: "Rare", col: "#4a0404", priceMult: 1.2 },
-        { text: "Magma", rarity: "Epic", col: "#ffaa00", priceMult: 2.0 },
-        { text: "Hellfire", rarity: "Legendary", col: "#ffffff", priceMult: 4.0 }
-    ];
+// === VOID POOL (fantasy — the void is its own dimension) =====================
+const VOID_FISH = [
+    { name: "Shadow Guppy", rarity: "Common", chance: 50, color: "#2a1a3a", drain: 16, price: 14, condition: 'void', shape: "guppy" },
+    { name: "Void Bass", rarity: "Uncommon", chance: 30, color: "#3a2a5a", drain: 34, price: 55, condition: 'void', shape: "bass" },
+    { name: "Abyssal Eel", rarity: "Rare", chance: 15, color: "#1a0a2a", drain: 52, price: 120, condition: 'void', shape: "eel" },
+    { name: "Phantom Ray", rarity: "Epic", chance: 8, color: "#4a2a6a", drain: 70, price: 320, condition: 'void', shape: "ray" },
+    { name: "Null Shark", rarity: "Legendary", chance: 3, color: "#0a0014", drain: 90, price: 800, condition: 'void', shape: "shark" }
+];
 
-    const bases = [
-        "Guppy", "Tetra", "Crab", "Snapper", "Eel", "Ray", "Shark", "Whale", "Kraken", "Dragon",
-        "Piranha", "Salamander", "Toad", "Serpent", "Turtle", "Koi", "Bass", "Pike", "Gar", "Marlin",
-        "Leech", "Slug", "Snail", "Cobra", "Viper", "Hydra", "Drake", "Wyrm", "Beast", "Demon",
-        "Imp", "Devil", "Soul", "Spirit", "Ghost", "Phantom", "Wraith", "Spectre", "Ghoul", "Lich",
-        "Bone", "Skull", "Ash", "Cinder", "Ember", "Flame", "Blaze", "Inferno", "Pyre", "Phoenix"
-    ];
+// === LAVA WORLD POOL (fantasy, kept small) ===============================
+const LAVA_FISH = [
+    { name: "Cinder Guppy", rarity: "Common", chance: 50, color: "#6B2B1A", drain: 15, price: 12, isLava: true, shape: "guppy" },
+    { name: "Molten Bass", rarity: "Uncommon", chance: 30, color: "#B3441C", drain: 32, price: 55, isLava: true, shape: "bass" },
+    { name: "Obsidian Eel", rarity: "Rare", chance: 14, color: "#2A1A1A", drain: 48, price: 150, isLava: true, shape: "eel" },
+    { name: "Magma Ray", rarity: "Epic", chance: 5, color: "#E2531C", drain: 66, price: 380, isLava: true, shape: "ray" },
+    { name: "Hellfire Shark", rarity: "Legendary", chance: 1, color: "#FFF0C0", drain: 85, price: 900, isLava: true, shape: "shark" }
+];
 
-    for (let p = 0; p < prefixes.length; p++) {
-        for (let b = 0; b < bases.length; b++) {
-            const prefix = prefixes[p];
-            const baseName = bases[b];
-
-            // Base price calculation: Higher than normal fish
-            const basePrice = 50 + (b * 5);
-
-            LAVA_FISH.push({
-                name: `${prefix.text} ${baseName}`,
-                rarity: prefix.rarity,
-                chance: 10 / (p + 1), // Rarity logic
-                color: prefix.col,
-                drain: 25 + (p * 10),
-                price: Math.floor(basePrice * prefix.priceMult),
-                isLava: true // Marker to identify lava fish
-            });
-        }
-    }
-})();
+if (typeof FISH_TYPES !== 'undefined') {
+    FISH_TYPES.push(...RAIN_FISH, ...VOID_FISH);
+}
 
 // --- TITLE DEFINITIONS ---
 const TITLE_TYPES = [
@@ -184,101 +206,13 @@ function getTitleById(id) {
     return TITLE_MAP.get(id) || TITLE_MAP.get('none');
 }
 
-/**
- * Procedurally generates a large number of fish variants by combining prefixes and base names.
- * This self-executing function expands the game's content without manual data entry.
- */
-/**
-         * Procedurally generates 1000 unique fish variants (20 Prefixes * 50 Bases).
-         * Replaces the old limiter to ensure a massive ecosystem.
-         */
-(function generateMoreFish() {
-    const prefixes = [
-        { text: "Mud", rarity: "Common", mult: 1.0, col: "#5c4033" },
-        { text: "River", rarity: "Common", mult: 1.1, col: "#4488aa" },
-        { text: "Rock", rarity: "Common", mult: 1.2, col: "#666666" },
-        { text: "Spotted", rarity: "Common", mult: 1.3, col: "#aaaa44" },
-        { text: "Striped", rarity: "Uncommon", mult: 1.5, col: "#cc8844" },
-        { text: "Emerald", rarity: "Uncommon", mult: 1.8, col: "#22aa22" },
-        { text: "Azure", rarity: "Uncommon", mult: 2.0, col: "#2222aa" },
-        { text: "Ruby", rarity: "Uncommon", mult: 2.2, col: "#aa2222" },
-        { text: "Electric", rarity: "Rare", mult: 3.0, col: "#ffff00" },
-        { text: "Ghost", rarity: "Rare", mult: 3.5, col: "#eeeeee" },
-        { text: "Magma", rarity: "Rare", mult: 4.0, col: "#ff4400" },
-        { text: "Abyssal", rarity: "Epic", mult: 5.0, col: "#110033" },
-        { text: "Neon", rarity: "Epic", mult: 6.0, col: "#00ffcc" },
-        { text: "Cursed", rarity: "Epic", mult: 7.0, col: "#440044" },
-        { text: "Cyber", rarity: "Epic", mult: 8.0, col: "#00ff00" },
-        { text: "Golden", rarity: "Legendary", mult: 12.0, col: "#ffd700" },
-        { text: "Rainbow", rarity: "Legendary", mult: 15.0, col: "#ff88ff" },
-        { text: "Void", rarity: "Legendary", mult: 20.0, col: "#000000" },
-        { text: "Cosmic", rarity: "Legendary", mult: 25.0, col: "#4b0082" },
-        { text: "Divine", rarity: "Legendary", mult: 40.0, col: "#ffffff" }
-    ];
-
-    // Expanded to 50 bases to reach 1000 combinations
-    const bases = [
-        "Tetra", "Minnow", "Dory", "Cod", "Snapper", "Mackerel",
-        "Eel", "Ray", "Turtle", "Squid", "Crab", "Lobster", "Urchin",
-        "Manta", "Shark", "Whale", "Kraken", "Leviathan", "Hydra", "Dragon",
-        "Bass", "Trout", "Salmon", "Pike", "Carp", "Perch", "Flounder",
-        "Herring", "Anchovy", "Tuna", "Marlin", "Sailfish", "Grouper",
-        "Barracuda", "Stingray", "Sunfish", "Angler", "Betta", "Goldfish",
-        "Koi", "Guppy", "Molly", "Oscar", "Discus", "Cichlid", "Pleco",
-        "Loach", "Arowana", "Gar", "Piranha"
-    ];
-
-    // Loop runs 20 * 50 = 1000 times
-    for (let p = 0; p < prefixes.length; p++) {
-        for (let b = 0; b < bases.length; b++) {
-            // Removed the "if count > 250" check!
-
-            const prefix = prefixes[p];
-            const baseName = bases[b];
-
-            let baseDrain = 10;
-            let chance = 20;
-
-            switch (prefix.rarity) {
-                case "Uncommon": baseDrain = 30; chance = 10; break;
-                case "Rare": baseDrain = 50; chance = 5; break;
-                case "Epic": baseDrain = 70; chance = 2; break;
-                case "Legendary": baseDrain = 95; chance = 0.5; break;
-            }
-
-            FISH_TYPES.push({
-                name: `${prefix.text} ${baseName}`,
-                rarity: prefix.rarity,
-                chance: chance / (b + 1), // Diminishing returns on chance for later bases
-                color: prefix.col,
-                drain: baseDrain + (b * 0.5),
-                price: Math.floor(5 * prefix.mult * (1 + (b * 0.05)))
-            });
-        }
-    }
-})();
-
-// --- SPECIAL/CONDITIONAL FISH DEFINITIONS ---
-const RAIN_FISH = [
-    { name: "Drizzle Dory", rarity: "Common", chance: 50, color: "#87CEFA", drain: 15, price: 15, condition: 'rain' },
-    { name: "Storm Salmon", rarity: "Rare", chance: 30, color: "#4169E1", drain: 40, price: 80, condition: 'rain' },
-    { name: "Thunder Eel", rarity: "Epic", chance: 15, color: "#FFD700", drain: 65, price: 200, condition: 'rain' },
-    { name: "Tempest Shark", rarity: "Legendary", chance: 5, color: "#191970", drain: 85, price: 500, condition: 'rain' }
-];
-
-const VOID_FISH = [
-    { name: "Null Guppy", rarity: "Common", chance: 50, color: "#333333", drain: 20, price: 10, condition: 'void' },
-    { name: "Shadow Ray", rarity: "Rare", chance: 30, color: "#4B0082", drain: 50, price: 35, condition: 'void' },
-    { name: "Abyssal Maw", rarity: "Epic", chance: 15, color: "#800080", drain: 75, price: 75, condition: 'void' },
-    { name: "Event Horizon", rarity: "Legendary", chance: 5, color: "#000000", drain: 95, price: 200, condition: 'void' }
-];
-
-if (typeof FISH_TYPES !== 'undefined') {
-    FISH_TYPES.push(...RAIN_FISH, ...VOID_FISH);
-}
 
 const FISH_NAME_MAP = new Map();
 for (const fish of FISH_TYPES) {
+    FISH_NAME_MAP.set(fish.name, fish);
+}
+// Lava fish live outside FISH_TYPES but still need name/shape lookups.
+for (const fish of LAVA_FISH) {
     FISH_NAME_MAP.set(fish.name, fish);
 }
 
@@ -286,19 +220,35 @@ function getFishByName(name) {
     return FISH_NAME_MAP.get(name);
 }
 
+// Counts only species that exist in the current roster. Older saves contain
+// names from the retired procedural list; they should not inflate milestones.
+function countDiscoveredSpecies(journal) {
+    if (!journal) return 0;
+    let count = 0;
+    FISH_NAME_MAP.forEach((fish, name) => {
+        const seen = journal[name];
+        if (Array.isArray(seen) && seen.length > 0) count++;
+    });
+    return count;
+}
+
 // --- ZONE-SPECIFIC FISH ASSIGNMENT ---
-// Assigns fish to zones based on name keywords
+// Every standard fish carries an explicit zone. The keyword fallback keeps old
+// save names working if they are ever looked up again.
 function getFishZone(fishName) {
-    const name = fishName.toLowerCase();
+    const data = FISH_NAME_MAP.get(fishName);
+    if (data && data.zone) return data.zone;
+
+    const name = String(fishName || '').toLowerCase();
 
     // Dark Pond: Dark/mysterious themed fish
     if (/ghost|void|shadow|abyssal|cursed|dark|phantom|wraith|spectre|null/.test(name)) return 'darkpond';
 
     // Ocean: Saltwater/large fish
-    if (/shark|whale|tuna|marlin|kraken|swordfish|stingray|jellyfish|squid|crab|lobster|manta|barracuda|sailfish|anchovy|herring|octopus|leviathan|urchin/.test(name)) return 'ocean';
+    if (/shark|whale|tuna|marlin|kraken|swordfish|stingray|jellyfish|squid|crab|lobster|manta|barracuda|sailfish|anchovy|herring|octopus|leviathan|urchin|cod|halibut|oarfish|coelacanth/.test(name)) return 'ocean';
 
     // Light Pond: Small/pet fish
-    if (/guppy|minnow|tetra|goldfish|koi|molly|betta|discus|oscar|pleco|loach|arowana|cichlid/.test(name)) return 'lightpond';
+    if (/guppy|minnow|tetra|goldfish|koi|molly|betta|discus|oscar|pleco|loach|arowana|cichlid|angelfish/.test(name)) return 'lightpond';
 
     // Lake: Default freshwater (bass, trout, carp, catfish, pike, salmon, etc.)
     return 'lake';
@@ -315,7 +265,7 @@ function getFishForZone(zone) {
         // Conditional fish (rain/void) handled separately
         if (fish.condition) return false;
         // Match zone
-        return getFishZone(fish.name) === zone;
+        return (fish.zone || getFishZone(fish.name)) === zone;
     });
 }
 
@@ -470,19 +420,19 @@ const BAIT_TYPES = [
     { id: 'worm', name: 'Worms', price: 20, unlockFish: 0, power: 2, rarityMult: 1.2, tierLuck: 1.0 },
 
     // MID GAME
-    { id: 'cricket', name: 'Crickets', price: 100, unlockFish: 25, power: 4, rarityMult: 1.5, tierLuck: 1.05 },
-    { id: 'squid', name: 'Squid Chunk', price: 500, unlockFish: 75, power: 6, rarityMult: 2.5, tierLuck: 1.1 },
+    { id: 'cricket', name: 'Crickets', price: 100, unlockFish: 3, power: 4, rarityMult: 1.5, tierLuck: 1.05 },
+    { id: 'squid', name: 'Squid Chunk', price: 500, unlockFish: 6, power: 6, rarityMult: 2.5, tierLuck: 1.1 },
 
     // HIGH TIER
-    { id: 'spinner', name: 'Shiny Spinner', price: 1200, unlockFish: 150, power: 8, rarityMult: 3.5, tierLuck: 1.2 },
-    { id: 'grub', name: 'Mystic Grub', price: 2500, unlockFish: 300, power: 10, rarityMult: 4.5, tierLuck: 1.3 },
+    { id: 'spinner', name: 'Shiny Spinner', price: 1200, unlockFish: 9, power: 8, rarityMult: 3.5, tierLuck: 1.2 },
+    { id: 'grub', name: 'Mystic Grub', price: 2500, unlockFish: 12, power: 10, rarityMult: 4.5, tierLuck: 1.3 },
 
     // END GAME
-    { id: 'jig', name: 'Squid Jig', price: 5000, unlockFish: 500, power: 12, rarityMult: 6.0, tierLuck: 1.5 },
-    { id: 'shrimp', name: 'Glowing Shrimp', price: 8000, unlockFish: 700, power: 15, rarityMult: 8.0, tierLuck: 2.0 },
+    { id: 'jig', name: 'Squid Jig', price: 5000, unlockFish: 16, power: 12, rarityMult: 6.0, tierLuck: 1.5 },
+    { id: 'shrimp', name: 'Glowing Shrimp', price: 8000, unlockFish: 20, power: 15, rarityMult: 8.0, tierLuck: 2.0 },
 
     // GOD TIER
-    { id: 'magic', name: 'Magic Lure', price: 15000, unlockFish: 850, power: 18, rarityMult: 10.0, tierLuck: 3.0 }
+    { id: 'magic', name: 'Magic Lure', price: 15000, unlockFish: 25, power: 18, rarityMult: 10.0, tierLuck: 3.0 }
 ];
 
 const ROD_TYPES = [
@@ -523,15 +473,15 @@ const ROD_TYPES = [
     { id: 'invisible', name: 'Ghost Rod', price: 5000000, color: 'rgba(255,255,255,0.2)', reel: 'rgba(255,255,255,0.2)' },
 
     // --- MILESTONE RODS (Unlock by Unique Catch Count) ---
-    { id: 'scout_milestone', name: 'Scout Pole', price: 0, unlockCount: 50, color: '#8FBC8F', reel: '#2F4F4F' },
-    { id: 'hunter_milestone', name: 'Hunter Rod', price: 0, unlockCount: 100, color: '#4682B4', reel: '#191970' },
+    { id: 'scout_milestone', name: 'Scout Pole', price: 0, unlockCount: 5, color: '#8FBC8F', reel: '#2F4F4F' },
+    { id: 'hunter_milestone', name: 'Hunter Rod', price: 0, unlockCount: 10, color: '#4682B4', reel: '#191970' },
 
     // UPDATED: Changed from #DAA520 to #FF8C00 (Dark Orange)
-    { id: 'expert_milestone', name: 'Expert Caster', price: 0, unlockCount: 250, color: '#FF8C00', reel: '#333333' },
+    { id: 'expert_milestone', name: 'Expert Caster', price: 0, unlockCount: 15, color: '#FF8C00', reel: '#333333' },
 
-    { id: 'master_milestone', name: 'Master Angler', price: 0, unlockCount: 500, color: '#9932CC', reel: '#4B0082' },
-    { id: 'legend_milestone', name: 'Legend Keeper', price: 0, unlockCount: 750, color: '#DC143C', reel: '#800000' },
-    { id: 'omega_milestone', name: 'The Completionist', price: 0, unlockCount: 1000, color: '#00FA9A', reel: '#006400' }
+    { id: 'master_milestone', name: 'Master Angler', price: 0, unlockCount: 20, color: '#9932CC', reel: '#4B0082' },
+    { id: 'legend_milestone', name: 'Legend Keeper', price: 0, unlockCount: 25, color: '#DC143C', reel: '#800000' },
+    { id: 'omega_milestone', name: 'The Completionist', price: 0, unlockCount: 30, color: '#00FA9A', reel: '#006400' }
 ];
 
 // --- CORE GAME VARIABLES ---
