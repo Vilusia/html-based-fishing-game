@@ -11196,6 +11196,7 @@ function setupInputs() {
         if (e.code === k.interact) {
             if (canSell) sellFish();
             else if (interactTarget === 'stylist') toggleShop();
+            else if (interactTarget === 'merchant') toggleMerchant();
             else if (interactTarget === 'bait') toggleBaitShop();
             else if (interactTarget === 'tutorial') toggleTutorial();
             else if (interactTarget === 'fisher') talkToFisher();
