@@ -12570,7 +12570,7 @@ function animate() {
             if (sprite) {
                 sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, Math.PI / 3, 12 * dt);
                 sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 12 * dt);
-                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.0, 12 * dt);
+                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 0.6, 12 * dt);
             }
             if (diveTimer <= 0) {
                 isDiving = false;
@@ -12793,7 +12793,7 @@ function animate() {
             if (sprite) {
                 sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, Math.PI / 2, 10 * dt);
                 sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
-                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.0, 10 * dt);
+                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 0.6, 10 * dt);
             }
             playerVelocity.x = 0; playerVelocity.z = 0;
         }
