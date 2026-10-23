@@ -10945,10 +10945,10 @@ function createBoatTexture() {
 
 function makeSailBoatMesh() {
     const tex = createBoatTexture();
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5 });
-    const sp = new THREE.Sprite(mat);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });
+    const sp = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 2.25), mat);
     sp.name = 'sailBoat';
-    sp.scale.set(4.5, 2.25, 1);
+    sp.rotation.x = -Math.PI / 2;
     sp.position.y = 0.1;
     sp.userData.isSailBoat = true;
     return sp;
