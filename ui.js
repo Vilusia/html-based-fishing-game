@@ -3329,10 +3329,21 @@ function createRemotePlayer(id, data) {
 
     // Chat notification
     if (document.getElementById('lobby-screen').style.display === 'none') {
-        if (window.CUSTOM_LEVEL && window.Level) {
-            displayChatMessage(nameToUse, "is downloading the map...", 'system');
+        const isCustom = !!(window.CUSTOM_LEVEL && window.Level);
+        if (isCustom) {
+            if (window.connectedPlayerIds && window.connectedPlayerIds.has(id)) {
+                // Reconnect after map download: real join
+                displayChatMessage(nameToUse, "has joined!", 'system');
+                if (otherPlayers[id]) otherPlayers[id].pendingJoinAnnounce = false;
+            } else {
+                if (!window.connectedPlayerIds) window.connectedPlayerIds = new Set();
+                window.connectedPlayerIds.add(id);
+                displayChatMessage(nameToUse, "is downloading the map...", 'system');
+                if (otherPlayers[id]) otherPlayers[id].pendingJoinAnnounce = true;
+            }
         } else {
             displayChatMessage(nameToUse, "has joined!", 'system');
+            p.pendingJoinAnnounce = false;
         }
     }
 }
@@ -3340,13 +3351,6 @@ function createRemotePlayer(id, data) {
 function updateRemotePlayer(id, data) {
     const p = otherPlayers[id];
     if (!p) return;
-
-    // Announce real join once the player starts sending updates (after map download).
-    if (p.pendingJoinAnnounce && document.getElementById('lobby-screen').style.display === 'none') {
-        const name = (p.lastData && p.lastData.name) || data.name || 'Fisher';
-        displayChatMessage(name, "has joined!", 'system');
-        p.pendingJoinAnnounce = false;
-    }
 
     // --- FIX START: Preserve Admin Mute Flags ---
     // We must save these because the incoming 'data' packet is from the client (who sends position)
