@@ -11061,7 +11061,33 @@ function setupInputs() {
         if (e.code === k.backward) controls.backward = true;
         if (e.code === k.left) controls.left = true;
         if (e.code === k.right) controls.right = true;
-        if (e.code === k.jump) controls.jump = true;
+        if (e.code === k.jump) {
+            const now = Date.now();
+            if (isProne) {
+                isProne = false; isDiving = false;
+                playerVelocity.y = JUMP_FORCE;
+                broadcastSound('jump');
+                controls.jump = false;
+                return;
+            }
+            if (!isDiving && !isProne && player && player.position.y <= (getTerrainHeight ? getTerrainHeight(player.position.x, player.position.z) : 0) + 0.1) {
+                if (now - lastSpacePress < 350) {
+                    // Dive
+                    isDiving = true; diveTimer = 0.45;
+                    const camForward = new THREE.Vector3();
+                    camera.getWorldDirection(camForward);
+                    camForward.y = 0;
+                    if (camForward.length() < 0.001) camForward.set(0,0,1);
+                    camForward.normalize();
+                    diveDir.copy(camForward);
+                    lastSpacePress = 0;
+                    controls.jump = false;
+                    return;
+                }
+                lastSpacePress = now;
+            }
+            controls.jump = true;
+        }
 
         // Interaction (Desktop)
         if (e.code === k.interact) {
@@ -12531,6 +12557,24 @@ function animate() {
             if (seatY > floorY) floorY = seatY;
         }
 
+        // --- DIVE / PRONE STATE ---
+        if (isDiving) {
+            diveTimer -= dt;
+            const diveSpeed = 9;
+            player.position.x += diveDir.x * diveSpeed * dt;
+            player.position.z += diveDir.z * diveSpeed * dt;
+            player.position.y = floorY;
+            const sprite = player.getObjectByName("playerSprite");
+            if (sprite) {
+                sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, Math.PI / 2, 12 * dt);
+                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.0, 12 * dt);
+            }
+            if (diveTimer <= 0) {
+                isDiving = false;
+                isProne = true;
+            }
+        }
+
         // 2. KNOCKBACK (PvP)
         if (Math.abs(knockbackVelocity.x) > 0.1 || Math.abs(knockbackVelocity.z) > 0.1) {
             knockbackVelocity.multiplyScalar(0.9);
@@ -12594,9 +12638,15 @@ function animate() {
         }
 
         // 3. INPUT MOVEMENT
-        // OPTIMIZATION: Reuse vector
         const v = _optVec2.set(0, 0, 0);
-        if (document.activeElement !== document.getElementById('chat-input')) {
+        if ((isDiving || isProne)) {
+            // No WASD movement while diving/prone. Prone can rotate in place.
+            if (isProne && document.activeElement !== document.getElementById('chat-input')) {
+                const rotSpeed = 6 * dt;
+                if (controls.left) player.rotation.y += rotSpeed;
+                if (controls.right) player.rotation.y -= rotSpeed;
+            }
+        } else if (document.activeElement !== document.getElementById('chat-input')) {
             const camForward = _optVec3;
             camera.getWorldDirection(camForward);
             camForward.y = 0; camForward.normalize();
@@ -12731,12 +12781,22 @@ function animate() {
             SailAudio.setActive(false);
         }
 
+        // Prone: stay tilted on belly
+        if (isProne) {
+            const sprite = player.getObjectByName("playerSprite");
+            if (sprite) {
+                sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, Math.PI / 2, 10 * dt);
+                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.0, 10 * dt);
+            }
+            playerVelocity.x = 0; playerVelocity.z = 0;
+        }
+
         // 4. GRAVITY
         if (player.position.y > floorY) playerVelocity.y -= GRAVITY * dt;
         if (player.position.y <= floorY) {
             if (player.position.y < floorY && playerVelocity.y < 0) broadcastSound('footstep');
             player.position.y = floorY; playerVelocity.y = 0;
-            if (controls.jump) {
+            if (controls.jump && !isProne && !isDiving) {
                 playerVelocity.y = JUMP_FORCE;
                 broadcastSound('jump');
             }
