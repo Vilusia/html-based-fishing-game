@@ -1959,8 +1959,7 @@ window.changeScreenVideo = function (propId) {
 
     const me = String(typeof myDeviceID !== 'undefined' && myDeviceID ? myDeviceID : '');
     const isPlacer = String(pd.placer || '') === me;
-    const hostAllowed = (typeof isHost !== 'undefined' && isHost);
-    if (!isPlacer && !hostAllowed) {
+    if (!isPlacer) {
         showToast('Only the player who placed this screen can change it.', 'error');
         return;
     }
