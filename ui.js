@@ -15252,6 +15252,8 @@ function switchPanel(name) {
         if (name === 'journal' && typeof renderJournal === 'function') renderJournal();
         if (name === 'inventory' && typeof renderInventoryGrid === 'function') renderInventoryGrid();
         if (name === 'progress' && typeof setProgressTab === 'function') setProgressTab('bounties');
+        if (name === 'skills' && typeof renderSkillsUI === 'function') renderSkillsUI();
+        if (name === 'cooking' && typeof renderCookingUI === 'function') renderCookingUI();
         document.exitPointerLock();
     }
     const bar = document.getElementById('panel-tabbar');
