@@ -1655,6 +1655,7 @@ function createYtPlayer(entry) {
                     // 0 = ENDED: play once, then stop syncing/replaying.
                     if (e && e.data === 0) {
                         entry.ended = true;
+                        try { entry.player.pauseVideo(); } catch (err) { }
                         const lid = entry.data && entry.data.id;
                         if (lid && ytSyncLoops[lid]) { clearInterval(ytSyncLoops[lid]); delete ytSyncLoops[lid]; }
                     }
@@ -1689,6 +1690,10 @@ function startYtSyncLoop(propData) {
         if (typeof isHost === 'undefined' && typeof player === 'undefined') return;
         const e = ytPlayers[propData.id];
         if (e && e.ended) return;   // video finished: play once, no more sync
+        // Detect end from player state too (onStateChange can be missed).
+        if (e && e.player && typeof e.player.getPlayerState === 'function') {
+            try { if (e.player.getPlayerState() === 0) { e.ended = true; try { e.player.pauseVideo(); } catch (err) {} if (ytSyncLoops[propData.id]) { clearInterval(ytSyncLoops[propData.id]); delete ytSyncLoops[propData.id]; } return; } } catch (err) { }
+        }
         let at = (Date.now() - propData.startedAt) / 1000;
         if (e && e.player && e.player.getCurrentTime) {
             try { at = e.player.getCurrentTime(); } catch (err) { }
@@ -1720,6 +1725,10 @@ function applyYtSync(data) {
     const e = ytPlayers[data.propId];
     if (!e) return;
     if (e.ended) return;   // already finished: don't seek/replay
+    // Detect end from player state.
+    if (e.player && typeof e.player.getPlayerState === 'function') {
+        try { if (e.player.getPlayerState() === 0) { e.ended = true; return; } } catch (err) { }
+    }
     e.syncAt = (Number(data.at) || 0);
     e.syncRecvAt = Date.now();
     if (e.player && e.player.getPlayerState) {
