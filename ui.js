@@ -255,7 +255,18 @@ function toggleMerchant() {
 
 function updateMerchantUI(container) {
     let totalFishValue = 0;
-    saveState.inventory.forEach(f => totalFishValue += Math.max(0, Number(f && f.price) || Number(f && f.value) || 10)); // Handle legacy save formats
+    let totalFishCount = 0;
+    if (Array.isArray(saveState.invSlots)) {
+        saveState.invSlots.forEach(s => {
+            if (s && s.type === 'fish') {
+                const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
+                const price = f ? f.price : 10;
+                const count = s.count || 1;
+                totalFishValue += price * count;
+                totalFishCount += count;
+            }
+        });
+    }
 
     // Calculate Wood Value from typed inventory
     if (!saveState.woodInventory) saveState.woodInventory = {};
@@ -363,7 +374,7 @@ function updateMerchantUI(container) {
 
             <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px; margin-top: 10px;">
                 <button class="btn-lg" onclick="actionSellFish()" ${totalFishValue === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
-                    Sell Fish ($${totalFishValue})
+                    Sell Fish (${totalFishCount}x = $${totalFishValue})
                 </button>
                 <button class="btn-lg" onclick="actionSellWood()" ${totalWoodCount === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
                     Sell Wood (${totalWoodCount}x = $${totalWoodValue})
@@ -405,15 +416,28 @@ window.actionSellStone = function () {
 };
 
 window.actionSellFish = function () {
-    if (saveState.inventory.length === 0) { showToast("No fish to sell!"); return; }
-
-    // Server Authority Check
-
+    ensureInventorySlots();
     let totalVal = 0;
-    saveState.inventory.forEach(f => totalVal += Math.max(0, Number(f && f.price) || Number(f && f.value) || 10));
-    const count = saveState.inventory.length;
-    saveState.money += totalVal;
+    let count = 0;
+    saveState.invSlots.forEach(s => {
+        if (s && s.type === 'fish') {
+            const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
+            const price = f ? f.price : 10;
+            const c = s.count || 1;
+            totalVal += price * c;
+            count += c;
+        }
+    });
+    if (totalVal === 0) { showToast("No fish to sell!"); return; }
+
+    // Clear fish slots
+    for (let i = 0; i < saveState.invSlots.length; i++) {
+        if (saveState.invSlots[i] && saveState.invSlots[i].type === 'fish') saveState.invSlots[i] = null;
+    }
+    // Also clear legacy array
     saveState.inventory = [];
+
+    saveState.money += totalVal;
     saveGame();
     Sound.sell();
     showToast(`Sold ${count} fish for $${totalVal}!`);
