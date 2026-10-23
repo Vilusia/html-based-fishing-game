@@ -11068,11 +11068,14 @@ function setupInputs() {
                 playerVelocity.y = JUMP_FORCE;
                 broadcastSound('jump');
                 controls.jump = false;
+                pendingJump = false;
                 return;
             }
-            if (!isDiving && !isProne && player && player.position.y <= (getTerrainHeight ? getTerrainHeight(player.position.x, player.position.z) : 0) + 0.1) {
-                if (now - lastSpacePress < 350) {
-                    // Dive
+            if (isDiving) { controls.jump = false; return; }
+            const onGround = player && player.position.y <= (getTerrainHeight ? getTerrainHeight(player.position.x, player.position.z) : 0) + 0.15;
+            if (onGround) {
+                if (now - lastSpacePress < 350 && lastSpacePress > 0) {
+                    // Double-tap: dive
                     isDiving = true; diveTimer = 0.45;
                     const camForward = new THREE.Vector3();
                     camera.getWorldDirection(camForward);
@@ -11081,10 +11084,16 @@ function setupInputs() {
                     camForward.normalize();
                     diveDir.copy(camForward);
                     lastSpacePress = 0;
+                    pendingJump = false;
                     controls.jump = false;
                     return;
                 }
+                // First tap: schedule a jump (delayed to allow double-tap dive)
                 lastSpacePress = now;
+                pendingJump = true;
+                pendingJumpTime = now + 320;
+                controls.jump = false;
+                return;
             }
             controls.jump = true;
         }
@@ -12796,6 +12805,11 @@ function animate() {
         if (player.position.y <= floorY) {
             if (player.position.y < floorY && playerVelocity.y < 0) broadcastSound('footstep');
             player.position.y = floorY; playerVelocity.y = 0;
+            if (pendingJump && !isDiving && !isProne && Date.now() > pendingJumpTime) {
+                playerVelocity.y = JUMP_FORCE;
+                broadcastSound('jump');
+                pendingJump = false;
+            }
             if (controls.jump && !isProne && !isDiving) {
                 playerVelocity.y = JUMP_FORCE;
                 broadcastSound('jump');

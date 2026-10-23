@@ -599,6 +599,7 @@ let player, playerVelocity = new THREE.Vector3();
 let isDiving = false, isProne = false, diveTimer = 0;
 let diveDir = new THREE.Vector3();
 let lastSpacePress = 0;
+let pendingJump = false, pendingJumpTime = 0;
 let controls = { forward: false, backward: false, left: false, right: false, jump: false };
 let isRightMouseDown = false;
 let isGloveActive = false;
