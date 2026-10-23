@@ -11189,12 +11189,16 @@ function setupInputs() {
         }
 
         // --- TOOLS (HOTBAR 1-5) ---
-        if (e.key === '1') selectTool(0);
-        if (e.key === '2') selectTool(1);
-        if (e.key === '3') selectTool(2);
-        if (e.key === '4') selectTool(3);
-        if (e.key === '5') selectTool(4);
-        if (e.key === '6') selectTool(5);
+        if (e.key === '1') selectHotbarSlot(0);
+        if (e.key === '2') selectHotbarSlot(1);
+        if (e.key === '3') selectHotbarSlot(2);
+        if (e.key === '4') selectHotbarSlot(3);
+        if (e.key === '5') selectHotbarSlot(4);
+        if (e.key === '6') selectHotbarSlot(5);
+        if (e.key === '7') selectHotbarSlot(6);
+        if (e.key === '8') selectHotbarSlot(7);
+        if (e.key === '9') selectHotbarSlot(8);
+        if (e.key === '0') selectHotbarSlot(9);
 
         if (e.code === k.voice) toggleMic();
         if (e.code === k.showFish) toggleShowFish();
