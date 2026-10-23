@@ -10943,27 +10943,46 @@ function createBoatTexture() {
     return t;
 }
 
+function createBoatTexture() {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, 64, 64);
+
+    const cx = 32, cy = 32;
+    // Square hull
+    ctx.fillStyle = '#8B5A2B';
+    ctx.fillRect(8, 8, 48, 48);
+    // Outline
+    ctx.strokeStyle = '#3E2723';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(8, 8, 48, 48);
+    // Inner hull
+    ctx.fillStyle = '#6D4C41';
+    ctx.fillRect(14, 14, 36, 36);
+    // Seats
+    ctx.fillStyle = '#5C3A1E';
+    ctx.fillRect(22, 20, 8, 24);
+    ctx.fillRect(34, 20, 8, 24);
+    // Oars
+    ctx.fillStyle = '#7A5230';
+    ctx.fillRect(4, 30, 56, 4);
+    ctx.fillRect(4, 36, 56, 4);
+
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    return t;
+}
+
 function makeSailBoatMesh() {
-    const g = new THREE.Group();
-    const hullMat = new THREE.MeshStandardMaterial({ color: 0x8B5A2B, roughness: 0.9 });
-    const trimMat = new THREE.MeshStandardMaterial({ color: 0x5C3A1E, roughness: 0.85 });
-
-    // Simple boxy boat (Minecraft style)
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.6, 4.0), hullMat);
-    hull.position.y = 0.3;
-    g.add(hull);
-
-    // Gunwale trim
-    for (const s of [-1, 1]) {
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 4.0), trimMat);
-        rail.position.set(s * 1.0, 0.7, 0);
-        g.add(rail);
-    }
-
-    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    g.position.y = 0.05;
-    g.userData.isSailBoat = true;
-    return g;
+    const tex = createBoatTexture();
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });
+    const sp = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), mat);
+    sp.name = 'sailBoat';
+    sp.rotation.x = -Math.PI / 2;
+    sp.position.y = 0.1;
+    sp.userData.isSailBoat = true;
+    return sp;
 }
 
 // Finds a walkable land cell close to the centre of a custom level.
