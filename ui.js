@@ -26,6 +26,14 @@ function addSkillXP(skillName, xpAmount) {
         const label = def ? def.name : (skillName.charAt(0).toUpperCase() + skillName.slice(1));
         showToast(`${label} Level ${newLevel}!`, 'success');
         Sound.sell(); // Play level up sound
+        // Synced chat notice for everyone.
+        const notice = { type: 'skillLevel', name: saveState.displayName, skill: label, level: newLevel, id: myPeerId };
+        displayChatMessage(saveState.displayName, `has reached level ${newLevel} in ${label}!`, 'system');
+        if (typeof isHost !== 'undefined' && isHost) {
+            broadcastToClients(notice);
+        } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
+            hostConn.send(notice);
+        }
     }
 }
 
@@ -2717,6 +2725,12 @@ function handleDataFromClient(clientId, data) {
             if (data.id !== myPeerId) displayChatMessage(data.name, data.text, data.id);
             broadcastToClients(data);
 
+        } else if (data.type === 'skillLevel') {
+            data.id = clientId;
+            data.name = otherPlayers[clientId] ? otherPlayers[clientId].lastData.name : (data.name || 'Unknown');
+            if (data.id !== myPeerId) displayChatMessage(data.name, `has reached level ${data.level} in ${data.skill}!`, 'system');
+            broadcastToClients(data);
+
         } else if (data.type === 'sound') {
             // MIDI Mute Check
             if (data.name === 'guitar') {
@@ -2964,6 +2978,11 @@ function handleDataFromHost(data) {
         }
         if (data.id !== myPeerId) {
             displayChatMessage(data.name, data.text, data.id);
+        }
+    }
+    else if (data.type === 'skillLevel') {
+        if (data.id !== myPeerId) {
+            displayChatMessage(data.name || 'Unknown', `has reached level ${data.level} in ${data.skill}!`, 'system');
         }
     }
     else if (data.type === 'sound') {
