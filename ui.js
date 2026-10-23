@@ -13390,14 +13390,11 @@ function animate() {
             }
             if (bestId) {
                 const pd = props[bestId].userData.propData;
-                const canEdit = String(pd.placer || '') === me || (typeof isHost !== 'undefined' && isHost);
-                if (canEdit) {
-                    interactTarget = 'ytscreen';
-                    interactScreenId = bestId;
-                    prompt.innerText = 'PRESS E TO CHANGE STREAM';
-                    prompt.style.display = 'block';
-                    if (btn) btn.innerText = "CHANGE";
-                }
+                interactTarget = 'ytscreen';
+                interactScreenId = bestId;
+                prompt.innerText = 'PRESS E FOR QUEUE';
+                prompt.style.display = 'block';
+                if (btn) btn.innerText = "QUEUE";
             }
         }
     }
