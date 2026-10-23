@@ -15303,14 +15303,14 @@ function getItemTooltipText(entry) {
             lines.push('Rarity: ' + (entry.rarity || 'Common'));
         }
         if (entry.count && entry.count > 1) lines.push('Count: ' + entry.count);
-        return lines.join('\\n');
+        return lines.join('\n');
     }
     if (entry.type === 'tool') {
         const tool = TOOLS.find(t => t.id === entry.id);
         const name = tool ? tool.name : entry.id;
         let extra = '';
-        if (entry.id === 'boat') extra = '\\nPress R in water to use.';
-        return name + (tool && tool.desc ? '\\n' + tool.desc : '') + extra;
+        if (entry.id === 'boat') extra = '\nPress R in water to use.';
+        return name + (tool && tool.desc ? '\n' + tool.desc : '') + extra;
     }
     return '';
 }
