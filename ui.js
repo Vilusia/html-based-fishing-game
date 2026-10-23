@@ -13882,7 +13882,24 @@ window.doCookingHit = function() {
             inv[item.idx] = makeCookedFish(item.f, isBurnt);
             rawXP += 6 + Math.round(Number(item.f.price || item.f.value || 10) / 12);
             count++;
+            // Sync grid inventory: raw fish -> cooked/burnt fish
+            try {
+                ensureInventorySlots();
+                const rawSlot = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === item.f.name);
+                if (rawSlot) {
+                    if ((rawSlot.count || 1) > 1) rawSlot.count--;
+                    else { const ri = saveState.invSlots.indexOf(rawSlot); if (ri !== -1) saveState.invSlots[ri] = null; }
+                }
+                const cookedName = (isBurnt ? 'Burnt ' : 'Cooked ') + item.f.name;
+                const cookedSlot = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === cookedName);
+                if (cookedSlot) cookedSlot.count = (cookedSlot.count || 1) + 1;
+                else {
+                    const empty = saveState.invSlots.findIndex(s => s === null);
+                    if (empty !== -1) saveState.invSlots[empty] = { type: 'fish', name: cookedName, color: item.f.color, size: item.f.size || 1, count: 1 };
+                }
+            } catch (e) { }
         });
+        autoSortInventory();
         if (count > 0) {
             addSkillXP('cooking', rawXP);
             Sound.sell();
