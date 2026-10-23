@@ -12563,8 +12563,31 @@ function animate() {
         if (isDiving) {
             diveTimer -= dt;
             const diveSpeed = 9;
-            player.position.x += diveDir.x * diveSpeed * dt;
-            player.position.z += diveDir.z * diveSpeed * dt;
+            const dx = diveDir.x * diveSpeed * dt;
+            const dz = diveDir.z * diveSpeed * dt;
+            const np = _optVec1.copy(player.position);
+            np.x += dx; np.z += dz;
+            let col = false;
+            if (!isInVoid && !isInLavaWorld) {
+                for (let t of treeColliders) {
+                    const rr = 0.5 + t.radius;
+                    const tdx = np.x - t.x, tdz = np.z - t.z;
+                    if (tdx * tdx + tdz * tdz < rr * rr) col = true;
+                }
+                for (let b of staticColliders) {
+                    if (np.x > b.minX - 0.5 && np.x < b.maxX + 0.5 &&
+                        np.z > b.minZ - 0.5 && np.z < b.maxZ + 0.5) col = true;
+                }
+            }
+            if (!col) {
+                player.position.x += dx;
+                player.position.z += dz;
+            } else {
+                // Hit a collider: cancel the dive
+                isDiving = false;
+                isProne = true;
+                diveTimer = 0;
+            }
             player.position.y = floorY;
             const sprite = player.getObjectByName("playerSprite");
             if (sprite) {
@@ -12572,7 +12595,7 @@ function animate() {
                 sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 12 * dt);
                 sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 0.6, 12 * dt);
             }
-            if (diveTimer <= 0) {
+            if (diveTimer <= 0 && isDiving) {
                 isDiving = false;
                 isProne = true;
             }
