@@ -12549,7 +12549,8 @@ function animate() {
     // player's head (not the third-person camera) and is updated just before the
     // draw, after this frame's movement.
 
-    // --- PORTAL LOGIC ---
+    // --- PANEL TAB BAR ---
+    updatePanelTabBar();
     if (voidPortalMesh) {
         voidPortalMesh.rotation.z -= 2.0 * dt;
         // Only allow entering portal if in Main World (not Void or Lava)
@@ -13509,12 +13510,14 @@ if (document.readyState === 'loading') {
         initPatreonBanner();
         setupHotbar();
         setTimeout(setupHotbarDrag, 100);
+        setTimeout(setupPanelTabBar, 100);
     });
 } else {
     // DOM is already ready, run immediately
     initPatreonBanner();
     setupHotbar(); // Initialize Hotbar
     setTimeout(setupHotbarDrag, 100);
+    setTimeout(setupPanelTabBar, 100);
 }
 
 // --- SKILLS UI ---
@@ -15200,11 +15203,68 @@ window.toggleInventory = function () {
     if (ui.style.display === 'flex') { document.exitPointerLock(); renderInventoryGrid(); }
 }
 
+function setupPanelTabBar() {
+    const bar = document.getElementById('panel-tabbar');
+    if (!bar) return;
+    const icons = { journal:'journal', inventory:'inventory', progress:'progress', skills:'skills', cooking:'cook', playerlist:'players' };
+    bar.querySelectorAll('button').forEach(btn => {
+        const onclick = btn.getAttribute('onclick') || '';
+        const m = onclick.match(/switchPanel\('(\w+)'\)/);
+        if (m && icons[m[1]] && window.PX && PX.has(icons[m[1]])) {
+            const label = btn.textContent.trim();
+            btn.innerHTML = PX.icon(icons[m[1]], 16) + ' ' + label;
+        }
+    });
+}
 window.toggleTabMenu = function () {
     const ui = document.getElementById('tab-menu-overlay');
     if (!ui) return;
     ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
     if (ui.style.display === 'flex') document.exitPointerLock();
+}
+
+const PANEL_OVERLAY_IDS = {
+    journal: 'journal-overlay',
+    inventory: 'inventory-overlay',
+    progress: 'progress-overlay',
+    skills: 'skills-ui',
+    cooking: 'cooking-ui',
+    playerlist: 'player-list-overlay'
+};
+
+function closeAllPanels() {
+    for (const k in PANEL_OVERLAY_IDS) {
+        const el = document.getElementById(PANEL_OVERLAY_IDS[k]);
+        if (el) el.style.display = 'none';
+    }
+    const bar = document.getElementById('panel-tabbar');
+    if (bar) bar.style.display = 'none';
+}
+
+function switchPanel(name) {
+    const id = PANEL_OVERLAY_IDS[name];
+    if (!id) return;
+    closeAllPanels();
+    const el = document.getElementById(id);
+    if (el) {
+        el.style.display = 'flex';
+        // trigger render if needed
+        if (name === 'journal' && typeof renderJournal === 'function') renderJournal();
+        if (name === 'inventory' && typeof renderInventoryGrid === 'function') renderInventoryGrid();
+        if (name === 'progress' && typeof setProgressTab === 'function') setProgressTab('bounties');
+        document.exitPointerLock();
+    }
+    const bar = document.getElementById('panel-tabbar');
+    if (bar) bar.style.display = 'flex';
+}
+
+function updatePanelTabBar() {
+    const anyOpen = Object.values(PANEL_OVERLAY_IDS).some(id => {
+        const el = document.getElementById(id);
+        return el && el.style.display === 'flex';
+    });
+    const bar = document.getElementById('panel-tabbar');
+    if (bar) bar.style.display = anyOpen ? 'flex' : 'none';
 }
 
 function addFishToInventory(fish) {

@@ -2979,7 +2979,15 @@
         <button class="btn-lg" onclick="toggleInventory()" style="margin-top: 15px;">CLOSE INVENTORY</button>
     </div>
 
-    <div id="tab-menu-overlay" class="overlay-screen">
+    <div id="panel-tabbar" style="display:none; position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:10001; display:none; gap:6px; background:var(--p-face); border:2px solid var(--p-line); padding:4px 8px;">
+        <button class="btn-sm" onclick="switchPanel('journal')">Journal</button>
+        <button class="btn-sm" onclick="switchPanel('inventory')">Inventory</button>
+        <button class="btn-sm" onclick="switchPanel('progress')">Progress</button>
+        <button class="btn-sm" onclick="switchPanel('skills')">Skills</button>
+        <button class="btn-sm" onclick="switchPanel('cooking')">Cooking</button>
+        <button class="btn-sm" onclick="switchPanel('playerlist')">Players</button>
+        <button class="btn-sm" onclick="closeAllPanels()">Close</button>
+    </div>
         <button class="close-x-btn" onclick="toggleTabMenu()">×</button>
         <div class="overlay-header">
             <h2>Menu</h2>
@@ -3904,7 +3912,7 @@
     <script src="networking.js?v=12.66"></script>
     <script src="audio.js?v=12.75"></script>
     <script src="progression.js?v=43"></script>
-    <script src="ui.js?v=12.193"></script>
+    <script src="ui.js?v=12.194"></script>
     <script src="props.js?v=12.115"></script>
     <script src="level-loader.js?v=39"></script>
     <script src="scratch.js?v=37"></script>
