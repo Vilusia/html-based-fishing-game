@@ -14664,6 +14664,7 @@ function loadSave() {
             if (d.quests && typeof d.quests === 'object') saveState.quests = d.quests;
             if (typeof d.saveVersion === 'number') saveState.saveVersion = d.saveVersion;
             if (typeof d.propsPlaced === 'number') saveState.propsPlaced = d.propsPlaced;
+            if (typeof d.tutorialDone === 'boolean') saveState.tutorialDone = d.tutorialDone;
 
             migrateSave(d.saveVersion);
         } catch (e) { console.error("Save Load Error", e); }
@@ -15517,6 +15518,14 @@ function guidedTourNext() {
     guidedTourStep++;
     if (guidedTourStep >= GUIDED_TOUR_STEPS.length) { guidedTourSkip(); return; }
     guidedTourShow();
+}
+
+function startGuidedTour() {
+    saveState.tutorialDone = false;
+    guidedTourStep = 0;
+    const box = document.getElementById('guided-tour');
+    if (box) guidedTourShow();
+    if (typeof saveGame === 'function') saveGame();
 }
 
 function guidedTourSkip() {
