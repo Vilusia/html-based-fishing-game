@@ -3544,7 +3544,7 @@ function safeEmbedImage(text) {
 const GIF_API_KEY = 'aM8lJdWLEnPC1CHzdP8gkv0SnMBArJfP'; // GIPHY API key
 
 const GIF_CLIENT_KEY = 'html_fishing';    // identifies this integration to GIPHY
-const GIF_LIMIT = 24;                     // results per search (API max 50)
+const GIF_LIMIT = 50;                     // results per search (API max 50)
 const GIF_TIMEOUT_MS = 8000;
 
 // GIPHY's Tenor-compatible layer. Swapping this one constant is all it takes to
@@ -3570,6 +3570,7 @@ function isAllowedGifUrl(url) {
 
 let gifSearchAbort = null;
 let gifLastQuery = '';
+let gifNext = null;
 
 function gifStatus(msg, isError) {
     const el = document.getElementById('gif-status');
@@ -3578,18 +3579,16 @@ function gifStatus(msg, isError) {
     el.className = isError ? 'error' : '';
 }
 
-function gifRenderResults(results) {
+function gifRenderResults(results, append) {
     const box = document.getElementById('gif-results');
     if (!box) return;
-    box.innerHTML = '';
-    if (!results.length) {
+    if (!append) box.innerHTML = '';
+    if (!results.length && !append) {
         gifStatus('No GIFs found.', false);
         return;
     }
     gifStatus('', false);
     for (const r of results) {
-        // Prefer the small preview for the grid; fall back through the sizes
-        // the API offers so an odd result set still renders.
         const mf = r.media_formats || {};
         const preview = (mf.tinygif || mf.nanogif || mf.gif || {}).url;
         const full = (mf.gif || mf.tinygif || mf.nanogif || {}).url;
@@ -3600,11 +3599,13 @@ function gifRenderResults(results) {
         img.alt = (r.content_description || 'GIF').substring(0, 100);
         img.loading = 'lazy';
         img.dataset.full = full;
-        // Per-item share analytics URL (GIPHY has no /v2/registershare).
         img.dataset.share = (r.analytics && r.analytics.onsent && r.analytics.onsent.url) || '';
         img.onclick = () => gifPick(img.dataset.full, img.dataset.share);
         box.appendChild(img);
     }
+    // Show/hide load-more button
+    const more = document.getElementById('gif-more');
+    if (more) more.style.display = gifNext ? 'block' : 'none';
 }
 
 // Picking a GIF sends its URL as a normal chat message, so everyone (including
@@ -3671,23 +3672,26 @@ async function gifFetch(url) {
 
 // Shared query parameters. `rating=pg` keeps search results lobby-friendly;
 // the API defaults to unrestricted.
-function gifParams(extra) {
+function gifParams(extra, pos) {
     const params = new URLSearchParams({
         key: GIF_API_KEY,
         client_key: GIF_CLIENT_KEY,
         limit: String(GIF_LIMIT),
         rating: 'pg'
     });
+    if (pos) params.set('pos', pos);
     if (extra) for (const k in extra) params.set(k, extra[k]);
     return params;
 }
 
 async function gifLoadTrending() {
     if (!GIF_API_KEY) return;
+    gifNext = null;
     gifStatus('Loading...', false);
     try {
         const data = await gifFetch(GIF_API_HOST + '/v2/featured?' + gifParams());
-        gifRenderResults(data.results || []);
+        gifNext = (data && data.next) || null;
+        gifRenderResults(data.results || [], false);
     } catch (err) {
         if (err && err.name === 'AbortError') return;
         gifStatus('Could not reach the GIF service.', true);
@@ -3699,13 +3703,36 @@ async function gifSearch(query) {
     if (!GIF_API_KEY) { gifStatus('GIF search is not configured (no GIPHY API key).', true); return; }
     if (!q) { gifLoadTrending(); return; }
     gifLastQuery = q;
+    gifNext = null;
     gifStatus('Searching...', false);
     try {
         const data = await gifFetch(GIF_API_HOST + '/v2/search?' + gifParams({ q: q }));
-        gifRenderResults(data.results || []);
+        gifNext = (data && data.next) || null;
+        gifRenderResults(data.results || [], false);
     } catch (err) {
         if (err && err.name === 'AbortError') return;
         gifStatus('Could not reach the GIF service.', true);
+    }
+}
+
+async function gifLoadMore() {
+    if (!gifNext) return;
+    const pos = gifNext;
+    gifNext = null;
+    const more = document.getElementById('gif-more');
+    if (more) more.disabled = true;
+    try {
+        const url = gifLastQuery
+            ? GIF_API_HOST + '/v2/search?' + gifParams({ q: gifLastQuery }, pos)
+            : GIF_API_HOST + '/v2/featured?' + gifParams({}, pos);
+        const data = await gifFetch(url);
+        gifNext = (data && data.next) || null;
+        gifRenderResults(data.results || [], true);
+    } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        gifStatus('Could not load more GIFs.', true);
+    } finally {
+        if (more) more.disabled = false;
     }
 }
 
@@ -3722,6 +3749,9 @@ function setupGifPicker() {
         else gifClosePanel();
     };
     if (close) close.onclick = gifClosePanel;
+
+    const more = document.getElementById('gif-more');
+    if (more) more.onclick = () => gifLoadMore();
 
     let debounce = null;
     if (search) {
