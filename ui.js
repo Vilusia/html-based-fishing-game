@@ -476,17 +476,6 @@ function autoSortInventory() {
         saveState.invSlots[i] = i < items.length ? items[i] : null;
     }
 }
-    if (!saveState.stone || saveState.stone <= 0) { showToast("No stone!"); return; }
-
-    const count = saveState.stone;
-    const price = 30;
-    const total = count * price;
-
-    saveState.stone = 0;
-    saveState.money += total;
-    saveGame();
-    Sound.sell();
-    showToast(`Sold ${count} stone for $${total}!`);
 
 window.actionSellFish = function () {
     ensureInventorySlots();
