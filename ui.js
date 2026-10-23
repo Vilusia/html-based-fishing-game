@@ -15254,7 +15254,7 @@ function switchPanel(name) {
         if (name === 'progress' && typeof setProgressTab === 'function') setProgressTab('bounties');
         if (name === 'skills' && typeof renderSkillsUI === 'function') renderSkillsUI();
         if (name === 'cooking' && typeof renderCookingUI === 'function') renderCookingUI();
-        if (name === 'playerlist' && typeof togglePlayerList === 'function') togglePlayerList();
+        if (name === 'playerlist' && typeof renderPlayerList === 'function') renderPlayerList();
         document.exitPointerLock();
     }
     const bar = document.getElementById('panel-tabbar');
