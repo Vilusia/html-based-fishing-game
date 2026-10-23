@@ -76,7 +76,7 @@ const FISH_TYPES = [
     { name: "Lake Trout", rarity: "Rare", chance: 3.5, color: "#6A7A8A", drain: 46, price: 170, zone: "lake", shape: "trout" },
     { name: "Muskellunge", rarity: "Epic", chance: 1.0, color: "#4A5A4A", drain: 68, price: 520, zone: "lake", shape: "pike" },
     { name: "Flathead Catfish", rarity: "Rare", chance: 3.5, color: "#7A6A4A", drain: 44, price: 150, zone: "lake", shape: "catfish" },
-    { name: "Blue Catfish", rarity: "Rare", chance: 3.0, color: "#6A7A9A", drain: 46, price: 160, zone: "lake", shape: "catfish" },
+    { name: "White Catfish", rarity: "Rare", chance: 3.0, color: "#8A9AAA", drain: 44, price: 150, zone: "lake", shape: "catfish" },
     { name: "Freshwater Drum", rarity: "Uncommon", chance: 7, color: "#9A8A7A", drain: 26, price: 36, zone: "lake", shape: "bass" },
     { name: "White Bass", rarity: "Common", chance: 15, color: "#B0B0A0", drain: 16, price: 12, zone: "lake", shape: "bass" },
     { name: "Yellow Bullhead", rarity: "Common", chance: 16, color: "#8A7A5A", drain: 15, price: 11, zone: "lake", shape: "catfish" },
