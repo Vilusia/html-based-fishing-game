@@ -109,7 +109,7 @@ function placeProp(type) {
         return;
     }
 
-    // --- SCREEN: prompt for the source BEFORE the cooldown is armed ---
+    // --- SCREEN: no prompt at placement time; add the video via E afterwards ---
     let src = null;
     if (type === 'screen') {
         // Room-wide cap: each embed is its own iframe (heavy), so limit how
@@ -119,13 +119,7 @@ function placeProp(type) {
             showToast('This room already has ' + MAX_YT_SCREENS + ' screens.', 'error');
             return;
         }
-        const url = window.prompt('Paste a YouTube or Twitch URL to play on the screen:', '');
-        if (!url) return; // cancelled
-        src = parseScreenSource(String(url).trim());
-        if (!src) {
-            showToast('Use a real YouTube or Twitch link (youtube.com, youtu.be, twitch.tv).', 'error');
-            return;
-        }
+        // src stays null; the placer adds a video through the queue panel (E).
     }
 
     lastPropTime = Date.now();
