@@ -64,6 +64,7 @@ function renderPropsUI() {
         { id: 'tent', icon: 'tent', name: 'Tent' },
         { id: 'blanket', icon: 'blanket', name: 'Picnic Mat' },
         { id: 'chair', icon: 'chair', name: 'Chair' },
+        { id: 'couch', icon: 'couch', name: 'Couch' },
         { id: 'table', icon: 'table', name: 'Picnic Table' },
         { id: 'cooler', icon: 'cooler', name: 'Cooler' },
         { id: 'basket', icon: 'basket', name: 'Basket' },
@@ -366,7 +367,46 @@ function spawnPropMesh(data) {
         g.scale.set(0.7, 0.7, 0.7);
     }
 
-    // --- OTHER PROPS (Table, Cooler, etc. - Kept from previous) ---
+    // --- COUCH: LONG SEATED FURNITURE ---
+    else if (data.type === 'couch') {
+        const fabricMat = new THREE.MeshStandardMaterial({ color: 0x7B5B3A });
+
+        // Legs
+        const legGeo = new THREE.BoxGeometry(0.15, 0.6, 0.15);
+        const positions = [[-1.3, 0.3, -0.6], [1.3, 0.3, -0.6], [-1.3, 0.3, 0.6], [1.3, 0.3, 0.6]];
+        positions.forEach(p => {
+            const l = new THREE.Mesh(legGeo, fabricMat);
+            l.position.set(p[0], p[1], p[2]);
+            g.add(l);
+        });
+
+        // Seat (long)
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.3, 1.2), fabricMat);
+        seat.position.y = 0.75;
+        g.add(seat);
+
+        // Backrest
+        const back = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.0, 0.3), fabricMat);
+        back.position.set(0, 1.4, -0.45);
+        back.rotation.x = -0.15;
+        g.add(back);
+
+        // Armrests
+        const armGeo = new THREE.BoxGeometry(0.3, 0.8, 1.2);
+        const armL = new THREE.Mesh(armGeo, fabricMat); armL.position.set(-1.65, 1.1, 0);
+        const armR = new THREE.Mesh(armGeo, fabricMat); armR.position.set(1.65, 1.1, 0);
+        g.add(armL, armR);
+
+        // Cushions (visual)
+        const cushMat = new THREE.MeshStandardMaterial({ color: 0x9B7B5A });
+        for (let i = -1; i <= 1; i++) {
+            const c = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.15, 1.0), cushMat);
+            c.position.set(i * 1.0, 0.95, 0);
+            g.add(c);
+        }
+
+        g.scale.set(0.7, 0.7, 0.7);
+    }
     else if (data.type === 'table') {
         const wood = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
         const top = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.1, 1.5), wood); top.position.y = 0.9;
@@ -829,6 +869,10 @@ function spawnPropMesh(data) {
     if (data.type === 'chair') {
         mesh.userData.standTop = 1.25;
         mesh.userData.standHalf = 0.8;
+    }
+    if (data.type === 'couch') {
+        mesh.userData.standTop = 0.9;
+        mesh.userData.standHalf = 1.5;
     }
 
     if (typeof broadcastSound === 'function') {
