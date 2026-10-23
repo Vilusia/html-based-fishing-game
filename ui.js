@@ -12182,22 +12182,14 @@ function stopFishing(success, msg) {
             const sizeStr = minigame.targetFish.sizeLabel ? ` [${minigame.targetFish.sizeLabel}]` : '';
             showToast(`Caught ${minigame.targetFish.name}${tierStr}${sizeStr}!`);
 
+            // Add to grid inventory (stacked)
+            try { addFishToInventory(minigame.targetFish); } catch (e) { }
+
             localHeldFish = {
                 name: minigame.targetFish.name,
                 color: minigame.targetFish.color,
                 size: minigame.targetFish.size
             };
-
-            // Auto-add caught fish to an empty hotbar slot so players can
-            // keep/re-show their favorite fish from the hotbar.
-            try {
-                if (!saveState.hotbar) saveState.hotbar = defaultHotbar();
-                const emptyIdx = saveState.hotbar.findIndex(s => s === null);
-                if (emptyIdx !== -1) {
-                    saveState.hotbar[emptyIdx] = { type: 'fish', name: minigame.targetFish.name, color: minigame.targetFish.color, size: minigame.targetFish.size };
-                    updateHotbarVisuals();
-                }
-            } catch (e) { }
 
             if (fishHoldTimer) clearTimeout(fishHoldTimer);
             fishHoldTimer = setTimeout(() => {
@@ -13507,6 +13499,7 @@ if (document.readyState === 'loading') {
     // DOM is already ready, run immediately
     initPatreonBanner();
     setupHotbar(); // Initialize Hotbar
+    setTimeout(setupHotbarDrag, 100);
 }
 
 // --- SKILLS UI ---
@@ -15171,6 +15164,115 @@ window.toggleJournal = function () {
     const ui = document.getElementById('journal-overlay');
     ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
     if (ui.style.display === 'flex') { document.exitPointerLock(); renderJournal(); }
+}
+
+window.toggleInventory = function () {
+    const ui = document.getElementById('inventory-overlay');
+    if (!ui) return;
+    ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
+    if (ui.style.display === 'flex') { document.exitPointerLock(); renderInventoryGrid(); }
+}
+
+function addFishToInventory(fish) {
+    ensureInventorySlots();
+    const existing = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === fish.name);
+    if (existing) { existing.count = (existing.count || 1) + 1; return; }
+    const empty = saveState.invSlots.findIndex(s => s === null);
+    if (empty !== -1) saveState.invSlots[empty] = { type: 'fish', name: fish.name, color: fish.color, size: fish.size || 1, count: 1 };
+}
+function ensureInventorySlots() {
+    if (!Array.isArray(saveState.invSlots) || saveState.invSlots.length !== 50) {
+        saveState.invSlots = new Array(50).fill(null);
+        const counts = {};
+        if (Array.isArray(saveState.inventory)) {
+            for (const f of saveState.inventory) {
+                if (!f || !f.name) continue;
+                if (!counts[f.name]) counts[f.name] = { type: 'fish', name: f.name, color: f.color, size: f.size || 1, count: 0 };
+                counts[f.name].count++;
+            }
+        }
+        let idx = 0;
+        for (const k in counts) {
+            if (idx < 50) saveState.invSlots[idx++] = counts[k];
+        }
+    }
+}
+
+function renderInventoryGrid() {
+    ensureInventorySlots();
+    const box = document.getElementById('inventory-grid');
+    if (!box) return;
+    box.innerHTML = '';
+    for (let i = 0; i < 50; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'journal-entry';
+        slot.style.cssText = 'width:56px;height:56px;display:flex;align-items:center;justify-content:center;position:relative;cursor:grab;';
+        slot.draggable = true;
+        slot.dataset.slot = i;
+        const entry = saveState.invSlots[i];
+        if (entry && entry.type === 'fish') {
+            try {
+                const tex = createFishTexture(entry.name, entry.color);
+                const cv = document.createElement('canvas');
+                cv.width = 48; cv.height = 48;
+                const cx = cv.getContext('2d');
+                cx.drawImage(tex.image, 0, 0, 48, 48);
+                slot.appendChild(cv);
+            } catch (e) { slot.innerText = '🐟'; }
+            if (entry.count > 1) {
+                const badge = document.createElement('div');
+                badge.innerText = entry.count;
+                badge.style.cssText = 'position:absolute;bottom:2px;right:4px;font-size:10px;color:#fff;background:rgba(0,0,0,0.7);padding:0 3px;';
+                slot.appendChild(badge);
+            }
+        }
+        // Drag handlers
+        slot.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({ from: 'inv', index: i }));
+        });
+        slot.addEventListener('dragover', (e) => { e.preventDefault(); });
+        slot.addEventListener('drop', (e) => {
+            e.preventDefault();
+            try {
+                const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if (data.from === 'hotbar') {
+                    // Move hotbar slot to inventory? swap
+                    const hb = saveState.hotbar[data.index];
+                    const inv = saveState.invSlots[i];
+                    saveState.invSlots[i] = hb ? { ...hb, count: 1 } : null;
+                    saveState.hotbar[data.index] = inv ? { type: inv.type, name: inv.name, color: inv.color, size: inv.size } : null;
+                    renderInventoryGrid();
+                    updateHotbarVisuals();
+                    saveGame();
+                }
+            } catch (err) { }
+        });
+        box.appendChild(slot);
+    }
+}
+
+// Drag fish from inventory to hotbar: handled by hotbar slot drop
+function setupHotbarDrag() {
+    for (let i = 0; i < 10; i++) {
+        const iconEl = document.getElementById(`hotbar-icon-${i}`);
+        if (!iconEl) continue;
+        const slotEl = iconEl.parentElement;
+        slotEl.addEventListener('dragover', (e) => e.preventDefault());
+        slotEl.addEventListener('drop', (e) => {
+            e.preventDefault();
+            try {
+                const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if (data.from === 'inv') {
+                    const inv = saveState.invSlots[data.index];
+                    if (inv && inv.type === 'fish') {
+                        saveState.hotbar[i] = { type: 'fish', name: inv.name, color: inv.color, size: inv.size || 1 };
+                        updateHotbarVisuals();
+                        saveGame();
+                    }
+                }
+            } catch (err) { }
+        });
+    }
 }
 
 window.toggleOptions = function () {

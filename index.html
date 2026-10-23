@@ -2961,6 +2961,16 @@
         <button class="btn-lg" onclick="toggleJournal()" style="margin-top: 15px;">CLOSE JOURNAL</button>
     </div>
 
+    <div id="inventory-overlay" class="overlay-screen">
+        <button class="close-x-btn" onclick="toggleInventory()">×</button>
+        <div class="overlay-header">
+            <h2>Inventory</h2>
+            <div class="overlay-subtitle">50 slots. Drag fish onto the hotbar to keep them handy.</div>
+        </div>
+        <div id="inventory-grid" class="grid-container" style="grid-template-columns: repeat(10, 1fr); max-width: 640px;"></div>
+        <button class="btn-lg" onclick="toggleInventory()" style="margin-top: 15px;">CLOSE INVENTORY</button>
+    </div>
+
     <div id="progress-overlay" class="overlay-screen">
         <button class="close-x-btn" onclick="toggleProgress()">×</button>
         <div class="overlay-header">
@@ -3679,6 +3689,7 @@
                 <div class="stat-box">
                     <span id="money-display">$0</span>
                     <button id="btn-journal" onclick="toggleJournal()">Journal</button>
+                    <button id="btn-inventory" onclick="toggleInventory()">Inventory</button>
                     <button id="btn-progress" onclick="toggleProgress()">Progress</button>
                     <button id="btn-inventory-mobile" onclick="toggleMobileInventory()" style="margin-left: 5px;">
                         Inventory</button>
@@ -3872,7 +3883,7 @@
     <script src="networking.js?v=12.53"></script>
     <script src="audio.js?v=12.62"></script>
     <script src="progression.js?v=30"></script>
-    <script src="ui.js?v=12.170"></script>
+    <script src="ui.js?v=12.171"></script>
     <script src="props.js?v=12.102"></script>
     <script src="level-loader.js?v=26"></script>
     <script src="scratch.js?v=24"></script>
