@@ -18333,12 +18333,25 @@ function sellFish() {
     let totalCount = 0;
 
     // --- Fish ---
-    if (Array.isArray(saveState.inventory) && saveState.inventory.length > 0) {
-        for (const f of saveState.inventory) {
-            totalValue += (f.price || f.value || 10);
+    ensureInventorySlots();
+    if (Array.isArray(saveState.invSlots)) {
+        for (const s of saveState.invSlots) {
+            if (s && s.type === 'fish') {
+                const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
+                const price = f ? f.price : (s.price || 10);
+                const c = s.count || 1;
+                totalValue += price * c;
+                totalCount += c;
+            }
         }
-        totalCount += saveState.inventory.length;
     }
+    // Clear fish slots
+    if (Array.isArray(saveState.invSlots)) {
+        for (let i = 0; i < saveState.invSlots.length; i++) {
+            if (saveState.invSlots[i] && saveState.invSlots[i].type === 'fish') saveState.invSlots[i] = null;
+        }
+    }
+    saveState.inventory = [];
 
     // --- Wood (Typed) ---
     if (!saveState.woodInventory) saveState.woodInventory = {};
