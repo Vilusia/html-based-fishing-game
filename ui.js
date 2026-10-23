@@ -374,21 +374,23 @@ function updateMerchantUI(container) {
 
             <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell</h3>
 
-            <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Fish</h3>
-            <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:20px; margin-top: 10px; max-height:180px; overflow-y:auto;">
+            <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Fish (click to sell one)</h3>
+            <div id="merchant-fish-grid" style="display:grid; grid-template-columns: repeat(6, 1fr); gap:6px; margin-bottom:20px; margin-top:10px; max-height:220px; overflow-y:auto; padding:8px; background:var(--p-sunken); border:2px solid var(--p-line);">
                 ${invSlotsFish.map(s => {
                     const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
                     const price = f ? f.price : 10;
                     const count = s.count || 1;
-                    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:4px; border:1px solid var(--p-line);">
-                        <span style="color:${f ? f.color : '#fff'}">${s.name} x${count}</span>
-                        <button class="btn-sm" onclick="sellFishSpecies('${s.name.replace(/'/g, "\\'")}')">Sell ($${price * count})</button>
+                    return `<div style="width:60px;height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;cursor:pointer;border:1px solid var(--p-line);background:var(--p-face-2);"
+                        onclick="sellOneFish('${s.name.replace(/'/g, "\\'")}')">
+                        ${(() => { try { const tex = createFishTexture(s.name, s.color); return `<img src="${tex.image.toDataURL()}" width="40" height="40" style="image-rendering:pixelated;">`; } catch(e){ return '🐟'; } })()}
+                        <div style="font-size:9px; color:#fff; position:absolute; bottom:2px; right:4px; background:rgba(0,0,0,0.7); padding:0 2px;">x${count}</div>
+                        <div style="font-size:9px; color:var(--p-gold);">$${price}</div>
                     </div>`;
-                }).join('') || '<div style="color:var(--p-text-dim);">No fish to sell.</div>'}
-                <button class="btn-lg" onclick="sellAllFish()" ${totalFishValue === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
-                    Sell All Fish ($${totalFishValue})
-                </button>
+                }).join('') || '<div style="color:var(--p-text-dim); grid-column:1/-1;">No fish to sell.</div>'}
             </div>
+            <button class="btn-lg" onclick="sellAllFish()" ${totalFishValue === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
+                Sell All Fish ($${totalFishValue})
+            </button>
 
             <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Other</h3>
             <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px; margin-top: 10px;">
@@ -415,6 +417,28 @@ function updateMerchantUI(container) {
         </div>
     `;
 }
+
+window.sellOneFish = function (name) {
+    ensureInventorySlots();
+    const slot = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === name);
+    if (!slot) { showToast("No such fish."); return; }
+    const f = (typeof getFishByName === 'function') ? getFishByName(name) : null;
+    const price = f ? f.price : 10;
+    const idx = saveState.invSlots.indexOf(slot);
+    if ((slot.count || 1) > 1) {
+        slot.count--;
+    } else {
+        if (idx !== -1) saveState.invSlots[idx] = null;
+    }
+    // remove from hotbar if count 0? keep hotbar as is (shows fish)
+    autoSortInventory();
+    saveState.money += price;
+    saveGame();
+    Sound.sell();
+    showToast(`Sold 1 ${name} for $${price}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
+    updateHotbarVisuals();
+};
 
 window.sellFishSpecies = function (name) {
     ensureInventorySlots();
