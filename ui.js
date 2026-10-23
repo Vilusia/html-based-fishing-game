@@ -11165,8 +11165,8 @@ function setupInputs() {
             lastJumpTime = now;
         }
 
-        // Tab opens inventory
-        if (e.code === 'Tab') { e.preventDefault(); toggleInventory(); return; }
+        // Tab opens the unified menu
+        if (e.code === 'Tab') { e.preventDefault(); toggleTabMenu(); return; }
 
         // Interaction (Desktop)
         if (e.code === k.interact) {
@@ -15198,6 +15198,13 @@ window.toggleInventory = function () {
     if (!ui) return;
     ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
     if (ui.style.display === 'flex') { document.exitPointerLock(); renderInventoryGrid(); }
+}
+
+window.toggleTabMenu = function () {
+    const ui = document.getElementById('tab-menu-overlay');
+    if (!ui) return;
+    ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
+    if (ui.style.display === 'flex') document.exitPointerLock();
 }
 
 function addFishToInventory(fish) {

@@ -2979,6 +2979,23 @@
         <button class="btn-lg" onclick="toggleInventory()" style="margin-top: 15px;">CLOSE INVENTORY</button>
     </div>
 
+    <div id="tab-menu-overlay" class="overlay-screen">
+        <button class="close-x-btn" onclick="toggleTabMenu()">×</button>
+        <div class="overlay-header">
+            <h2>Menu</h2>
+            <div class="overlay-subtitle">Quick access to all panels</div>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; max-width:420px; margin:20px auto;">
+            <button class="btn-lg" onclick="toggleTabMenu(); toggleJournal();">Journal</button>
+            <button class="btn-lg" onclick="toggleTabMenu(); toggleInventory();">Inventory</button>
+            <button class="btn-lg" onclick="toggleTabMenu(); toggleProgress();">Progress</button>
+            <button class="btn-lg" onclick="toggleTabMenu(); toggleSkillsUI();">Skills</button>
+            <button class="btn-lg" onclick="toggleTabMenu(); toggleCookingUI();">Cooking</button>
+            <button class="btn-lg" onclick="toggleTabMenu(); togglePlayerList && togglePlayerList();">Player List</button>
+        </div>
+        <button class="btn-lg" onclick="toggleTabMenu()" style="margin-top: 15px;">CLOSE</button>
+    </div>
+
     <div id="progress-overlay" class="overlay-screen">
         <button class="close-x-btn" onclick="toggleProgress()">×</button>
         <div class="overlay-header">
@@ -3887,7 +3904,7 @@
     <script src="networking.js?v=12.64"></script>
     <script src="audio.js?v=12.73"></script>
     <script src="progression.js?v=41"></script>
-    <script src="ui.js?v=12.190"></script>
+    <script src="ui.js?v=12.191"></script>
     <script src="props.js?v=12.113"></script>
     <script src="level-loader.js?v=37"></script>
     <script src="scratch.js?v=35"></script>
