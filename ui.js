@@ -11613,16 +11613,9 @@ function handleAction(down) {
     }
     // ---------------------------
 
-    // --- AUTO-EQUIP ROD IF HANDS EMPTY (and not holding a fish) ---
-    if (isHandsHidden && !localHeldFish) {
-        if (down) {
-            isHandsHidden = false;
-            updateLocalVisuals();
-            showToast("Rod Equipped");
-            return; // Don't fish immediately
-        }
-        return;
-    }
+    // --- AUTO-EQUIP ROD IF HANDS EMPTY ---
+    // Disabled: clicking should not switch the held tool/fish back to the rod.
+    // Use hotkey 1 (or the hotbar) to equip the rod.
 
     if (isGuitarActive) {
         if (down) showToast("Can't fish while playing guitar!");
