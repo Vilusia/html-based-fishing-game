@@ -261,7 +261,7 @@ function updateMerchantUI(container) {
         saveState.invSlots.forEach(s => {
             if (s && s.type === 'fish') {
                 const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
-                const price = f ? f.price : 10;
+                const price = getFishSellPrice(s.name);
                 const count = s.count || 1;
                 totalFishValue += price * count;
                 totalFishCount += count;
@@ -378,7 +378,7 @@ function updateMerchantUI(container) {
             <div id="merchant-fish-grid" style="display:grid; grid-template-columns: repeat(6, 1fr); gap:6px; margin-bottom:20px; margin-top:10px; max-height:220px; overflow-y:auto; padding:8px; background:var(--p-sunken); border:2px solid var(--p-line);">
                 ${invSlotsFish.map(s => {
                     const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
-                    const price = f ? f.price : 10;
+                    const price = getFishSellPrice(s.name);
                     const count = s.count || 1;
                     return `<div style="width:60px;height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;cursor:pointer;border:1px solid var(--p-line);background:var(--p-face-2);"
                         onclick="sellOneFish('${s.name.replace(/'/g, "\\'")}')">
@@ -423,7 +423,7 @@ window.sellOneFish = function (name) {
     const slot = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === name);
     if (!slot) { showToast("No such fish."); return; }
     const f = (typeof getFishByName === 'function') ? getFishByName(name) : null;
-    const price = f ? f.price : 10;
+    const price = getFishSellPrice(name);
     const idx = saveState.invSlots.indexOf(slot);
     if ((slot.count || 1) > 1) {
         slot.count--;
@@ -445,7 +445,7 @@ window.sellFishSpecies = function (name) {
     const slot = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === name);
     if (!slot) { showToast("No such fish."); return; }
     const f = (typeof getFishByName === 'function') ? getFishByName(name) : null;
-    const price = f ? f.price : 10;
+    const price = getFishSellPrice(name);
     const count = slot.count || 1;
     const total = price * count;
     // remove slot
@@ -472,7 +472,7 @@ window.sellAllFish = function () {
         const s = saveState.invSlots[i];
         if (s && s.type === 'fish') {
             const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
-            const price = f ? f.price : 10;
+            const price = getFishSellPrice(name);
             const c = s.count || 1;
             totalVal += price * c;
             count += c;
@@ -508,7 +508,7 @@ window.actionSellFish = function () {
     saveState.invSlots.forEach(s => {
         if (s && s.type === 'fish') {
             const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
-            const price = f ? f.price : 10;
+            const price = getFishSellPrice(name);
             const c = s.count || 1;
             totalVal += price * c;
             count += c;
@@ -15411,14 +15411,27 @@ function updatePanelTabBar() {
     if (bar) bar.style.display = anyOpen ? 'flex' : 'none';
 }
 
-function addFishToInventory(fish) {
+function getFishSellPrice(name) {
+    if (!name) return 10;
+    if (name.startsWith('Cooked ')) {
+        const base = (typeof getFishByName === 'function') ? getFishByName(name.slice(7)) : null;
+        const basePrice = base ? base.price : 10;
+        return Math.max(1, Math.round(basePrice * COOK_VALUE_MULT));
+    }
+    if (name.startsWith('Burnt ')) {
+        const base = (typeof getFishByName === 'function') ? getFishByName(name.slice(6)) : null;
+        const basePrice = base ? base.price : 10;
+        return Math.max(1, Math.round(basePrice * COOK_BURN_VALUE_MULT));
+    }
+    const f = (typeof getFishByName === 'function') ? getFishByName(name) : null;
+    return f ? f.price : 10;
+}
     ensureInventorySlots();
     const existing = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === fish.name);
     if (existing) { existing.count = (existing.count || 1) + 1; return; }
     const empty = saveState.invSlots.findIndex(s => s === null);
     if (empty !== -1) saveState.invSlots[empty] = { type: 'fish', name: fish.name, color: fish.color, size: fish.size || 1, count: 1 };
     autoSortInventory();
-}
 function getItemTooltipText(entry) {
     if (!entry) return '';
     if (entry.type === 'fish') {
