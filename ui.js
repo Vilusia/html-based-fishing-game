@@ -3331,19 +3331,16 @@ function createRemotePlayer(id, data) {
     if (document.getElementById('lobby-screen').style.display === 'none') {
         const isCustom = !!(window.CUSTOM_LEVEL && window.Level);
         if (isCustom) {
-            if (window.connectedPlayerIds && window.connectedPlayerIds.has(id)) {
+            if (!window.seenPlayerNames) window.seenPlayerNames = new Set();
+            if (window.seenPlayerNames.has(nameToUse)) {
                 // Reconnect after map download: real join
                 displayChatMessage(nameToUse, "has joined!", 'system');
-                if (otherPlayers[id]) otherPlayers[id].pendingJoinAnnounce = false;
             } else {
-                if (!window.connectedPlayerIds) window.connectedPlayerIds = new Set();
-                window.connectedPlayerIds.add(id);
+                window.seenPlayerNames.add(nameToUse);
                 displayChatMessage(nameToUse, "is downloading the map...", 'system');
-                if (otherPlayers[id]) otherPlayers[id].pendingJoinAnnounce = true;
             }
         } else {
             displayChatMessage(nameToUse, "has joined!", 'system');
-            p.pendingJoinAnnounce = false;
         }
     }
 }
