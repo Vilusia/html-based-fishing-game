@@ -256,6 +256,7 @@ function toggleMerchant() {
 function updateMerchantUI(container) {
     let totalFishValue = 0;
     let totalFishCount = 0;
+    const invSlotsFish = [];
     if (Array.isArray(saveState.invSlots)) {
         saveState.invSlots.forEach(s => {
             if (s && s.type === 'fish') {
@@ -264,6 +265,7 @@ function updateMerchantUI(container) {
                 const count = s.count || 1;
                 totalFishValue += price * count;
                 totalFishCount += count;
+                invSlotsFish.push(s);
             }
         });
     }
@@ -372,10 +374,24 @@ function updateMerchantUI(container) {
 
             <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell</h3>
 
-            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px; margin-top: 10px;">
-                <button class="btn-lg" onclick="actionSellFish()" ${totalFishValue === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
-                    Sell Fish (${totalFishCount}x = $${totalFishValue})
+            <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Fish</h3>
+            <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:20px; margin-top: 10px; max-height:180px; overflow-y:auto;">
+                ${invSlotsFish.map(s => {
+                    const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
+                    const price = f ? f.price : 10;
+                    const count = s.count || 1;
+                    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:4px; border:1px solid var(--p-line);">
+                        <span style="color:${f ? f.color : '#fff'}">${s.name} x${count}</span>
+                        <button class="btn-sm" onclick="sellFishSpecies('${s.name.replace(/'/g, "\\'")}')">Sell ($${price * count})</button>
+                    </div>`;
+                }).join('') || '<div style="color:var(--p-text-dim);">No fish to sell.</div>'}
+                <button class="btn-lg" onclick="sellAllFish()" ${totalFishValue === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
+                    Sell All Fish ($${totalFishValue})
                 </button>
+            </div>
+
+            <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Other</h3>
+            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px; margin-top: 10px;">
                 <button class="btn-lg" onclick="actionSellWood()" ${totalWoodCount === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
                     Sell Wood (${totalWoodCount}x = $${totalWoodValue})
                 </button>
@@ -400,7 +416,66 @@ function updateMerchantUI(container) {
     `;
 }
 
-window.actionSellStone = function () {
+window.sellFishSpecies = function (name) {
+    ensureInventorySlots();
+    const slot = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === name);
+    if (!slot) { showToast("No such fish."); return; }
+    const f = (typeof getFishByName === 'function') ? getFishByName(name) : null;
+    const price = f ? f.price : 10;
+    const count = slot.count || 1;
+    const total = price * count;
+    // remove slot
+    const idx = saveState.invSlots.indexOf(slot);
+    if (idx !== -1) saveState.invSlots[idx] = null;
+    // remove from hotbar
+    for (let i = 0; i < saveState.hotbar.length; i++) {
+        if (saveState.hotbar[i] && saveState.hotbar[i].type === 'fish' && saveState.hotbar[i].name === name) saveState.hotbar[i] = null;
+    }
+    // auto-sort
+    autoSortInventory();
+    saveState.money += total;
+    saveGame();
+    Sound.sell();
+    showToast(`Sold ${count} ${name} for $${total}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
+    updateHotbarVisuals();
+};
+
+window.sellAllFish = function () {
+    ensureInventorySlots();
+    let totalVal = 0, count = 0;
+    for (let i = 0; i < saveState.invSlots.length; i++) {
+        const s = saveState.invSlots[i];
+        if (s && s.type === 'fish') {
+            const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
+            const price = f ? f.price : 10;
+            const c = s.count || 1;
+            totalVal += price * c;
+            count += c;
+            saveState.invSlots[i] = null;
+        }
+    }
+    // clear hotbar fish
+    for (let i = 0; i < saveState.hotbar.length; i++) {
+        if (saveState.hotbar[i] && saveState.hotbar[i].type === 'fish') saveState.hotbar[i] = null;
+    }
+    autoSortInventory();
+    if (totalVal === 0) { showToast("No fish to sell!"); return; }
+    saveState.money += totalVal;
+    saveGame();
+    Sound.sell();
+    showToast(`Sold ${count} fish for $${totalVal}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
+    updateHotbarVisuals();
+};
+
+function autoSortInventory() {
+    if (!Array.isArray(saveState.invSlots)) return;
+    const items = saveState.invSlots.filter(s => s !== null);
+    for (let i = 0; i < saveState.invSlots.length; i++) {
+        saveState.invSlots[i] = i < items.length ? items[i] : null;
+    }
+}
     if (!saveState.stone || saveState.stone <= 0) { showToast("No stone!"); return; }
 
     const count = saveState.stone;
@@ -412,8 +487,6 @@ window.actionSellStone = function () {
     saveGame();
     Sound.sell();
     showToast(`Sold ${count} stone for $${total}!`);
-    updateMerchantUI(document.getElementById('merchant-ui'));
-};
 
 window.actionSellFish = function () {
     ensureInventorySlots();
@@ -434,8 +507,11 @@ window.actionSellFish = function () {
     for (let i = 0; i < saveState.invSlots.length; i++) {
         if (saveState.invSlots[i] && saveState.invSlots[i].type === 'fish') saveState.invSlots[i] = null;
     }
-    // Also clear legacy array
-    saveState.inventory = [];
+    autoSortInventory();
+    // Also clear hotbar fish
+    for (let i = 0; i < saveState.hotbar.length; i++) {
+        if (saveState.hotbar[i] && saveState.hotbar[i].type === 'fish') saveState.hotbar[i] = null;
+    }
 
     saveState.money += totalVal;
     saveGame();
@@ -15311,6 +15387,7 @@ function addFishToInventory(fish) {
     if (existing) { existing.count = (existing.count || 1) + 1; return; }
     const empty = saveState.invSlots.findIndex(s => s === null);
     if (empty !== -1) saveState.invSlots[empty] = { type: 'fish', name: fish.name, color: fish.color, size: fish.size || 1, count: 1 };
+    autoSortInventory();
 }
 function getItemTooltipText(entry) {
     if (!entry) return '';
