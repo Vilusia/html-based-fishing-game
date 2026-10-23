@@ -407,7 +407,7 @@
 
     const NPC_TYPES = [
         { id: "merchant", name: "Merchant", color: 0xE65100, species: "fox", hat: "tophat", icon: "$" },
-        { id: "stylist", name: "Stylist", color: 0xFF69B4, species: "bunny", hat: "bow", icon: "\uD83D\uDC55" },
+        { id: "stylist", name: "Shop", color: 0xFF69B4, species: "bunny", hat: "bow", icon: "\uD83D\uDC55" },
         { id: "bait", name: "Bait Shop", color: 0x32CD32, species: "frog", hat: "straw", icon: "\uD83E\uDEB1" },
         { id: "tutorial", name: "Tutorial", color: 0x9370DB, species: "bunny", hat: "bow", icon: "?" },
         { id: "lava", name: "Inferno Guard", color: 0x8B0000, species: "dragon", hat: "viking", icon: "\uD83C\uDF0B" },

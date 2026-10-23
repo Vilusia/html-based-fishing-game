@@ -5081,7 +5081,7 @@ function createNPCs() {
     scene.add(npcMerchant);
 
     // 2. Stylist (West)
-    npcStylist = createPlayerMesh('#FF69B4', "Stylist", 'bow', '#000000', 'bunny');
+    npcStylist = createPlayerMesh('#FF69B4', "Shop", 'bow', '#000000', 'bunny');
     npcStylist.position.set(-(LAKE_RADIUS + 3), 0, 0);
     npcStylist.lookAt(0, 0, 0);
     scene.add(npcStylist);
@@ -15485,11 +15485,11 @@ let guidedTourStep = 0;
 const GUIDED_TOUR_STEPS = [
     { text: "Welcome to HTML Fishing! Use WASD to walk around the island.", target: null },
     { text: "Press TAB to open the menu. From there you can open Journal, Inventory, Progress, Skills, Cooking, and Player List.", target: '#btn-inventory' },
-    { text: "Walk to the lake (the big water) and press 1 for the Rod, then click to cast.", target: '#hotbar-container' },
+    { text: "Walk to the lake (the big water) and press 1 for the Rod, then click to cast. Buy bait from the Bait NPC to boost catches.", target: '#hotbar-container' },
     { text: "When a fish bites, a minigame starts. Keep the marker in the green zone by holding click. Reel it in!", target: null },
-    { text: "Caught fish go to your Inventory (Tab → Inventory). Drag them to the hotbar to keep your favorites.", target: null },
+    { text: "Caught fish go to your Inventory (Tab -> Inventory). Drag them to the hotbar to keep your favorites.", target: null },
     { text: "Press 1-0 to switch hotbar slots. Holding a fish and clicking won't fish; use the rod slot to fish.", target: null },
-    { text: "Sell fish to the Merchant for money, buy better rods/bait, and unlock new zones (ponds, ocean, lava, void).", target: null },
+    { text: "Sell fish to the Merchant for money. Visit the Shop to buy tools, cosmetics, hats, shirts, and more. Unlock new zones (ponds, ocean, lava, void).", target: null },
     { text: "Level up skills (Fishing, Mining, Lumberjack, etc.) for bonuses. Check Progress for achievements and quests.", target: null },
     { text: "You're ready! Explore, fish, and have fun. (Skip anytime.)", target: null }
 ];
