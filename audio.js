@@ -227,6 +227,32 @@ const Sound = {
             }
         }
 
+        // One syllable of the Animal Crossing-style chat voice. `variant` picks a
+        // semitone (0-11) so each speaker keeps a stable voice and each character
+        // gets a small melodic wobble. The panner below supplies the distance
+        // falloff, so the voice fades with proximity like every other world sound.
+        else if (soundName === 'talk') {
+            const step = (((Number(variant) || 0) % 12) + 12) % 12;
+            const base = 300 * Math.pow(2, step / 12);
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(base * 2.4, now);
+            filter.Q.value = 1.4;
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(base * 1.08, now);
+            osc.frequency.exponentialRampToValueAtTime(base * 0.8, now + 0.075);
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.06, now + 0.012);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.085);
+            osc.connect(filter);
+            filter.connect(gain);
+            osc.start(now);
+            osc.stop(now + 0.09);
+            nodes = { output: gain };
+        }
+
         else if (soundName === 'catch') {
             // The fanfare's four notes share one output node, so it goes through
             // the panner below like every other sound. (It used to connect

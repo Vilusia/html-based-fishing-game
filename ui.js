@@ -3455,7 +3455,6 @@ function sendChatMessage(text) {
 
     // 2. Display locally immediately
     displayChatMessage(saveState.displayName, safeText, 'local');
-    broadcastSound('chat');
     showChatBubble(player, isImageUrl ? 'Image posted...' : safeText);
 
     // 3. Prepare Network Message
@@ -3782,6 +3781,18 @@ function displayChatMessage(name, text, id) {
     }
 
     refreshChatFade();
+
+    // Animal Crossing-style voice: the speaker flaps their mouth and emits a
+    // proximity-attenuated blip per character. System messages stay silent.
+    if (id && id !== 'system') {
+        if (id === 'local') {
+            if (typeof player !== 'undefined' && player) {
+                startPlayerTalking(player, rawText, (typeof myPeerId !== 'undefined' ? myPeerId : saveState.displayName));
+            }
+        } else if (otherPlayers[id] && otherPlayers[id].mesh) {
+            startPlayerTalking(otherPlayers[id].mesh, rawText, id);
+        }
+    }
 }
 
 function showChatBubble(parentMesh, text) {
@@ -7533,6 +7544,28 @@ function drawTail(ctx, tailId, col, bellyCol, back) {
     }
 }
 
+// Open-mouth frame for the chat "talking" animation, drawn on the same canvas
+// as the rest of the character. It sits just under the nose and over the top
+// edge of the shirt, so it stays readable on every species. Only the front
+// texture gets it; back views never talk.
+function drawTalkingMouth(ctx) {
+    const cx = 32, cy = 33;
+    ctx.save();
+    ctx.fillStyle = '#2a0d13';
+    ctx.strokeStyle = 'rgba(16,3,7,0.9)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 3.6, 2.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Little tongue so the mouth reads even on dark fur.
+    ctx.fillStyle = '#ff8fa1';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 1.1, 2.2, 1.05, 0, 0, Math.PI);
+    ctx.fill();
+    ctx.restore();
+}
+
 // Main drawing function - accepts either species string (legacy) or parts object
 // partColors is optional: { earsColor, noseColor, miscColor, tailColor }
 function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColors) {
@@ -9362,7 +9395,7 @@ function addSpriteOutline(ctx, canvas, colorHex = '#111219', thickness = 2) {
 
 // Main texture compositing function. Combines species, colors, and all cosmetics into one texture.
 // partColors is optional: { earsColor, noseColor, miscColor, tailColor }
-function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none', partColors = null, hairId = 'none', hairColor = null) {
+function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none', partColors = null, hairId = 'none', hairColor = null, mouthOpen = false) {
     // VISUAL UPGRADE: HD Canvas - sized to fit tallest content:
     // logical y range is -22 (witch hat tip) to 67.5 (feet) = 89.5 units.
     // Canvas is 94 logical units tall (188px) with a +24 offset => 2u margins.
@@ -9392,6 +9425,10 @@ function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shir
 
     // HAIR (Under Hat)
     drawHair(ctx, hairId, hairColor, back);
+
+    // Chat "talking" frame: only on the front texture, and only when the
+    // caller asked for it (the normal sprite keeps the original face).
+    if (!back && mouthOpen) drawTalkingMouth(ctx);
 
     // EYES OVERLAY (To appear on top of hair/bangs)
     if (!back) {
@@ -10050,11 +10087,13 @@ function createRodTexture(rodId) {
 // The body is always named "playerSprite" so every existing lookup keeps
 // working.  It is a cosmetic-textured plane; userData.cfg stores the cosmetic
 // config so the body can be rebuilt (e.g. when cosmetics change).
-function makeCharacterBody(cfg) {
+// Normalise a saved cosmetic config into the values createSpeciesTexture()
+// needs. Shared by the normal body and the lazy "talking" front texture so the
+// open mouth is drawn on exactly the same character.
+function characterLookFromCfg(cfg) {
     cfg = cfg || {};
     const base = (cfg.color != null) ? cfg.color : '#ffffff';
     const belly = (cfg.belly != null && cfg.belly !== '') ? cfg.belly : base;
-
     const useParts = !!(cfg.ears || cfg.eyes || cfg.nose || cfg.tail || cfg.misc);
     const parts = useParts
         ? { ears: cfg.ears || 'none', eyes: cfg.eyes || 'standard', nose: cfg.nose || 'cat', misc: cfg.misc || 'none', tail: cfg.tail || 'none' }
@@ -10063,6 +10102,13 @@ function makeCharacterBody(cfg) {
         earsColor: cfg.earsColor || '', noseColor: cfg.noseColor || '',
         miscColor: cfg.miscColor || '', tailColor: cfg.tailColor || ''
     };
+    return { base, belly, parts, pc };
+}
+
+function makeCharacterBody(cfg) {
+    cfg = cfg || {};
+    const look = characterLookFromCfg(cfg);
+    const base = look.base, belly = look.belly, parts = look.parts, pc = look.pc;
     const tf = createSpeciesTexture(parts, base, belly, false, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
     const tb = createSpeciesTexture(parts, base, belly, true, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
     const m1 = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
@@ -10074,12 +10120,35 @@ function makeCharacterBody(cfg) {
     return mesh;
 }
 
+// Build (once, on first chat) a front texture with the mouth open. Swapping to
+// it for a few frames is much cheaper than re-rendering the whole sprite every
+// time somebody speaks.
+function ensureOpenMouthMaterial(sprite) {
+    const u = sprite && sprite.userData;
+    if (!u) return null;
+    if (u.matFrontOpen) return u.matFrontOpen;
+    const cfg = u.cfg || {};
+    const look = characterLookFromCfg(cfg);
+    const tex = createSpeciesTexture(look.parts, look.base, look.belly, false,
+        cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none',
+        cfg.eye || '#000000', cfg.pattern || 'none', look.pc,
+        cfg.hair || 'none', cfg.hairColor || '', true);
+    u.matFrontOpen = new THREE.MeshBasicMaterial({
+        map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5
+    });
+    return u.matFrontOpen;
+}
+
 // Tear down a body mesh/group and release its GPU resources.
 function disposeCharacterBody(body) {
     if (!body) return;
     if (body.userData) {
         if (body.userData.matFront && body.userData.matFront.map) disposeTexture(body.userData.matFront.map);
         if (body.userData.matBack && body.userData.matBack.map) disposeTexture(body.userData.matBack.map);
+        if (body.userData.matFrontOpen) {
+            if (body.userData.matFrontOpen.map) disposeTexture(body.userData.matFrontOpen.map);
+            body.userData.matFrontOpen.dispose();
+        }
     }
     body.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
@@ -10449,6 +10518,85 @@ function resetKeybinds() {
     }
 }
 
+// --- CHAT VOICE (Animal Crossing-style) ----------------------------------
+// Chat messages make the speaker's mouth flap and emit a short pitched blip
+// per character. The blips go through Sound.playSpatial(), so they use the same
+// HRTF panner and 50-unit distance falloff as footsteps and meows: stand next
+// to someone to hear them, walk away and they fade out.
+function hashString(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+function startPlayerTalking(mesh, text, speakerId) {
+    if (!mesh || !mesh.userData) return;
+    const clean = String(text || '').slice(0, 256);
+    if (!clean.trim()) return;
+    const now = performance.now();
+    // Stable per-speaker pitch, with a little melodic variation per letter.
+    mesh.userData.talkPitch = hashString(String(speakerId || 'player')) % 12;
+    mesh.userData.talkText = clean;
+    mesh.userData.talkIndex = 0;
+    mesh.userData.talkNext = now;
+    mesh.userData.talkLastBlip = 0;
+    mesh.userData.talkUntil = now + Math.min(5000, 600 + clean.length * 60);
+    mesh.userData.talking = true;
+    mesh.userData.talkMouthOpen = false;
+}
+
+// Advance every speaker's mouth/voice for this frame. Runs before the sprite
+// direction pass so the front material can pick the open-mouth frame.
+function updateTalkingPlayers(now) {
+    const meshes = [];
+    if (typeof player !== 'undefined' && player) meshes.push(player);
+    if (typeof otherPlayers !== 'undefined' && otherPlayers) {
+        for (const id in otherPlayers) {
+            if (otherPlayers[id] && otherPlayers[id].mesh) meshes.push(otherPlayers[id].mesh);
+        }
+    }
+
+    for (let i = 0; i < meshes.length; i++) {
+        const mesh = meshes[i];
+        const u = mesh.userData;
+        if (!u || (!u.talking && !u.talkUntil)) continue;
+
+        if (now >= u.talkUntil || !u.talkText || u.talkIndex >= u.talkText.length) {
+            u.talking = false;
+            u.talkUntil = 0;
+            u.talkMouthOpen = false;
+            continue;
+        }
+
+        if (now >= (u.talkNext || 0)) {
+            // Skip spaces so the voice follows the spoken characters, not the
+            // layout. Punctuation still gets a blip of its own.
+            let ch = '';
+            while (u.talkIndex < u.talkText.length) {
+                ch = u.talkText[u.talkIndex++];
+                if (ch.trim() !== '') break;
+                ch = '';
+            }
+            if (ch) {
+                const offset = (ch.charCodeAt(0) % 5) - 2;
+                const variant = ((u.talkPitch + offset) % 12 + 12) % 12;
+                try { Sound.playSpatial('talk', mesh.position, variant); } catch (e) { }
+                u.talkLastBlip = now;
+                u.talkNext = now + 72 + Math.random() * 46;
+            } else {
+                u.talkNext = now + 80;
+            }
+        }
+
+        // Open for ~55ms after each syllable, then snap shut: a crisp flap
+        // rather than a mouth that stays open between blips.
+        u.talkMouthOpen = (now - (u.talkLastBlip || 0)) < 55;
+    }
+}
+
 function updateSpriteDirection(obj, targetCamPos) {
     const sprite = obj.getObjectByName("playerSprite");
     if (!sprite || !sprite.userData.matFront) return;
@@ -10463,8 +10611,18 @@ function updateSpriteDirection(obj, targetCamPos) {
     facing.y = 0;
     facing.normalize();
 
-    if (toCam.dot(facing) > 0) sprite.material = sprite.userData.matFront;
-    else sprite.material = sprite.userData.matBack;
+    if (toCam.dot(facing) > 0) {
+        // Chats swap to a cached open-mouth texture for a few frames. The
+        // texture is built the first time this character speaks, so ordinary
+        // NPCs and players never pay for it.
+        if (obj.userData && obj.userData.talking && obj.userData.talkMouthOpen) {
+            sprite.material = ensureOpenMouthMaterial(sprite) || sprite.userData.matFront;
+        } else {
+            sprite.material = sprite.userData.matFront;
+        }
+    } else {
+        sprite.material = sprite.userData.matBack;
+    }
 }
 
 function setupInputs() {
@@ -11904,6 +12062,9 @@ function animate() {
 
     updateVoiceVisuals();
     updateGhost();
+
+    // Chat mouths and animalese blips (must run before updateSpriteDirection).
+    updateTalkingPlayers(performance.now());
 
     // --- RAIN PARTICLES ---
     if (rainSystem && rainSystem.visible) {
