@@ -11631,19 +11631,8 @@ function handleAction(down) {
     }
 
     if (down) {
-        // If holding a fish to show off, clear it when clicking
-        if (localHeldFish) {
-            // FIX: Grace period check (don't clear if just caught < 500ms ago)
-            if (Date.now() - lastCatchTime > 500) {
-                localHeldFish = null;
-                if (fishHoldTimer) clearTimeout(fishHoldTimer);
-                fishHoldTimer = null;
-                updateLocalVisuals();
-            } else {
-                // Just ignore the click if it's too soon
-                return;
-            }
-        }
+        // Don't clear held fish on click; keep it until another slot is selected.
+        // (Previously clicking cleared the shown fish.)
 
         // Only fish when the rod is the held tool.
         const activeEntry = saveState.hotbar ? saveState.hotbar[saveState.activeHotbarIndex] : null;
