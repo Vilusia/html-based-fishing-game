@@ -11068,36 +11068,27 @@ function setupInputs() {
                 playerVelocity.y = JUMP_FORCE;
                 broadcastSound('jump');
                 controls.jump = false;
-                pendingJump = false;
                 return;
             }
             if (isDiving) { controls.jump = false; return; }
             const onGround = player && player.position.y <= (getTerrainHeight ? getTerrainHeight(player.position.x, player.position.z) : 0) + 0.15;
-            if (onGround) {
-                if (now - lastSpacePress < 150 && lastSpacePress > 0) {
-                    // Double-tap: dive
-                    isDiving = true; diveTimer = 0.45;
-                    const camForward = new THREE.Vector3();
-                    camera.getWorldDirection(camForward);
-                    camForward.y = 0;
-                    if (camForward.length() < 0.001) camForward.set(0,0,1);
-                    camForward.normalize();
-                    diveDir.copy(camForward);
-                    // Face the dive direction
-                    player.rotation.y = Math.atan2(diveDir.x, diveDir.z);
-                    lastSpacePress = 0;
-                    pendingJump = false;
-                    controls.jump = false;
-                    return;
-                }
-                // First tap: schedule a jump (delayed to allow double-tap dive)
-                lastSpacePress = now;
-                pendingJump = true;
-                pendingJumpTime = now + 150;
+            // Double-tap while airborne (or just jumped) -> dive
+            if (!onGround && lastJumpTime > 0 && (now - lastJumpTime) < 450) {
+                isDiving = true; diveTimer = 0.45;
+                const camForward = new THREE.Vector3();
+                camera.getWorldDirection(camForward);
+                camForward.y = 0;
+                if (camForward.length() < 0.001) camForward.set(0,0,1);
+                camForward.normalize();
+                diveDir.copy(camForward);
+                player.rotation.y = Math.atan2(diveDir.x, diveDir.z);
+                lastJumpTime = 0;
                 controls.jump = false;
                 return;
             }
+            // Single tap -> jump
             controls.jump = true;
+            lastJumpTime = now;
         }
 
         // Interaction (Desktop)
@@ -12812,11 +12803,6 @@ function animate() {
         if (player.position.y <= floorY) {
             if (player.position.y < floorY && playerVelocity.y < 0) broadcastSound('footstep');
             player.position.y = floorY; playerVelocity.y = 0;
-            if (pendingJump && !isDiving && !isProne && Date.now() > pendingJumpTime) {
-                playerVelocity.y = JUMP_FORCE;
-                broadcastSound('jump');
-                pendingJump = false;
-            }
             if (controls.jump && !isProne && !isDiving) {
                 playerVelocity.y = JUMP_FORCE;
                 broadcastSound('jump');
