@@ -620,6 +620,16 @@ window.actionBuyTool = function (toolId) {
     if (toolId === 'glove') saveState.hasGlove = true;
     if (toolId === 'boat') saveState.hasBoat = true;
 
+    // Add to grid inventory
+    try {
+        ensureInventorySlots();
+        const exists = saveState.invSlots.some(s => s && s.type === 'tool' && s.id === toolId);
+        if (!exists) {
+            const empty = saveState.invSlots.findIndex(s => s === null);
+            if (empty !== -1) saveState.invSlots[empty] = { type: 'tool', id: toolId, name: tool.name };
+        }
+    } catch (e) { }
+
     // Auto-equip if possible or just refresh hotbar
     updateHotbarVisuals();
     saveGame();
@@ -11603,8 +11613,8 @@ function handleAction(down) {
     }
     // ---------------------------
 
-    // --- AUTO-EQUIP ROD IF HANDS EMPTY ---
-    if (isHandsHidden) {
+    // --- AUTO-EQUIP ROD IF HANDS EMPTY (and not holding a fish) ---
+    if (isHandsHidden && !localHeldFish) {
         if (down) {
             isHandsHidden = false;
             updateLocalVisuals();
@@ -15201,6 +15211,20 @@ function ensureInventorySlots() {
             if (idx < 50) saveState.invSlots[idx++] = counts[k];
         }
     }
+    // Migrate unlocked tools into inventory (if not already present)
+    if (Array.isArray(saveState.unlockedTools)) {
+        for (const tid of saveState.unlockedTools) {
+            if (tid === 'hands' || tid === 'rod') continue;
+            const exists = saveState.invSlots.some(s => s && s.type === 'tool' && s.id === tid);
+            if (!exists) {
+                const empty = saveState.invSlots.findIndex(s => s === null);
+                if (empty !== -1) {
+                    const tool = (typeof TOOLS !== 'undefined') ? TOOLS.find(t => t.id === tid) : null;
+                    saveState.invSlots[empty] = { type: 'tool', id: tid, name: tool ? tool.name : tid };
+                }
+            }
+        }
+    }
 }
 
 function renderInventoryGrid() {
@@ -15230,6 +15254,9 @@ function renderInventoryGrid() {
                 badge.style.cssText = 'position:absolute;bottom:2px;right:4px;font-size:10px;color:#fff;background:rgba(0,0,0,0.7);padding:0 3px;';
                 slot.appendChild(badge);
             }
+        } else if (entry && entry.type === 'tool') {
+            const tool = TOOLS.find(t => t.id === entry.id);
+            slot.innerHTML = (window.PX && PX.has(entry.id)) ? PX.icon(entry.id, 32) : (tool ? tool.icon : '?');
         }
         // Drag handlers
         slot.addEventListener('dragstart', (e) => {
@@ -15282,8 +15309,9 @@ function renderInventoryGrid() {
                     const data = JSON.parse(e.dataTransfer.getData('text/plain'));
                     if (data.from === 'inv') {
                         const inv = saveState.invSlots[data.index];
-                        if (inv && inv.type === 'fish') {
-                            saveState.hotbar[i] = { type: 'fish', name: inv.name, color: inv.color, size: inv.size || 1 };
+                        if (inv && (inv.type === 'fish' || inv.type === 'tool')) {
+                            if (inv.type === 'fish') saveState.hotbar[i] = { type: 'fish', name: inv.name, color: inv.color, size: inv.size || 1 };
+                            else saveState.hotbar[i] = { type: 'tool', id: inv.id, name: inv.name };
                             renderInventoryGrid();
                             updateHotbarVisuals();
                             saveGame();
@@ -15309,8 +15337,9 @@ function setupHotbarDrag() {
                 const data = JSON.parse(e.dataTransfer.getData('text/plain'));
                 if (data.from === 'inv') {
                     const inv = saveState.invSlots[data.index];
-                    if (inv && inv.type === 'fish') {
-                        saveState.hotbar[i] = { type: 'fish', name: inv.name, color: inv.color, size: inv.size || 1 };
+                    if (inv && (inv.type === 'fish' || inv.type === 'tool')) {
+                        if (inv.type === 'fish') saveState.hotbar[i] = { type: 'fish', name: inv.name, color: inv.color, size: inv.size || 1 };
+                        else saveState.hotbar[i] = { type: 'tool', id: inv.id, name: inv.name };
                         updateHotbarVisuals();
                         saveGame();
                     }
