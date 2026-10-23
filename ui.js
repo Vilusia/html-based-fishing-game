@@ -11165,6 +11165,9 @@ function setupInputs() {
             lastJumpTime = now;
         }
 
+        // Tab opens inventory
+        if (e.code === 'Tab') { e.preventDefault(); toggleInventory(); return; }
+
         // Interaction (Desktop)
         if (e.code === k.interact) {
             if (canSell) sellFish();
