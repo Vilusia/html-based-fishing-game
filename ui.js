@@ -13850,6 +13850,7 @@ function setupHotbar() {
         const slot = document.createElement('div');
         slot.className = 'hotbar-slot';
         slot.onclick = () => selectHotbarSlot(i);
+        slot.oncontextmenu = (e) => { e.preventDefault(); if (saveState.hotbar) { saveState.hotbar[i] = null; updateHotbarVisuals(); saveGame(); } };
 
         const num = document.createElement('span');
         num.className = 'hotbar-number';
@@ -14500,6 +14501,17 @@ function loadSave() {
             // --- FIX: LOAD UNLOCKED TOOLS FROM SAVE ---
             if (d.unlockedTools) {
                 saveState.unlockedTools = d.unlockedTools;
+            }
+
+            // Load hotbar layout (persisted between sessions)
+            if (Array.isArray(d.hotbar) && d.hotbar.length === 10) {
+                saveState.hotbar = d.hotbar;
+            }
+            if (typeof d.activeHotbarIndex === 'number') saveState.activeHotbarIndex = d.activeHotbarIndex;
+
+            // Load grid inventory
+            if (Array.isArray(d.invSlots) && d.invSlots.length === 50) {
+                saveState.invSlots = d.invSlots;
             }
 
             // Sync Legacy Flags (Fix for Hotbar not showing unlocked items)
