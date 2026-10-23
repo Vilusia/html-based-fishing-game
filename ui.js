@@ -12188,6 +12188,17 @@ function stopFishing(success, msg) {
                 size: minigame.targetFish.size
             };
 
+            // Auto-add caught fish to an empty hotbar slot so players can
+            // keep/re-show their favorite fish from the hotbar.
+            try {
+                if (!saveState.hotbar) saveState.hotbar = defaultHotbar();
+                const emptyIdx = saveState.hotbar.findIndex(s => s === null);
+                if (emptyIdx !== -1) {
+                    saveState.hotbar[emptyIdx] = { type: 'fish', name: minigame.targetFish.name, color: minigame.targetFish.color, size: minigame.targetFish.size };
+                    updateHotbarVisuals();
+                }
+            } catch (e) { }
+
             if (fishHoldTimer) clearTimeout(fishHoldTimer);
             fishHoldTimer = setTimeout(() => {
                 localHeldFish = null;
@@ -13811,15 +13822,29 @@ window.cookAllFish = function () {
 
 
 
+function defaultHotbar() {
+    const tools = ['rod', 'hands', 'axe', 'guitar', 'glove', 'pickaxe'];
+    const slots = new Array(10).fill(null);
+    if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod'];
+    for (let i = 0; i < 6; i++) {
+        const id = tools[i];
+        if (saveState.unlockedTools.includes(id)) slots[i] = { type: 'tool', id: id };
+    }
+    return slots;
+}
+
 function setupHotbar() {
     const container = document.getElementById('hotbar-container');
     if (!container) return;
+    if (!saveState.hotbar || !Array.isArray(saveState.hotbar) || saveState.hotbar.length !== 10) {
+        saveState.hotbar = defaultHotbar();
+    }
     container.innerHTML = '';
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 10; i++) {
         const slot = document.createElement('div');
         slot.className = 'hotbar-slot';
-        slot.onclick = () => selectTool(i);
+        slot.onclick = () => selectHotbarSlot(i);
 
         const num = document.createElement('span');
         num.className = 'hotbar-number';
@@ -13833,36 +13858,100 @@ function setupHotbar() {
 
         container.appendChild(slot);
     }
+    if (saveState.activeHotbarIndex === undefined) saveState.activeHotbarIndex = 0;
     updateHotbarVisuals();
 }
 
 function updateHotbarVisuals() {
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 10; i++) {
         const iconEl = document.getElementById(`hotbar-icon-${i}`);
         if (!iconEl) continue;
         const slotEl = iconEl.parentElement;
+        if (!saveState.hotbar) saveState.hotbar = defaultHotbar();
 
-        // Slot order: Rod, Hands, Axe, Guitar, Glove, Pickaxe
-        const toolMap = ['rod', 'hands', 'axe', 'guitar', 'glove', 'pickaxe'];
-        const toolId = toolMap[i];
-
-        // Handle undefined saveState gracefully if init is weird
-        if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod'];
-
-        const isUnlocked = saveState.unlockedTools.includes(toolId);
-
-        if (isUnlocked) {
-            const tool = TOOLS.find(t => t.id === toolId);
-            iconEl.innerHTML = (window.PX && PX.has(toolId)) ? PX.icon(toolId, 30) : (tool ? tool.icon : '?');
-            slotEl.style.opacity = 1;
-        } else {
-            iconEl.innerHTML = window.PX ? PX.icon('lock', 30) : '🔒';
-            slotEl.style.opacity = 0.5;
+        const entry = saveState.hotbar[i];
+        let opacity = 0.3;
+        iconEl.innerHTML = '';
+        if (entry) {
+            if (entry.type === 'tool') {
+                const tool = TOOLS.find(t => t.id === entry.id);
+                const html = (window.PX && PX.has(entry.id)) ? PX.icon(entry.id, 30) : (tool ? tool.icon : '?');
+                iconEl.innerHTML = html;
+                opacity = (saveState.unlockedTools && saveState.unlockedTools.includes(entry.id)) ? 1 : 0.5;
+            } else if (entry.type === 'fish') {
+                try {
+                    const tex = createFishTexture(entry.name, entry.color);
+                    const cv = document.createElement('canvas');
+                    cv.width = 32; cv.height = 32;
+                    const cx = cv.getContext('2d');
+                    cx.drawImage(tex.image, 0, 0, 32, 32);
+                    iconEl.appendChild(cv);
+                } catch (e) { iconEl.innerText = '🐟'; }
+                opacity = 1;
+            }
         }
+        slotEl.style.opacity = opacity;
 
-        if (i === saveState.activeToolIndex) slotEl.classList.add('active');
+        if (i === (saveState.activeHotbarIndex || 0)) slotEl.classList.add('active');
         else slotEl.classList.remove('active');
     }
+}
+
+function selectTool(index) {
+    // Legacy wrapper.
+    if (typeof selectHotbarSlot === 'function') selectHotbarSlot(index);
+}
+
+function selectHotbarSlot(index) {
+    if (!saveState.hotbar) saveState.hotbar = defaultHotbar();
+    if (index < 0 || index >= 10) return;
+    saveState.activeHotbarIndex = index;
+    const entry = saveState.hotbar[index];
+
+    // Reset tools/fish
+    if (localHeldFish) {
+        localHeldFish = null;
+        if (fishHoldTimer) clearTimeout(fishHoldTimer);
+        fishHoldTimer = null;
+    }
+    const rod = player && player.getObjectByName("rod");
+    if (rod) rod.visible = false;
+    const axe = player && player.getObjectByName("axe");
+    if (axe) axe.visible = false;
+    const pick = player && player.getObjectByName("pickaxe");
+    if (pick) pick.visible = false;
+    if (isGuitarActive) toggleGuitar();
+    if (isGloveActive) toggleGlove();
+
+    if (!entry) {
+        isHandsHidden = true;
+    } else if (entry.type === 'tool') {
+        const toolId = entry.id;
+        if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod'];
+        if (!saveState.unlockedTools.includes(toolId)) {
+            showToast("Tool locked!");
+            updateHotbarVisuals();
+            return;
+        }
+        isHandsHidden = (toolId === 'hands');
+        if (toolId === 'rod') { if (rod) rod.visible = true; }
+        else if (toolId === 'axe') { equipAxe(); if (axe) axe.visible = true; }
+        else if (toolId === 'pickaxe') { equipPickaxe(); if (pick) pick.visible = true; }
+        else if (toolId === 'guitar') { if (!isGuitarActive) toggleGuitar(); }
+        else if (toolId === 'glove') { if (!isGloveActive) toggleGlove(); }
+    } else if (entry.type === 'fish') {
+        isHandsHidden = true;
+        localHeldFish = { name: entry.name, color: entry.color, size: entry.size || 1.0, sizeLabel: 'Normal' };
+        const oldFish = player && player.getObjectByName('heldFishSprite');
+        if (oldFish) player.remove(oldFish);
+        const fh = makeHeldFish(entry.name, entry.color, entry.size || 1.0);
+        if (player) { player.add(fh); }
+    }
+
+    saveState.activeToolIndex = (entry && entry.type === 'tool') ? index : saveState.activeToolIndex;
+
+    updateHotbarVisuals();
+    saveGame();
 }
 
 function selectTool(index) {
