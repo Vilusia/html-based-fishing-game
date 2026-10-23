@@ -1621,7 +1621,8 @@ function createYtPlayer(entry) {
                 rel: 0,
                 playsinline: 1,
                 fs: 0,
-                iv_load_policy: 3
+                iv_load_policy: 3,
+                loop: 0
                 // NOTE: no `start` here. On a live stream it makes YouTube jump
                 // into the DVR window (i.e. "from the beginning") instead of the
                 // live edge; the seek is applied in onReady for VODs only.
@@ -1649,6 +1650,14 @@ function createYtPlayer(entry) {
                 onError: () => {
                     // 101/150: the owner disabled embedding. Black screen is fine.
                     console.warn('[yt] embed rejected for', entry.data.videoId);
+                },
+                onStateChange: (e) => {
+                    // 0 = ENDED: play once, then stop syncing/replaying.
+                    if (e && e.data === 0) {
+                        entry.ended = true;
+                        const lid = entry.data && entry.data.id;
+                        if (lid && ytSyncLoops[lid]) { clearInterval(ytSyncLoops[lid]); delete ytSyncLoops[lid]; }
+                    }
                 }
             }
         });
@@ -1658,6 +1667,7 @@ function createYtPlayer(entry) {
         // VOD as live only means "no seek", which is harmless.
         setTimeout(() => {
             try {
+                if (entry.ended) return;
                 if (!entry.player || !entry.player.getPlayerState) return;
                 const st = entry.player.getPlayerState();
                 if (st === -1 || st === 2 || st === 5) entry.player.playVideo();
@@ -1678,6 +1688,7 @@ function startYtSyncLoop(propData) {
     ytSyncLoops[propData.id] = setInterval(() => {
         if (typeof isHost === 'undefined' && typeof player === 'undefined') return;
         const e = ytPlayers[propData.id];
+        if (e && e.ended) return;   // video finished: play once, no more sync
         let at = (Date.now() - propData.startedAt) / 1000;
         if (e && e.player && e.player.getCurrentTime) {
             try { at = e.player.getCurrentTime(); } catch (err) { }
@@ -1708,6 +1719,7 @@ function applyYtSync(data) {
     if (String(data.placer) === String(myDeviceID || '')) return;
     const e = ytPlayers[data.propId];
     if (!e) return;
+    if (e.ended) return;   // already finished: don't seek/replay
     e.syncAt = (Number(data.at) || 0);
     e.syncRecvAt = Date.now();
     if (e.player && e.player.getPlayerState) {
