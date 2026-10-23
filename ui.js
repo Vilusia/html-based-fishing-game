@@ -11283,7 +11283,7 @@ function setupInputs() {
 
         // Interaction (Desktop)
         if (e.code === k.interact) {
-            if (canSell) sellFish();
+            if (canSell) toggleMerchant();
             else if (interactTarget === 'stylist') toggleShop();
             else if (interactTarget === 'merchant') toggleMerchant();
             else if (interactTarget === 'bait') toggleBaitShop();
