@@ -11774,6 +11774,11 @@ function handleAction(down) {
         if (!isRodHeld) return;
 
         if (fishingState === 'idle') {
+            // Block fishing if inventory is full
+            if (Array.isArray(saveState.invSlots) && saveState.invSlots.every(s => s !== null)) {
+                showToast("Inventory full! Sell or drop items first.");
+                return;
+            }
             fishingState = 'charging';
             chargeStart = Date.now();
             castMarker.visible = true;
