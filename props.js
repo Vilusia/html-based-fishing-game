@@ -1697,7 +1697,7 @@ function createYtPlayer(entry) {
                         try { entry.player.pauseVideo(); } catch (err) { }
                         const lid = entry.data && entry.data.id;
                         if (lid && ytSyncLoops[lid]) { clearInterval(ytSyncLoops[lid]); delete ytSyncLoops[lid]; }
-                        if (typeof isHost !== 'undefined' && isHost) {
+                        if (true) {
                             setTimeout(() => advanceScreenQueue(propId), 500);
                         }
                     }
@@ -1800,6 +1800,18 @@ window.tickYtScreens = function () {
                 e.mesh.position.z + Math.cos(ry) * VIDEO_FORWARD
             );
             e.cssObj.rotation.y = ry;
+        }
+        // Auto-advance queue when the current YouTube video has ended.
+        if (!e.ended && e.player && typeof e.player.getPlayerState === 'function') {
+            try {
+                if (e.player.getPlayerState() === 0) {
+                    e.ended = true;
+                    try { e.player.pauseVideo(); } catch (err) { }
+                    if (e.data && e.data.queue && e.data.queue.length > 0) {
+                        setTimeout(() => advanceScreenQueue(id), 300);
+                    }
+                }
+            } catch (err) { }
         }
         // One-sided panel: the picture only exists on the placer's side.
         if (e.provider === 'twitch') {
@@ -2242,7 +2254,9 @@ function playScreenQueueIndex(propId, idx) {
 function advanceScreenQueue(propId) {
     const entry = getScreenEntry(propId);
     if (!entry || !entry.data || !Array.isArray(entry.data.queue) || entry.data.queue.length === 0) return;
-    if (typeof isHost !== 'undefined' && !isHost) return;
+    // Allow advancement in single-player (no host) too.
+    const singlePlayer = (typeof isHost === 'undefined' || (!isHost && !hostConn));
+    if (typeof isHost !== 'undefined' && !isHost && !singlePlayer) return;
     playScreenQueueIndex(propId, 0);
 }
 // Prop sync over P2P is handled in ui.js (handleDataFromClient / handleDataFromHost),
