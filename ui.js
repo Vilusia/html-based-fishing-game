@@ -15752,10 +15752,11 @@ function updateLocalVisuals() {
             player.add(fSprite);
         }
         // 2. Holding Rod? (Check isHandsHidden and active tool here)
-        // Don't show rod when Axe (2) or Pickaxe (5) is equipped
+        // Don't show rod when Axe or Pickaxe is equipped, or when holding a fish/hands.
         else {
-            const isAxeOrPickActive = (saveState.activeToolIndex === 2 || saveState.activeToolIndex === 5);
-            if (!isGuitarActive && !isGloveActive && !isHandsHidden && !isAxeOrPickActive) {
+            const activeEntry = saveState.hotbar && saveState.hotbar[saveState.activeHotbarIndex];
+            const activeToolId = activeEntry && activeEntry.type === 'tool' ? activeEntry.id : null;
+            if (!isGuitarActive && !isGloveActive && !isHandsHidden && activeToolId === 'rod') {
                 // Create Rod with current skin (billboard plane in 2D, model in 3D)
                 const rodId = saveState.currentRod || 'bamboo';
                 const r = makeRod(rodId);
