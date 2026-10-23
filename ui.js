@@ -11074,7 +11074,7 @@ function setupInputs() {
             if (isDiving) { controls.jump = false; return; }
             const onGround = player && player.position.y <= (getTerrainHeight ? getTerrainHeight(player.position.x, player.position.z) : 0) + 0.15;
             if (onGround) {
-                if (now - lastSpacePress < 350 && lastSpacePress > 0) {
+                if (now - lastSpacePress < 150 && lastSpacePress > 0) {
                     // Double-tap: dive
                     isDiving = true; diveTimer = 0.45;
                     const camForward = new THREE.Vector3();
@@ -11083,6 +11083,8 @@ function setupInputs() {
                     if (camForward.length() < 0.001) camForward.set(0,0,1);
                     camForward.normalize();
                     diveDir.copy(camForward);
+                    // Face the dive direction
+                    player.rotation.y = Math.atan2(diveDir.x, diveDir.z);
                     lastSpacePress = 0;
                     pendingJump = false;
                     controls.jump = false;
@@ -11091,7 +11093,7 @@ function setupInputs() {
                 // First tap: schedule a jump (delayed to allow double-tap dive)
                 lastSpacePress = now;
                 pendingJump = true;
-                pendingJumpTime = now + 320;
+                pendingJumpTime = now + 150;
                 controls.jump = false;
                 return;
             }
@@ -12575,7 +12577,8 @@ function animate() {
             player.position.y = floorY;
             const sprite = player.getObjectByName("playerSprite");
             if (sprite) {
-                sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, Math.PI / 2, 12 * dt);
+                sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, Math.PI / 3, 12 * dt);
+                sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 12 * dt);
                 sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.0, 12 * dt);
             }
             if (diveTimer <= 0) {
@@ -12762,6 +12765,7 @@ function animate() {
                 if (sprite) {
                     sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.46875, 10 * dt);
                     sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
+                    sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, 0, 10 * dt);
                 }
                 // Rowing stroke heard by everyone nearby.
                 if (audioCtx.currentTime - lastOarTime > 1.1) {
@@ -12774,6 +12778,7 @@ function animate() {
                 if (sprite) {
                     sprite.position.y = 1.46875 + Math.abs(Math.sin(time)) * 0.3;
                     sprite.rotation.z = Math.sin(time) * 0.15;
+                    sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, 0, 10 * dt);
                 }
                 if (audioCtx.currentTime - lastFootstepTime > 0.35) {
                     broadcastSound('footstep');
@@ -12785,6 +12790,7 @@ function animate() {
             if (sprite) {
                 sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.46875, 10 * dt);
                 sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
+                sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, 0, 10 * dt);
             }
             // Not moving: the rowing loop drops out (also covers idling in the boat).
             SailAudio.setActive(false);
@@ -12794,7 +12800,8 @@ function animate() {
         if (isProne) {
             const sprite = player.getObjectByName("playerSprite");
             if (sprite) {
-                sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, Math.PI / 2, 10 * dt);
+                sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, Math.PI / 2, 10 * dt);
+                sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
                 sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.0, 10 * dt);
             }
             playerVelocity.x = 0; playerVelocity.z = 0;
