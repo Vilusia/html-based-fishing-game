@@ -12548,9 +12548,10 @@ function animate() {
                 if (isSailing) {
                     floorY = Math.max(floorY, surface);
                 } else {
-                    // On foot: only float when the water is deep enough to swim.
+                    // On foot: in deep water, wade/swim below the surface instead of
+                    // floating on top, so the player is actually in the water.
                     const bed = getTerrainHeight(player.position.x, player.position.z);
-                    if (surface - bed > SHALLOW_DEPTH) floorY = surface;
+                    if (surface - bed > SHALLOW_DEPTH) floorY = surface - 0.8;
                 }
             }
             // Placed furniture: a chair's seat is solid ground once you are over
