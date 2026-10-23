@@ -3159,18 +3159,30 @@ function createRemotePlayer(id, data) {
         bobberMesh: null,
         lineMesh: null,
         lastData: data,
-        lastSeen: Date.now()
+        lastSeen: Date.now(),
+        pendingJoinAnnounce: !!(window.CUSTOM_LEVEL && window.Level)
     };
 
     // Chat notification
     if (document.getElementById('lobby-screen').style.display === 'none') {
-        displayChatMessage(nameToUse, "has joined!", 'system');
+        if (window.CUSTOM_LEVEL && window.Level) {
+            displayChatMessage(nameToUse, "is downloading the map...", 'system');
+        } else {
+            displayChatMessage(nameToUse, "has joined!", 'system');
+        }
     }
 }
 
 function updateRemotePlayer(id, data) {
     const p = otherPlayers[id];
     if (!p) return;
+
+    // Announce real join once the player starts sending updates (after map download).
+    if (p.pendingJoinAnnounce && document.getElementById('lobby-screen').style.display === 'none') {
+        const name = (p.lastData && p.lastData.name) || data.name || 'Fisher';
+        displayChatMessage(name, "has joined!", 'system');
+        p.pendingJoinAnnounce = false;
+    }
 
     // --- FIX START: Preserve Admin Mute Flags ---
     // We must save these because the incoming 'data' packet is from the client (who sends position)
@@ -12392,8 +12404,11 @@ function removePlayer(pid) {
         // Trigger Leave Message (Must get name before deleting data).
         const name = p.lastData.name || "Fisher";
         // Check if we are in-game to avoid spam during disconnects/reloads
-        if (document.getElementById('lobby-screen').style.display === 'none') {
+        if (document.getElementById('lobby-screen').style.display === 'none' && !p.pendingJoinAnnounce) {
             displayChatMessage(name, "has left.", 'system');
+        }
+        if (document.getElementById('lobby-screen').style.display === 'none' && p.pendingJoinAnnounce) {
+            displayChatMessage(name, "stopped downloading the map.", 'system');
         }
 
         // Cleanup Visuals.
