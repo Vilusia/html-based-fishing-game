@@ -10206,10 +10206,22 @@ function createFishTexture(fishName, colorHex) {
     if (name.includes('clown') || isShape('clownfish')) {
         ctx.fillStyle = 'rgba(255,255,255,0.92)';
         [20, 32, 44].forEach(bx => ctx.fillRect(bx, 0, 4, 64));
-    } else if (isShape('perch', 'mackerel', 'arowana', 'discus', 'lionfish', 'panfish', 'snakehead')) {
+    } else if (isShape('bass')) {
+        // Largemouth bass: dark lateral stripe
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(8, 27, 46, 5);
+    } else if (isShape('bluegill', 'panfish')) {
+        // Bluegill: vertical dark bars
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        [18, 27, 36, 45].forEach(bx => ctx.fillRect(bx, 12, 3, 40));
+    } else if (isShape('angelfish')) {
+        // Angelfish: vertical black bands
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        [24, 34, 44].forEach(bx => ctx.fillRect(bx, 4, 4, 56));
+    } else if (isShape('perch', 'mackerel', 'arowana', 'discus', 'lionfish', 'snakehead')) {
         ctx.fillStyle = isShape('lionfish') ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.18)';
         for (let x = 12; x < 58; x += 8) ctx.fillRect(x, 0, 4, 64);
-    } else if (isShape('trout', 'salmon', 'cod', 'catfish', 'flatfish')) {
+    } else if (isShape('trout', 'salmon', 'cod', 'catfish', 'flatfish', 'mahi')) {
         ctx.fillStyle = 'rgba(0,0,0,0.24)';
         for (let i = 0; i < 16; i++) {
             ctx.beginPath(); ctx.arc(8 + (i * 37) % 48, 10 + (i * 23) % 42, 2.2, 0, Math.PI * 2); ctx.fill();
@@ -10217,6 +10229,21 @@ function createFishTexture(fishName, colorHex) {
     } else if (isShape('tetra')) {
         ctx.fillStyle = 'rgba(220,60,40,0.55)';
         ctx.fillRect(0, 37, 64, 18);
+    } else if (isShape('puffer')) {
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        for (let i = 0; i < 12; i++) {
+            ctx.beginPath(); ctx.arc(12 + (i * 31) % 40, 14 + (i * 19) % 36, 2.6, 0, Math.PI * 2); ctx.fill();
+        }
+    } else if (isShape('ray', 'manta')) {
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        [[20, 14], [30, 20], [42, 16], [26, 30], [38, 34]].forEach(([sx, sy]) => {
+            ctx.beginPath(); ctx.arc(sx, sy, 2, 0, Math.PI * 2); ctx.fill();
+        });
+    } else if (isShape('sunfish', 'halibut')) {
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        for (let i = 0; i < 14; i++) {
+            ctx.beginPath(); ctx.arc(10 + (i * 29) % 44, 12 + (i * 23) % 40, 2.4, 0, Math.PI * 2); ctx.fill();
+        }
     } else if (isShape('coelacanth')) {
         ctx.fillStyle = 'rgba(255,255,255,0.65)';
         [[24, 28], [33, 25], [41, 30], [30, 34], [45, 34]].forEach(([sx, sy]) => {
