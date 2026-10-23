@@ -1132,22 +1132,48 @@ window.initCssScene = function () {
 
 // Wire the video element + CSS3D object for a screen prop.
 function attachYtVideo(data, group) {
-    // Never mount anything that is not a canonical YouTube/Twitch source, even
-    // if a malformed record arrived from an older or modified peer.
     const src = screenSourceFromData(data);
-    if (!src) return;
-    const provider = src.provider;
-    if (typeof THREE.CSS3DObject === 'undefined') {
-        // The examples renderer did not load (CDN blocked). Without it there is
-        // no way to show the video in-scene; the housing still spawns.
-        console.warn('[screen] CSS3DRenderer missing — screen stays black');
+
+    // Make sure the CSS3D overlay exists BEFORE creating the element.
+    if (!cssRenderer && window.initCssScene) window.initCssScene();
+
+    // No source yet: create a shell + entry so the queue panel works, but
+    // don't mount a player.
+    if (!src) {
+        const shell = document.createElement('div');
+        shell.style.width = '640px';
+        shell.style.height = '360px';
+        shell.style.background = '#050505';
+        shell.style.pointerEvents = 'none';
+        shell.style.overflow = 'hidden';
+        if (ytOverlay) ytOverlay.appendChild(shell);
+        const cssObj = (typeof THREE !== 'undefined' && THREE.CSS3DObject) ? new THREE.CSS3DObject(shell) : null;
+        if (cssObj) { cssObj.scale.set(0.009844, 0.009844, 1); if (cssScene) cssScene.add(cssObj); }
+        const entry = {
+            data: data,
+            provider: null,
+            cssObj: cssObj,
+            shell: shell,
+            frameEl: null,
+            player: null,
+            mesh: group,
+            placed: true,
+            syncAt: null,
+            syncRecvAt: null,
+            retried: false,
+            ended: false,
+            queue: Array.isArray(data.queue) ? data.queue.slice() : []
+        };
+        if (!Array.isArray(data.queue)) data.queue = entry.queue;
+        ytPlayers[data.id] = entry;
         return;
     }
 
-    // Make sure the CSS3D overlay exists BEFORE creating the element: the
-    // YouTube API resolves its target inside the document, so a detached shell
-    // means no player at all.
-    if (!cssRenderer && window.initCssScene) window.initCssScene();
+    const provider = src.provider;
+    if (typeof THREE.CSS3DObject === 'undefined') {
+        console.warn('[screen] CSS3DRenderer missing — screen stays black');
+        return;
+    }
 
     const shell = document.createElement('div');
     shell.style.width = '640px';
