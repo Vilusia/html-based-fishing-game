@@ -15489,7 +15489,7 @@ const GUIDED_TOUR_STEPS = [
     { text: "When a fish bites, a minigame starts. Keep the marker in the green zone by holding click. Reel it in!", target: null },
     { text: "Caught fish go to your Inventory (Tab -> Inventory). Drag them to the hotbar to keep your favorites.", target: null },
     { text: "Press 1-0 to switch hotbar slots. Holding a fish and clicking won't fish; use the rod slot to fish.", target: null },
-    { text: "Sell fish to the Merchant for money. Visit the Shop to buy tools, cosmetics, hats, shirts, and more. Unlock new zones (ponds, ocean, lava, void).", target: null },
+    { text: "Sell fish to the Merchant for money. Visit the Shop to buy tools, cosmetics, hats, shirts, and more. Lava World unlocks for $80,000; other zones (ponds, ocean, void) are freely explorable.", target: null },
     { text: "Level up skills (Fishing, Mining, Lumberjack, etc.) for bonuses. Check Progress for achievements and quests.", target: null },
     { text: "You're ready! Explore, fish, and have fun. (Skip anytime.)", target: null }
 ];
