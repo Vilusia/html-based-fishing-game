@@ -15251,7 +15251,13 @@ function switchPanel(name) {
         // trigger render if needed
         if (name === 'journal' && typeof renderJournal === 'function') renderJournal();
         if (name === 'inventory' && typeof renderInventoryGrid === 'function') renderInventoryGrid();
-        if (name === 'progress' && typeof setProgressTab === 'function') setProgressTab('bounties');
+        if (name === 'progress') {
+            if (typeof ensureProgression === 'function') ensureProgression();
+            if (typeof ensureBounties === 'function') ensureBounties();
+            if (typeof checkAchievements === 'function') checkAchievements(false);
+            if (typeof checkQuests === 'function') checkQuests(false);
+            if (typeof setProgressTab === 'function') setProgressTab('bounties');
+        }
         if (name === 'skills' && typeof renderSkillsUI === 'function') renderSkillsUI();
         if (name === 'cooking' && typeof renderCookingUI === 'function') renderCookingUI();
         if (name === 'playerlist' && typeof renderPlayerList === 'function') renderPlayerList();
