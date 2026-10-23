@@ -11571,8 +11571,12 @@ function setupInputs() {
 let chopInterval = null;
 function handleAction(down) {
 
+    // Determine active tool id from hotbar
+    const activeEntry = saveState.hotbar ? saveState.hotbar[saveState.activeHotbarIndex] : null;
+    const activeToolId = activeEntry && activeEntry.type === 'tool' ? activeEntry.id : null;
+
     // --- AXE LOGIC (Block Fishing) ---
-    if (saveState.activeToolIndex === 2) { // Axe
+    if (activeToolId === 'axe') {
         if (down) {
             // Start Auto-Chop
             if (chopInterval) clearInterval(chopInterval);
@@ -11591,7 +11595,7 @@ function handleAction(down) {
     }
 
     // --- PICKAXE LOGIC ---
-    if (saveState.activeToolIndex === 5) { // Pickaxe
+    if (activeToolId === 'pickaxe') {
         if (down) {
             // Start Auto-Mine
             if (chopInterval) clearInterval(chopInterval);
