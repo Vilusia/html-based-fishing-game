@@ -12483,9 +12483,9 @@ function animate() {
 
     // Random void portal spawns on custom levels (host only), on the main island.
     if (window.CUSTOM_LEVEL && window.Level && isHost && !isInVoid && !isInLavaWorld && !voidPortalMesh) {
-        if (!portalSpawnTimer) portalSpawnTimer = Date.now() + 30000 + Math.random() * 30000;
+        if (!portalSpawnTimer) portalSpawnTimer = Date.now() + 120000 + Math.random() * 120000;
         if (Date.now() > portalSpawnTimer) {
-            portalSpawnTimer = Date.now() + 90000 + Math.random() * 90000;
+            portalSpawnTimer = Date.now() + 240000 + Math.random() * 240000;
             const lvl = window.CUSTOM_LEVEL;
             const half = lvl.size / 2;
             let sx = 0, sz = 0, found = false;
