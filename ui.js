@@ -392,6 +392,25 @@ function updateMerchantUI(container) {
                 Sell All Fish ($${totalFishValue})
             </button>
 
+            <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Flowers (click to sell one)</h3>
+            <div id="merchant-flower-grid" style="display:grid; grid-template-columns: repeat(6, 1fr); gap:6px; margin-bottom:20px; margin-top: 10px; max-height:160px; overflow-y:auto; padding:8px; background:var(--p-sunken); border:2px solid var(--p-line);">
+                ${(() => {
+                    const slots = (saveState.invSlots || []).filter(s => s && s.type === 'flower');
+                    if (slots.length === 0) return '<div style="color:var(--p-text-dim); grid-column:1/-1;">No flowers to sell.</div>';
+                    return slots.map(s => {
+                        const ft = FLOWER_TYPES.find(f => f.id === s.id);
+                        const price = ft ? ft.price : 1;
+                        const count = s.count || 1;
+                        return `<div style="width:50px;height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;cursor:pointer;border:1px solid var(--p-line);background:var(--p-face-2);"
+                            onclick="sellOneFlower('${s.id}')">
+                            <div style="width:20px;height:20px;border-radius:50%;background:${s.color || '#fff'};"></div>
+                            <div style="font-size:9px; color:#fff; position:absolute; bottom:2px; right:4px; background:rgba(0,0,0,0.7); padding:0 2px;">x${count}</div>
+                            <div style="font-size:9px; color:var(--p-gold);">$${price}</div>
+                        </div>`;
+                    }).join('');
+                })()}
+            </div>
+
             <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Other</h3>
             <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px; margin-top: 10px;">
                 <button class="btn-lg" onclick="actionSellWood()" ${totalWoodCount === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
@@ -438,6 +457,27 @@ window.sellOneFish = function (name) {
     showToast(`Sold 1 ${name} for $${price}!`);
     updateMerchantUI(document.getElementById('merchant-ui'));
     updateHotbarVisuals();
+};
+
+window.sellOneFlower = function (id) {
+    ensureInventorySlots();
+    const slot = saveState.invSlots.find(s => s && s.type === 'flower' && s.id === id);
+    if (!slot) { showToast("No such flower."); return; }
+    const ft = FLOWER_TYPES.find(f => f.id === id);
+    const price = ft ? ft.price : 1;
+    if ((slot.count || 1) > 1) slot.count--;
+    else {
+        const idx = saveState.invSlots.indexOf(slot);
+        if (idx !== -1) saveState.invSlots[idx] = null;
+    }
+    // decrement flowerInventory too
+    if (saveState.flowerInventory && saveState.flowerInventory[id] > 0) saveState.flowerInventory[id]--;
+    autoSortInventory();
+    saveState.money += price;
+    saveGame();
+    Sound.sell();
+    showToast(`Sold 1 ${ft ? ft.name : id} for $${price}!`);
+    updateMerchantUI(document.getElementById('merchant-ui'));
 };
 
 window.sellFishSpecies = function (name) {
@@ -664,19 +704,31 @@ window.pickFlower = function (i) {
 
     // Rewards
     const xp = flowerType.xp || 5;
-    const money = flowerType.price || 1;
+    const money = 0; // Flowers are now sold at the Merchant instead of instant money.
 
     // Apply
     addSkillXP('floristry', xp);
-    saveState.money += money;
+    if (!saveState.flowerInventory) saveState.flowerInventory = {};
+    saveState.flowerInventory[flowerType.id] = (saveState.flowerInventory[flowerType.id] || 0) + 1;
+
+    // Add to grid inventory
+    try {
+        ensureInventorySlots();
+        const existing = saveState.invSlots.find(s => s && s.type === 'flower' && s.id === flowerType.id);
+        if (existing) existing.count = (existing.count || 1) + 1;
+        else {
+            const empty = saveState.invSlots.findIndex(s => s === null);
+            if (empty !== -1) saveState.invSlots[empty] = { type: 'flower', id: flowerType.id, name: flowerType.name, color: flowerType.color, count: 1 };
+        }
+        autoSortInventory();
+    } catch (e) { }
+
     saveGame();
 
-    // SERVER SYNC
-
     // Feedback
-    Sound.flip(); // Use existing sound (flip or click)
-    showToast(`Picked ${flowerType.name}: +$${money}, +${xp} XP`, 'success');
-    updateUI(); // Update money display
+    Sound.flip();
+    showToast(`Picked ${flowerType.name}: +${xp} XP`, 'success');
+    updateUI();
 
     // Respawn Logic (1 minute cooldown)
     setTimeout(() => {
