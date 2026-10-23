@@ -15363,6 +15363,38 @@ function hideItemTooltip() {
         }
     }
 
+function ensureInventorySlots() {
+    if (!Array.isArray(saveState.invSlots) || saveState.invSlots.length !== 50) {
+        saveState.invSlots = new Array(50).fill(null);
+        const counts = {};
+        if (Array.isArray(saveState.inventory)) {
+            for (const f of saveState.inventory) {
+                if (!f || !f.name) continue;
+                if (!counts[f.name]) counts[f.name] = { type: 'fish', name: f.name, color: f.color, size: f.size || 1, count: 0 };
+                counts[f.name].count++;
+            }
+        }
+        let idx = 0;
+        for (const k in counts) {
+            if (idx < 50) saveState.invSlots[idx++] = counts[k];
+        }
+    }
+    // Migrate unlocked tools into inventory (if not already present)
+    if (Array.isArray(saveState.unlockedTools)) {
+        for (const tid of saveState.unlockedTools) {
+            if (tid === 'hands' || tid === 'rod') continue;
+            const exists = saveState.invSlots.some(s => s && s.type === 'tool' && s.id === tid);
+            if (!exists) {
+                const empty = saveState.invSlots.findIndex(s => s === null);
+                if (empty !== -1) {
+                    const tool = (typeof TOOLS !== 'undefined') ? TOOLS.find(t => t.id === tid) : null;
+                    saveState.invSlots[empty] = { type: 'tool', id: tid, name: tool ? tool.name : tid };
+                }
+            }
+        }
+    }
+}
+
 function renderInventoryGrid() {
     ensureInventorySlots();
     const box = document.getElementById('inventory-grid');
