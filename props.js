@@ -170,10 +170,15 @@ function placeProp(type) {
             videoId: propData.videoId,
             twitchId: propData.twitchId,
             twitchKind: propData.twitchKind,
+            queue: propData.queue,
             startedAt: startedAt,
             placer: String(myDeviceID || '')
         });
         if (src && src.provider === 'youtube') startYtSyncLoop(propData);
+    } else {
+        // Single-player (no host): spawn locally.
+        spawnPropMesh(propData);
+        myProps.push(propData);
     }
 
     // Progression: count placements for the "Decorator" achievement. Props
