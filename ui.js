@@ -15426,12 +15426,14 @@ function getFishSellPrice(name) {
     const f = (typeof getFishByName === 'function') ? getFishByName(name) : null;
     return f ? f.price : 10;
 }
+function addFishToInventory(fish) {
     ensureInventorySlots();
     const existing = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === fish.name);
     if (existing) { existing.count = (existing.count || 1) + 1; return; }
     const empty = saveState.invSlots.findIndex(s => s === null);
     if (empty !== -1) saveState.invSlots[empty] = { type: 'fish', name: fish.name, color: fish.color, size: fish.size || 1, count: 1 };
     autoSortInventory();
+}
 function getItemTooltipText(entry) {
     if (!entry) return '';
     if (entry.type === 'fish') {
