@@ -10910,67 +10910,48 @@ function attachSailBoat(group) {
 
 // A chunky, readable rowboat scaled to sit around the player. Built from boxes
 // and a hull shell so it reads clearly from the game's camera distance.
+function createBoatTexture() {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, 128, 64);
+
+    const cx = 64, cy = 32;
+    ctx.fillStyle = '#8B5A2B';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 58, 26, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#3E2723';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = '#6D4C41';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 46, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#5C3A1E';
+    ctx.fillRect(cx - 18, cy - 12, 8, 24);
+    ctx.fillRect(cx + 10, cy - 12, 8, 24);
+    ctx.fillStyle = '#7A5230';
+    ctx.fillRect(8, cy - 2, 112, 4);
+    ctx.fillRect(8, cy + 6, 112, 4);
+    ctx.fillStyle = '#5C3A1E';
+    ctx.fillRect(4, cy - 6, 12, 10);
+    ctx.fillRect(112, cy - 6, 12, 10);
+
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    return t;
+}
+
 function makeSailBoatMesh() {
-    const g = new THREE.Group();
-    const hullMat = new THREE.MeshStandardMaterial({ color: 0x8B5A2B, roughness: 0.9 });
-    const trimMat = new THREE.MeshStandardMaterial({ color: 0x5C3A1E, roughness: 0.85 });
-    const seatMat = new THREE.MeshStandardMaterial({ color: 0x6D4C41, roughness: 0.9 });
-
-    const W = 1.6, L = 3.6, H = 0.9;
-    // Hull bottom (slightly tapered via scale, sits at waterline).
-    const bottom = new THREE.Mesh(new THREE.BoxGeometry(W, 0.25, L), hullMat);
-    bottom.position.y = 0.05;
-    g.add(bottom);
-
-    // Side walls, angled outward so it reads as a hull.
-    for (const s of [-1, 1]) {
-        const side = new THREE.Mesh(new THREE.BoxGeometry(0.18, H, L), hullMat);
-        side.position.set(s * (W / 2 - 0.09), H / 2, 0);
-        side.rotation.z = s * 0.14;
-        g.add(side);
-    }
-    // Bow (front) and stern (back) walls.
-    const bow = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.18), hullMat);
-    bow.position.set(0, H / 2, L / 2 - 0.09);
-    g.add(bow);
-    const stern = bow.clone();
-    stern.position.z = -(L / 2 - 0.09);
-    stern.scale.x = 0.9;
-    g.add(stern);
-
-    // Gunwale trim caps the walls.
-    for (const s of [-1, 1]) {
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, L + 0.1), trimMat);
-        rail.position.set(s * (W / 2 - 0.03), H + 0.02, 0);
-        rail.rotation.z = s * 0.14;
-        g.add(rail);
-    }
-
-    // Two bench seats.
-    for (const z of [0.7, -0.7]) {
-        const seat = new THREE.Mesh(new THREE.BoxGeometry(W - 0.35, 0.12, 0.4), seatMat);
-        seat.position.set(0, H * 0.55, z);
-        g.add(seat);
-    }
-
-    // Oars resting along the gunwales.
-    const oarMat = new THREE.MeshStandardMaterial({ color: 0x7A5230, roughness: 0.9 });
-    for (const s of [-1, 1]) {
-        const oar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, L + 0.4), oarMat);
-        oar.position.set(s * (W / 2 + 0.18), H + 0.06, 0);
-        oar.rotation.y = s * 0.08;
-        g.add(oar);
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.5), oarMat);
-        blade.position.set(s * (W / 2 + 0.24), H + 0.06, -(L / 2 + 0.5));
-        g.add(blade);
-    }
-
-    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-
-    // Sit the hull so the player sprite appears inside the boat, not on top.
-    g.position.y = 0.05;
-    g.userData.isSailBoat = true;
-    return g;
+    const tex = createBoatTexture();
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5 });
+    const sp = new THREE.Sprite(mat);
+    sp.name = 'sailBoat';
+    sp.scale.set(4.5, 2.25, 1);
+    sp.position.y = 0.1;
+    sp.userData.isSailBoat = true;
+    return sp;
 }
 
 // Finds a walkable land cell close to the centre of a custom level.
