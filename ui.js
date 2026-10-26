@@ -3228,11 +3228,15 @@ function handleDataFromHost(data) {
         if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
     }
     else if (data.type === 'worldBossSpawn') {
-        window.worldBossActive = { expiresAt: data.expiresAt || (Date.now() + 5 * 60 * 1000) };
-        showToast('A world boss has appeared in the ocean!', 'achievement');
+        window.worldBossActive = { x: data.x, z: data.z, expiresAt: data.expiresAt || (Date.now() + 5 * 60 * 1000) };
+        if (typeof showWorldBossBeacon === 'function' && Number.isFinite(data.x) && Number.isFinite(data.z)) {
+            showWorldBossBeacon(data.x, data.z);
+        }
+        showToast('A golden light marks the world boss in the ocean!', 'achievement');
     }
     else if (data.type === 'worldBossDefeated') {
         window.worldBossActive = null;
+        if (typeof removeWorldBossBeacon === 'function') removeWorldBossBeacon();
         try { addFishToInventory(WORLD_BOSS_FISH); } catch (e) { }
         saveState.money += 2000;
         saveGame();
@@ -12633,19 +12637,75 @@ let nextGhostSpawn = Date.now() + (60000 + Math.random() * 3540000);
 
 // --- CO-OP WORLD BOSS ---
 let nextWorldBossAt = Date.now() + (5 * 60 * 1000 + Math.random() * 5 * 60 * 1000);
+let worldBossBeacon = null;
+
+function findWorldBossSpot() {
+    const custom = !!(window.CUSTOM_LEVEL && window.Level);
+    const sea = custom ? window.CUSTOM_LEVEL.seaLevel : OCEAN_LEVEL;
+    const maxR = custom ? Math.max(20, window.CUSTOM_LEVEL.size / 2 - 10) : (WORLD_RADIUS - 40);
+    const minR = custom ? 20 : (ISLAND_RADIUS + 30);
+    for (let i = 0; i < 300; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = minR + Math.random() * Math.max(1, maxR - minR);
+        const x = Math.cos(a) * d, z = Math.sin(a) * d;
+        const h = getTerrainHeight(x, z);
+        if (h < sea - 1.5) return { x, z };
+    }
+    return { x: minR, z: 0 };
+}
+
+function showWorldBossBeacon(x, z) {
+    removeWorldBossBeacon();
+    const custom = !!(window.CUSTOM_LEVEL && window.Level);
+    const sea = custom ? window.CUSTOM_LEVEL.seaLevel : OCEAN_LEVEL;
+    const g = new THREE.Group();
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.2, 70, 12, 1, true), beamMat);
+    beam.position.y = 35;
+    g.add(beam);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(3, 5, 24), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.15;
+    g.add(ring);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 10), new THREE.MeshBasicMaterial({ color: 0xfff3b0 }));
+    orb.position.y = 3;
+    g.add(orb);
+    g.position.set(x, sea, z);
+    g.userData.isWorldBossBeacon = true;
+    scene.add(g);
+    worldBossBeacon = g;
+}
+
+function removeWorldBossBeacon() {
+    if (worldBossBeacon) { scene.remove(worldBossBeacon); worldBossBeacon = null; }
+}
 
 function updateWorldBoss() {
-    // Only the host (or single-player) drives the event.
+    // Beacon upkeep / expiry for everyone.
+    if (window.worldBossActive) {
+        if (Date.now() >= window.worldBossActive.expiresAt) {
+            window.worldBossActive = null;
+            removeWorldBossBeacon();
+            if (typeof isHost !== 'undefined' && isHost) showToast('The world boss has fled...', 'error');
+        } else {
+            if (!worldBossBeacon) showWorldBossBeacon(window.worldBossActive.x, window.worldBossActive.z);
+            if (worldBossBeacon) {
+                worldBossBeacon.rotation.y += 0.02;
+                worldBossBeacon.children[0].material.opacity = 0.4 + Math.sin(Date.now() * 0.004) * 0.15;
+            }
+        }
+    }
+
+    // Only the host (or single-player) drives the spawn timer.
     const singlePlayer = (typeof isHost === 'undefined' || (!isHost && !hostConn));
     if (typeof isHost !== 'undefined' && !isHost && !singlePlayer) return;
-    if (window.worldBossActive && Date.now() >= window.worldBossActive.expiresAt) {
-        window.worldBossActive = null;
-        showToast('The world boss has fled...', 'error');
-    }
     if (!window.worldBossActive && Date.now() > nextWorldBossAt) {
-        window.worldBossActive = { expiresAt: Date.now() + 5 * 60 * 1000 };
+        const spot = findWorldBossSpot();
+        window.worldBossActive = { x: spot.x, z: spot.z, expiresAt: Date.now() + 5 * 60 * 1000 };
         nextWorldBossAt = Date.now() + (10 * 60 * 1000 + Math.random() * 10 * 60 * 1000);
-        relayBossMessage({ type: 'worldBossSpawn', expiresAt: window.worldBossActive.expiresAt });
+        showWorldBossBeacon(spot.x, spot.z);
+        relayBossMessage({ type: 'worldBossSpawn', x: spot.x, z: spot.z, expiresAt: window.worldBossActive.expiresAt });
     }
 }
 
@@ -12657,6 +12717,7 @@ function relayBossMessage(msg) {
 window.defeatWorldBoss = function () {
     if (!window.worldBossActive) return;
     window.worldBossActive = null;
+    removeWorldBossBeacon();
     nextWorldBossAt = Date.now() + (10 * 60 * 1000 + Math.random() * 10 * 60 * 1000);
     try { addFishToInventory(WORLD_BOSS_FISH); } catch (e) { }
     saveState.money += 2000;
@@ -15434,9 +15495,10 @@ function selectFish() {
         random -= fish.chance;
     }
 
-    // Co-op world boss: while active, it can appear in the ocean.
-    if (window.worldBossActive && Date.now() < window.worldBossActive.expiresAt && fishingZone === 'ocean' && Math.random() < 0.12) {
-        selectedType = WORLD_BOSS_FISH;
+    // Co-op world boss: only near the marked ocean spot while active.
+    if (window.worldBossActive && Date.now() < window.worldBossActive.expiresAt && fishingZone === 'ocean') {
+        const bd = Math.hypot(player.position.x - window.worldBossActive.x, player.position.z - window.worldBossActive.z);
+        if (bd < 35 && Math.random() < 0.25) selectedType = WORLD_BOSS_FISH;
     }
 
     // 4. Tier Logic (Shiny/Gold/Opalescent)
