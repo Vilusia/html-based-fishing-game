@@ -16733,7 +16733,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             html += `<div class="journal-rarity" style="font-size:14px; color:var(--p-text-mute);">${isCaught ? fish.rarity : 'Undiscovered'}</div>`;
             if (isCaught && saveState.personalBests && saveState.personalBests[fish.name]) {
                 const pb = saveState.personalBests[fish.name];
-                html += `<div style="font-size:12px; color:var(--p-gold);">Best: ${pb.label || 'Normal'} (${Number(pb.size || 1).toFixed(2)}x)</div>`;
+                html += `<div style="font-size:12px; color:var(--p-gold); white-space:nowrap;">Best: ${pb.label || 'Normal'} ${Number(pb.size || 1).toFixed(2)}x</div>`;
             }
 
             const textContainer = document.createElement('div');
