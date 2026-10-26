@@ -2893,7 +2893,8 @@ function handleDataFromClient(clientId, data) {
             broadcastToClients(data);
 
         } else if (data.type === 'tradeRequest' || data.type === 'tradeOffer' || data.type === 'tradeAccept' || data.type === 'tradeCancel') {
-            // Relay trade packets to the room; clients filter by target.
+            // The host may itself be the target: apply locally too.
+            if (data.target === myPeerId && typeof handleTradeMessage === 'function') handleTradeMessage(data);
             broadcastToClients(data);
 
         } else if (data.type === 'screenQueueAdd') {
@@ -15584,6 +15585,8 @@ window.toggleJournal = function () {
 
 // --- PLAYER TRADING ---
 let tradePartnerId = null;
+let tradePendingFrom = null;
+let tradePendingFromName = null;
 let tradeMyOffer = null;
 let tradeTheirOffer = null;
 let tradeIAccepted = false;
@@ -15686,14 +15689,12 @@ function handleTradeMessage(data) {
     if (!data || !data.target) return;
     if (data.target !== myPeerId) return;
     if (data.type === 'tradeRequest') {
-        tradePartnerId = data.fromId;
-        tradeMyOffer = null; tradeTheirOffer = null;
-        tradeIAccepted = false; tradeTheyAccepted = false;
-        const ui = document.getElementById('trade-overlay');
-        if (ui) ui.style.display = 'flex';
-        const lbl = document.getElementById('trade-partner-label');
-        if (lbl) lbl.innerText = 'Trading with ' + (data.fromName || 'player');
-        renderTradeUI();
+        tradePendingFrom = data.fromId;
+        tradePendingFromName = data.fromName || 'player';
+        const req = document.getElementById('trade-request');
+        const txt = document.getElementById('trade-request-text');
+        if (txt) txt.innerText = (tradePendingFromName + ' wants to trade!');
+        if (req) req.style.display = 'block';
     } else if (data.type === 'tradeOffer') {
         tradeTheirOffer = data.offer;
         renderTradeUI();
@@ -15702,9 +15703,34 @@ function handleTradeMessage(data) {
         renderTradeUI();
         checkTradeComplete();
     } else if (data.type === 'tradeCancel') {
+        const req = document.getElementById('trade-request');
+        if (req) req.style.display = 'none';
         tradeCancel();
     }
 }
+
+window.acceptTradeRequest = function () {
+    if (!tradePendingFrom) return;
+    tradePartnerId = tradePendingFrom;
+    tradeMyOffer = null;
+    tradeIAccepted = false; tradeTheyAccepted = false;
+    tradePendingFrom = null;
+    const req = document.getElementById('trade-request');
+    if (req) req.style.display = 'none';
+    const ui = document.getElementById('trade-overlay');
+    if (ui) ui.style.display = 'flex';
+    const lbl = document.getElementById('trade-partner-label');
+    if (lbl) lbl.innerText = 'Trading with ' + (tradePendingFromName || 'player');
+    renderTradeUI();
+};
+
+window.declineTradeRequest = function () {
+    const req = document.getElementById('trade-request');
+    if (req) req.style.display = 'none';
+    if (tradePendingFrom) relayTrade({ type: 'tradeCancel', target: tradePendingFrom, fromId: myPeerId });
+    tradePendingFrom = null;
+    tradePendingFromName = null;
+};
 
 window.toggleInventory = function () {
     const ui = document.getElementById('inventory-overlay');

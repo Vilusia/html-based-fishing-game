@@ -3896,15 +3896,15 @@
          can't silently change what runs in the game. PeerJS 1.5.5 drops the
          need for CSP 'unsafe-eval' (fixed in 1.5.3). Ideally these are served
          from our own origin rather than a public CDN (see README). -->
-    <script src="vendor/Midi.js?v=6"></script>
-    <script src="vendor/three.min.js?v=6"></script>
+    <script src="vendor/Midi.js?v=7"></script>
+    <script src="vendor/three.min.js?v=7"></script>
 
     <!-- CSS3DRenderer (three r128 examples) so the YouTube Screen prop can host
          real DOM iframes inside the 3D scene. Iframe-based renderers can't be
          textures (cross-origin), so the DOM overlay is the only way. -->
-    <script src="vendor/CSS3DRenderer.js?v=6"></script>
+    <script src="vendor/CSS3DRenderer.js?v=7"></script>
 
-    <script src="vendor/peerjs.min.js?v=6"></script>
+    <script src="vendor/peerjs.min.js?v=7"></script>
 
     <!-- YouTube IFrame API for the synced YouTube Screen prop (official loader
          endpoint, no version to pin; silently no-ops if YouTube is blocked). -->
@@ -3941,19 +3941,19 @@
         })();
     </script>
 
-    <script src="icons.js?v=108"></script>
-    <script src="worldgen.js?v=111"></script>
-    <script src="ocean.js?v=118"></script>
-    <script src="core.js?v=12.207"></script>
-    <script src="fish.js?v=12.156"></script>
-    <script src="character3d.js?v=105"></script>
-    <script src="networking.js?v=12.129"></script>
-    <script src="audio.js?v=12.138"></script>
-    <script src="progression.js?v=106"></script>
-    <script src="ui.js?v=12.303"></script>
-    <script src="props.js?v=12.190"></script>
-    <script src="level-loader.js?v=102"></script>
-    <script src="scratch.js?v=100"></script>
+    <script src="icons.js?v=109"></script>
+    <script src="worldgen.js?v=112"></script>
+    <script src="ocean.js?v=119"></script>
+    <script src="core.js?v=12.208"></script>
+    <script src="fish.js?v=12.157"></script>
+    <script src="character3d.js?v=106"></script>
+    <script src="networking.js?v=12.130"></script>
+    <script src="audio.js?v=12.139"></script>
+    <script src="progression.js?v=107"></script>
+    <script src="ui.js?v=12.305"></script>
+    <script src="props.js?v=12.191"></script>
+    <script src="level-loader.js?v=103"></script>
+    <script src="scratch.js?v=101"></script>
 
     <!-- Start Open Web Analytics Tracker -->
     <script type="text/javascript">
@@ -3974,6 +3974,13 @@
     </script>
     <!-- End Open Web Analytics Code -->
     <div id="item-tooltip" style="display:none; position:fixed; z-index:10003; background:var(--p-face-2); border:2px solid var(--p-line); padding:8px 10px; max-width:260px; font-size:12px; pointer-events:none; white-space:pre-line;"></div>
+    <div id="trade-request" style="display:none; position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:10004; background:var(--p-face); border:2px solid var(--p-line); padding:12px 16px; text-align:center; pointer-events:auto;">
+        <div id="trade-request-text" style="margin-bottom:8px;"></div>
+        <div style="display:flex; gap:8px; justify-content:center;">
+            <button class="btn-sm btn-green" onclick="acceptTradeRequest()">Accept</button>
+            <button class="btn-sm" onclick="declineTradeRequest()">Decline</button>
+        </div>
+    </div>
     <div id="trade-overlay" class="overlay-screen">
         <button class="close-x-btn" onclick="tradeCancel()">×</button>
         <div class="overlay-header">
