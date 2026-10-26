@@ -14919,6 +14919,7 @@ function loadSave() {
             }
             if (d.displayName) saveState.displayName = d.displayName;
             if (d.journal) saveState.journal = d.journal;
+            if (d.personalBests && typeof d.personalBests === 'object') saveState.personalBests = d.personalBests;
 
             // Visuals
             if (d.unlockedHats) saveState.unlockedHats = d.unlockedHats;
@@ -15824,6 +15825,10 @@ function getItemTooltipText(entry) {
             lines.push('Rarity: ' + (entry.rarity || 'Common'));
         }
         if (entry.count && entry.count > 1) lines.push('Count: ' + entry.count);
+        if (saveState.personalBests && saveState.personalBests[entry.name]) {
+            const pb = saveState.personalBests[entry.name];
+            lines.push('Best: ' + (pb.label || 'Normal') + ' (' + Number(pb.size || 1).toFixed(2) + 'x)');
+        }
         return lines.join('\n');
     }
     if (entry.type === 'tool') {
