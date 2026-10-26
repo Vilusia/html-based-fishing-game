@@ -2177,10 +2177,18 @@ function renderScreenQueue() {
         // Playback is owner-only: only the placer (or the host) gets the Play
         // button. Everyone else just watches and follows the owner's changes.
         if (isOwner) {
+            const upBtn = document.createElement('button');
+            upBtn.className = 'btn-sm'; upBtn.innerText = '↑';
+            upBtn.onclick = () => moveScreenQueue(activeScreenId, idx, -1);
+            const downBtn = document.createElement('button');
+            downBtn.className = 'btn-sm'; downBtn.innerText = '↓';
+            downBtn.onclick = () => moveScreenQueue(activeScreenId, idx, 1);
             const playBtn = document.createElement('button');
             playBtn.className = 'btn-sm';
             playBtn.innerText = 'Play';
             playBtn.onclick = () => playScreenQueueIndex(activeScreenId, idx);
+            btns.appendChild(upBtn);
+            btns.appendChild(downBtn);
             btns.appendChild(playBtn);
         }
         if (isOwner) {
@@ -2239,6 +2247,19 @@ function fetchYtTitle(id) {
         .then(r => r.ok ? r.json() : null)
         .then(d => (d && d.title) ? d.title : null)
         .catch(() => null);
+}
+
+function moveScreenQueue(propId, idx, dir) {
+    const entry = getScreenEntry(propId);
+    if (!entry || !entry.data || !Array.isArray(entry.data.queue)) return;
+    const q = entry.data.queue;
+    const ni = idx + dir;
+    if (ni < 0 || ni >= q.length) return;
+    const tmp = q[idx]; q[idx] = q[ni]; q[ni] = tmp;
+    const msg = { type: 'screenQueueMove', propId: propId, from: idx, to: ni, placer: String(myDeviceID || '') };
+    if (typeof isHost !== 'undefined' && isHost) broadcastToClients(msg);
+    else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) hostConn.send(msg);
+    renderScreenQueue();
 }
 
 function removeFromScreenQueue(propId, idx) {

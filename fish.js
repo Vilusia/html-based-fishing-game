@@ -135,6 +135,29 @@ const FISH_TYPES = [
     { name: "Widemouth Blindcat", rarity: "Legendary", chance: 0.6, color: "#E0E0D0", drain: 76, price: 700, condition: 'secret', zone: "secret", shape: "catfish" }
 ];
 
+// Time-of-day preferences: species that bite notably better at night (or day).
+// Applied as a weight penalty outside their window in selectFish().
+const TIME_PREFS = {
+    'Channel Catfish': 'night', 'Black Bullhead': 'night', 'Yellow Bullhead': 'night',
+    'Brown Bullhead': 'night', 'Flathead Catfish': 'night', 'Blue Catfish': 'night',
+    'Bowfin': 'night', 'Snakehead': 'night', 'Electric Eel': 'night', 'Silver Arowana': 'night',
+    'Common Carp': 'day', 'Bluegill': 'day', 'Largemouth Bass': 'day', 'Smallmouth Bass': 'day',
+    'Yellow Perch': 'day', 'Rainbow Trout': 'day', 'Atlantic Mackerel': 'day',
+    'Yellowfin Tuna': 'day', 'Mahi-Mahi': 'day', 'Blue Marlin': 'day', 'Swordfish': 'day',
+    'Ocean Sunfish': 'day', 'Clownfish': 'day', 'Regal Blue Tang': 'day'
+};
+// Species that bite a little better in the rain.
+const RAIN_LOVERS = new Set([
+    'Channel Catfish', 'Black Bullhead', 'Common Carp', 'Northern Pike',
+    'Atlantic Salmon', 'Largemouth Bass', 'Bluegill', 'Rainbow Trout'
+]);
+
+// === CO-OP WORLD BOSS (not in normal pools) ==============================
+const WORLD_BOSS_FISH = {
+    name: "Leviathan Bass", rarity: "Legendary", chance: 0, color: "#2A4A6A",
+    drain: 95, price: 5000, zone: "ocean", shape: "bass", isBoss: true
+};
+
 // === RAIN POOL (real fish that bite in stormy weather) ====================
 const RAIN_FISH = [
     { name: "Weather Loach", rarity: "Common", chance: 50, color: "#7A6A4A", drain: 16, price: 18, condition: 'rain', shape: "loach" },
@@ -284,6 +307,8 @@ for (const fish of FISH_TYPES) {
 for (const fish of LAVA_FISH) {
     FISH_NAME_MAP.set(fish.name, fish);
 }
+// World boss is event-only but still needs name/shape lookups.
+FISH_NAME_MAP.set(WORLD_BOSS_FISH.name, WORLD_BOSS_FISH);
 
 function getFishByName(name) {
     return FISH_NAME_MAP.get(name);

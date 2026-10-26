@@ -2889,6 +2889,13 @@ function handleDataFromClient(clientId, data) {
             if (data.id !== myPeerId) displayChatMessage(data.name, data.text, data.id);
             broadcastToClients(data);
 
+        } else if (data.type === 'worldBossSpawn' || data.type === 'worldBossDefeated') {
+            broadcastToClients(data);
+
+        } else if (data.type === 'tradeRequest' || data.type === 'tradeOffer' || data.type === 'tradeAccept' || data.type === 'tradeCancel') {
+            // Relay trade packets to the room; clients filter by target.
+            broadcastToClients(data);
+
         } else if (data.type === 'screenQueueAdd') {
             const entry = ytPlayers[data.propId];
             if (entry && entry.data) {
@@ -2911,6 +2918,16 @@ function handleDataFromClient(clientId, data) {
             const entry = ytPlayers[data.propId];
             if (entry && entry.data && Array.isArray(entry.data.queue)) {
                 if (data.idx >= 0 && data.idx < entry.data.queue.length) entry.data.queue.splice(data.idx, 1);
+            }
+            broadcastToClients(data);
+
+        } else if (data.type === 'screenQueueMove') {
+            const entry = ytPlayers[data.propId];
+            if (entry && entry.data && Array.isArray(entry.data.queue)) {
+                const q = entry.data.queue;
+                if (data.from >= 0 && data.from < q.length && data.to >= 0 && data.to < q.length) {
+                    const tmp = q[data.from]; q[data.from] = q[data.to]; q[data.to] = tmp;
+                }
             }
             broadcastToClients(data);
 
@@ -3197,6 +3214,32 @@ function handleDataFromHost(data) {
             }
         }
         if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
+    }
+    else if (data.type === 'screenQueueMove') {
+        if (String(data.placer || '') !== String(myDeviceID || '')) {
+            const entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
+            if (entry && entry.data && Array.isArray(entry.data.queue)) {
+                const q = entry.data.queue;
+                if (data.from >= 0 && data.from < q.length && data.to >= 0 && data.to < q.length) {
+                    const tmp = q[data.from]; q[data.from] = q[data.to]; q[data.to] = tmp;
+                }
+            }
+        }
+        if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
+    }
+    else if (data.type === 'worldBossSpawn') {
+        window.worldBossActive = { expiresAt: data.expiresAt || (Date.now() + 5 * 60 * 1000) };
+        showToast('A world boss has appeared in the ocean!', 'achievement');
+    }
+    else if (data.type === 'worldBossDefeated') {
+        window.worldBossActive = null;
+        try { addFishToInventory(WORLD_BOSS_FISH); } catch (e) { }
+        saveState.money += 2000;
+        saveGame();
+        showToast('World boss defeated! You received $2,000 and a Leviathan Bass.', 'success');
+    }
+    else if (data.type === 'tradeRequest' || data.type === 'tradeOffer' || data.type === 'tradeAccept' || data.type === 'tradeCancel') {
+        if (typeof handleTradeMessage === 'function') handleTradeMessage(data);
     }
     else if (data.type === 'skillLevel') {
         if (data.id !== myPeerId) {
@@ -12378,6 +12421,24 @@ function stopFishing(success, msg) {
             const sizeStr = minigame.targetFish.sizeLabel ? ` [${minigame.targetFish.sizeLabel}]` : '';
             showToast(`Caught ${minigame.targetFish.name}${tierStr}${sizeStr}!`);
 
+            // Personal best size for this species
+            try {
+                if (!saveState.personalBests) saveState.personalBests = {};
+                const pbPrev = saveState.personalBests[minigame.targetFish.name];
+                if (!pbPrev || (minigame.targetFish.size || 1) > (pbPrev.size || 0)) {
+                    saveState.personalBests[minigame.targetFish.name] = {
+                        size: minigame.targetFish.size || 1,
+                        label: minigame.targetFish.sizeLabel || 'Normal',
+                        at: Date.now()
+                    };
+                }
+            } catch (e) { }
+
+            // Co-op world boss: catching it rewards everyone in the room.
+            if (minigame.targetFish && minigame.targetFish.isBoss) {
+                try { window.defeatWorldBoss(); } catch (e) { }
+            }
+
             // Add to grid inventory (stacked)
             try { addFishToInventory(minigame.targetFish); } catch (e) { }
 
@@ -12569,6 +12630,40 @@ function spawnGhostMesh(x, z) {
 let ghostMesh = null;
 let ghostDespawnTime = 0;
 let nextGhostSpawn = Date.now() + (60000 + Math.random() * 3540000);
+
+// --- CO-OP WORLD BOSS ---
+let nextWorldBossAt = Date.now() + (5 * 60 * 1000 + Math.random() * 5 * 60 * 1000);
+
+function updateWorldBoss() {
+    // Only the host (or single-player) drives the event.
+    const singlePlayer = (typeof isHost === 'undefined' || (!isHost && !hostConn));
+    if (typeof isHost !== 'undefined' && !isHost && !singlePlayer) return;
+    if (window.worldBossActive && Date.now() >= window.worldBossActive.expiresAt) {
+        window.worldBossActive = null;
+        showToast('The world boss has fled...', 'error');
+    }
+    if (!window.worldBossActive && Date.now() > nextWorldBossAt) {
+        window.worldBossActive = { expiresAt: Date.now() + 5 * 60 * 1000 };
+        nextWorldBossAt = Date.now() + (10 * 60 * 1000 + Math.random() * 10 * 60 * 1000);
+        relayBossMessage({ type: 'worldBossSpawn', expiresAt: window.worldBossActive.expiresAt });
+    }
+}
+
+function relayBossMessage(msg) {
+    if (typeof isHost !== 'undefined' && isHost) broadcastToClients(msg);
+    else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) hostConn.send(msg);
+}
+
+window.defeatWorldBoss = function () {
+    if (!window.worldBossActive) return;
+    window.worldBossActive = null;
+    nextWorldBossAt = Date.now() + (10 * 60 * 1000 + Math.random() * 10 * 60 * 1000);
+    try { addFishToInventory(WORLD_BOSS_FISH); } catch (e) { }
+    saveState.money += 2000;
+    saveGame();
+    showToast('World boss defeated! Everyone gets $2,000 and a Leviathan Bass.', 'success');
+    relayBossMessage({ type: 'worldBossDefeated' });
+};
 
 function updateGhost() {
     const now = Date.now();
@@ -12769,6 +12864,7 @@ function animate() {
 
     updateVoiceVisuals();
     updateGhost();
+    updateWorldBoss();
 
     // Chat mouths and animalese blips (must run before updateSpriteDirection).
     updateTalkingPlayers(performance.now());
@@ -15303,6 +15399,18 @@ function selectFish() {
             chance *= 0.33;
         }
 
+        // Time-of-day preference
+        if (typeof TIME_PREFS !== 'undefined' && TIME_PREFS[fish.name]) {
+            const isNight = (typeof worldTime === 'number') ? (worldTime < 6 || worldTime >= 18) : false;
+            const wantsNight = TIME_PREFS[fish.name] === 'night';
+            if (wantsNight !== isNight) chance *= 0.25;
+            else chance *= 1.25;
+        }
+        // Rain lovers
+        if (typeof isRaining !== 'undefined' && isRaining && typeof RAIN_LOVERS !== 'undefined' && RAIN_LOVERS.has(fish.name)) {
+            chance *= 1.5;
+        }
+
         pool.push({ ...fish, chance: chance });
     });
 
@@ -15324,6 +15432,11 @@ function selectFish() {
     for (let fish of pool) {
         if (random < fish.chance) { selectedType = fish; break; }
         random -= fish.chance;
+    }
+
+    // Co-op world boss: while active, it can appear in the ocean.
+    if (window.worldBossActive && Date.now() < window.worldBossActive.expiresAt && fishingZone === 'ocean' && Math.random() < 0.12) {
+        selectedType = WORLD_BOSS_FISH;
     }
 
     // 4. Tier Logic (Shiny/Gold/Opalescent)
@@ -15404,6 +15517,130 @@ window.toggleJournal = function () {
     const ui = document.getElementById('journal-overlay');
     ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
     if (ui.style.display === 'flex') { document.exitPointerLock(); renderJournal(); }
+}
+
+// --- PLAYER TRADING ---
+let tradePartnerId = null;
+let tradeMyOffer = null;
+let tradeTheirOffer = null;
+let tradeIAccepted = false;
+let tradeTheyAccepted = false;
+
+function relayTrade(msg) {
+    if (typeof isHost !== 'undefined' && isHost) {
+        broadcastToClients(msg);
+    } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
+        hostConn.send(msg);
+    }
+}
+
+window.openTradeWith = function (pid) {
+    if (!pid || pid === myPeerId) return;
+    tradePartnerId = pid;
+    tradeMyOffer = null;
+    tradeTheirOffer = null;
+    tradeIAccepted = false;
+    tradeTheyAccepted = false;
+    relayTrade({ type: 'tradeRequest', target: pid, fromId: myPeerId, fromName: saveState.displayName });
+    const ui = document.getElementById('trade-overlay');
+    if (ui) ui.style.display = 'flex';
+    const lbl = document.getElementById('trade-partner-label');
+    const other = otherPlayers[pid];
+    if (lbl) lbl.innerText = 'Trading with ' + (other && other.lastData ? other.lastData.name : 'player');
+    renderTradeUI();
+};
+
+window.tradeCancel = function () {
+    if (tradePartnerId) relayTrade({ type: 'tradeCancel', target: tradePartnerId, fromId: myPeerId });
+    tradePartnerId = null; tradeMyOffer = null; tradeTheirOffer = null;
+    tradeIAccepted = false; tradeTheyAccepted = false;
+    const ui = document.getElementById('trade-overlay');
+    if (ui) ui.style.display = 'none';
+};
+
+window.tradeAccept = function () {
+    if (!tradePartnerId) return;
+    tradeIAccepted = true;
+    relayTrade({ type: 'tradeAccept', target: tradePartnerId, fromId: myPeerId });
+    renderTradeUI();
+    checkTradeComplete();
+};
+
+function checkTradeComplete() {
+    if (!tradeIAccepted || !tradeTheyAccepted) return;
+    if (!tradeMyOffer || !tradeTheirOffer) return;
+    ensureInventorySlots();
+    const mine = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === tradeMyOffer.name);
+    if (mine) {
+        if ((mine.count || 1) > 1) mine.count--;
+        else { const i = saveState.invSlots.indexOf(mine); if (i !== -1) saveState.invSlots[i] = null; }
+    }
+    const theirs = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === tradeTheirOffer.name);
+    if (theirs) theirs.count = (theirs.count || 1) + 1;
+    else {
+        const empty = saveState.invSlots.findIndex(s => s === null);
+        if (empty !== -1) saveState.invSlots[empty] = { type: 'fish', name: tradeTheirOffer.name, color: tradeTheirOffer.color, size: tradeTheirOffer.size || 1, count: 1 };
+    }
+    autoSortInventory();
+    saveGame();
+    showToast('Trade complete!', 'success');
+    tradePartnerId = null; tradeMyOffer = null; tradeTheirOffer = null;
+    tradeIAccepted = false; tradeTheyAccepted = false;
+    const ui = document.getElementById('trade-overlay');
+    if (ui) ui.style.display = 'none';
+}
+
+function renderTradeUI() {
+    const myOfferEl = document.getElementById('trade-my-offer');
+    const theirOfferEl = document.getElementById('trade-their-offer');
+    const invEl = document.getElementById('trade-my-inv');
+    if (myOfferEl) myOfferEl.innerText = tradeMyOffer ? tradeMyOffer.name : 'Click a fish below';
+    if (theirOfferEl) theirOfferEl.innerText = tradeTheirOffer ? tradeTheirOffer.name : 'Waiting…';
+    if (!invEl) return;
+    invEl.innerHTML = '';
+    ensureInventorySlots();
+    saveState.invSlots.forEach((s, i) => {
+        if (!s || s.type !== 'fish') return;
+        const slot = document.createElement('div');
+        slot.style.cssText = 'width:48px;height:48px;display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;border:1px solid var(--p-line);';
+        try {
+            const tex = createFishTexture(s.name, s.color);
+            const cv = document.createElement('canvas'); cv.width = 40; cv.height = 40;
+            cv.getContext('2d').drawImage(tex.image, 0, 0, 40, 40);
+            slot.appendChild(cv);
+        } catch (e) { slot.innerText = '🐟'; }
+        slot.onclick = () => {
+            tradeMyOffer = { name: s.name, color: s.color, size: s.size || 1 };
+            relayTrade({ type: 'tradeOffer', target: tradePartnerId, fromId: myPeerId, offer: tradeMyOffer });
+            tradeIAccepted = false;
+            renderTradeUI();
+        };
+        invEl.appendChild(slot);
+    });
+}
+
+function handleTradeMessage(data) {
+    if (!data || !data.target) return;
+    if (data.target !== myPeerId) return;
+    if (data.type === 'tradeRequest') {
+        tradePartnerId = data.fromId;
+        tradeMyOffer = null; tradeTheirOffer = null;
+        tradeIAccepted = false; tradeTheyAccepted = false;
+        const ui = document.getElementById('trade-overlay');
+        if (ui) ui.style.display = 'flex';
+        const lbl = document.getElementById('trade-partner-label');
+        if (lbl) lbl.innerText = 'Trading with ' + (data.fromName || 'player');
+        renderTradeUI();
+    } else if (data.type === 'tradeOffer') {
+        tradeTheirOffer = data.offer;
+        renderTradeUI();
+    } else if (data.type === 'tradeAccept') {
+        tradeTheyAccepted = true;
+        renderTradeUI();
+        checkTradeComplete();
+    } else if (data.type === 'tradeCancel') {
+        tradeCancel();
+    }
 }
 
 window.toggleInventory = function () {
@@ -15585,6 +15822,45 @@ function hideItemTooltip() {
         }
     }
 
+let invSortMode = 'none';
+let invFilterMode = 'all';
+
+window.sortInventory = function (mode) {
+    ensureInventorySlots();
+    invSortMode = mode;
+    const items = saveState.invSlots.filter(s => s !== null);
+    const priceOf = (s) => {
+        if (s.type === 'fish') {
+            if (typeof getFishSellPrice === 'function') return getFishSellPrice(s.name);
+            const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
+            return f ? f.price : 10;
+        }
+        if (s.type === 'flower') {
+            const ft = (typeof FLOWER_TYPES !== 'undefined') ? FLOWER_TYPES.find(f => f.id === s.id) : null;
+            return ft ? ft.price : 1;
+        }
+        return 0;
+    };
+    const rarityRank = (s) => {
+        const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
+        const order = { Common: 1, Uncommon: 2, Rare: 3, Epic: 4, Legendary: 5 };
+        return f ? (order[f.rarity] || 0) : 0;
+    };
+    items.sort((a, b) => {
+        if (mode === 'price') return priceOf(b) - priceOf(a);
+        if (mode === 'rarity') return rarityRank(b) - rarityRank(a);
+        if (mode === 'name') return String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''));
+        return 0;
+    });
+    for (let i = 0; i < saveState.invSlots.length; i++) saveState.invSlots[i] = i < items.length ? items[i] : null;
+    renderInventoryGrid();
+};
+
+window.filterInventory = function (mode) {
+    invFilterMode = mode;
+    renderInventoryGrid();
+};
+
 function ensureInventorySlots() {
     if (!Array.isArray(saveState.invSlots) || saveState.invSlots.length !== 50) {
         saveState.invSlots = new Array(50).fill(null);
@@ -15628,7 +15904,10 @@ function renderInventoryGrid() {
         slot.style.cssText = 'width:56px;height:56px;display:flex;align-items:center;justify-content:center;position:relative;cursor:grab;';
         slot.draggable = true;
         slot.dataset.slot = i;
-        const entry = saveState.invSlots[i];
+        const rawEntry = saveState.invSlots[i];
+        const passes = (!rawEntry) ? true : (invFilterMode === 'all' ? true : rawEntry.type === invFilterMode || (invFilterMode === 'tools' && rawEntry.type === 'tool') || (invFilterMode === 'flowers' && rawEntry.type === 'flower'));
+        const entry = passes ? rawEntry : null;
+        slot.draggable = !!entry;
         if (entry && entry.type === 'fish') {
             try {
                 const tex = createFishTexture(entry.name, entry.color);
@@ -15650,16 +15929,19 @@ function renderInventoryGrid() {
         }
         // Drag handlers
         slot.addEventListener('dragstart', (e) => {
+            if (!passes) { e.preventDefault(); return; }
             const entry = saveState.invSlots[i];
             if (entry && entry.type === 'tool' && entry.id === 'boat') { e.preventDefault(); return; }
             e.dataTransfer.setData('text/plain', JSON.stringify({ from: 'inv', index: i }));
         });
         // Tooltip
         slot.addEventListener('mouseenter', (e) => {
+            if (!passes) return;
             const entry = saveState.invSlots[i];
             showItemTooltip(getItemTooltipText(entry), e.clientX, e.clientY);
         });
         slot.addEventListener('mousemove', (e) => {
+            if (!passes) return;
             const entry = saveState.invSlots[i];
             showItemTooltip(getItemTooltipText(entry), e.clientX, e.clientY);
         });
@@ -16382,6 +16664,10 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             // Undiscovered entries hide their rarity too, so the journal doesn't
             // spoil which unknown fish are the rare ones before you find them.
             html += `<div class="journal-rarity" style="font-size:14px; color:var(--p-text-mute);">${isCaught ? fish.rarity : 'Undiscovered'}</div>`;
+            if (isCaught && saveState.personalBests && saveState.personalBests[fish.name]) {
+                const pb = saveState.personalBests[fish.name];
+                html += `<div style="font-size:12px; color:var(--p-gold);">Best: ${pb.label || 'Normal'} (${Number(pb.size || 1).toFixed(2)}x)</div>`;
+            }
 
             const textContainer = document.createElement('div');
             textContainer.innerHTML = html;
@@ -18260,9 +18546,16 @@ function renderPlayerList() {
         btnMidi.onclick = () => toggleLocalMute(pid, 'midi');
         // ----------------------------------
 
+        const btnTrade = document.createElement('button');
+        btnTrade.className = 'btn-sm';
+        btnTrade.style.backgroundColor = 'var(--p-good)';
+        btnTrade.innerText = 'Trade';
+        btnTrade.onclick = () => { togglePlayerList(); openTradeWith(pid); };
+
         actions.appendChild(btnVoice);
         actions.appendChild(btnChat);
         actions.appendChild(btnMidi);
+        actions.appendChild(btnTrade);
 
         row.appendChild(name);
         row.appendChild(actions);
