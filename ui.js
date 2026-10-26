@@ -2897,6 +2897,15 @@ function handleDataFromClient(clientId, data) {
                 if (item) entry.data.queue.push(item);
             }
             broadcastToClients(data);
+            // First video on an idle screen: the host starts it for the whole
+            // room (a client's own ytChange would fail the ownership check in
+            // the ytChange branch below).
+            if (entry && entry.data && entry.data.queue.length > 0 &&
+                !entry.data.provider && !entry.data.videoId && !entry.data.twitchId &&
+                typeof playScreenQueueIndex === 'function') {
+                playScreenQueueIndex(data.propId, entry.data.queue.length - 1);
+            }
+            if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
 
         } else if (data.type === 'screenQueueRemove') {
             const entry = ytPlayers[data.propId];
@@ -2996,6 +3005,10 @@ function handleDataFromClient(clientId, data) {
             rec.twitchId = twVod || twCh;
             rec.twitchKind = twVod ? 'video' : (twCh ? 'channel' : null);
             rec.startedAt = startedAt;
+            // playScreenQueueIndex sends the post-splice queue so every
+            // viewer removes the same item; carry it into the record (late
+            // joiners) and into the relay.
+            if (Array.isArray(data.queue)) rec.queue = data.queue;
             const clean = {
                 type: 'ytChange',
                 propId: rec.id,
@@ -3006,6 +3019,7 @@ function handleDataFromClient(clientId, data) {
                 startedAt: startedAt,
                 placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : (rec.placer || '')
             };
+            if (Array.isArray(data.queue)) clean.queue = data.queue;
             broadcastToClients(clean);
             applyYtChange(clean);
 
@@ -3161,18 +3175,26 @@ function handleDataFromHost(data) {
         }
     }
     else if (data.type === 'screenQueueAdd') {
-        const entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
-        if (entry && entry.data) {
-            if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
-            const item = data.item || (data.src ? { provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null, title: null, addedBy: data.placer } : null);
-            if (item) entry.data.queue.push(item);
+        // The host relays our own add back to us; we already pushed it
+        // locally in addToScreenQueue, so applying it again duplicated the
+        // row on the adder's screen.
+        if (String(data.placer || '') !== String(myDeviceID || '')) {
+            const entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
+            if (entry && entry.data) {
+                if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
+                const item = data.item || (data.src ? { provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null, title: null, addedBy: data.placer } : null);
+                if (item) entry.data.queue.push(item);
+            }
         }
         if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
     }
     else if (data.type === 'screenQueueRemove') {
-        const entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
-        if (entry && entry.data && Array.isArray(entry.data.queue)) {
-            if (data.idx >= 0 && data.idx < entry.data.queue.length) entry.data.queue.splice(data.idx, 1);
+        // Same self-relay filter as screenQueueAdd.
+        if (String(data.placer || '') !== String(myDeviceID || '')) {
+            const entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
+            if (entry && entry.data && Array.isArray(entry.data.queue)) {
+                if (data.idx >= 0 && data.idx < entry.data.queue.length) entry.data.queue.splice(data.idx, 1);
+            }
         }
         if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
     }

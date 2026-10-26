@@ -19,5 +19,7 @@ deployment:
     - /bin/cp -f index.html editor.html "$DEPLOYPATH"
     - /bin/cp -f core.js ui.js props.js fish.js ocean.js worldgen.js "$DEPLOYPATH"
     - /bin/cp -f character3d.js networking.js audio.js progression.js "$DEPLOYPATH"
-    - /bin/cp -f level-loader.js icons.js editor.js "$DEPLOYPATH"
+    - /bin/cp -f level-loader.js icons.js editor.js scratch.js "$DEPLOYPATH"
     - /bin/cp -f patreon_banner.png "$DEPLOYPATH"
+    - /bin/mkdir -p "$DEPLOYPATH/vendor"
+    - /bin/cp -f vendor/peerjs.min.js vendor/three.min.js vendor/CSS3DRenderer.js vendor/Midi.js "$DEPLOYPATH/vendor/"

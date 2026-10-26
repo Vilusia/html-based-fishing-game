@@ -3896,15 +3896,15 @@
          can't silently change what runs in the game. PeerJS 1.5.5 drops the
          need for CSP 'unsafe-eval' (fixed in 1.5.3). Ideally these are served
          from our own origin rather than a public CDN (see README). -->
-    <script src="vendor/Midi.js"></script>
-    <script src="vendor/three.min.js"></script>
+    <script src="vendor/Midi.js?v=1"></script>
+    <script src="vendor/three.min.js?v=1"></script>
 
     <!-- CSS3DRenderer (three r128 examples) so the YouTube Screen prop can host
          real DOM iframes inside the 3D scene. Iframe-based renderers can't be
          textures (cross-origin), so the DOM overlay is the only way. -->
-    <script src="vendor/CSS3DRenderer.js"></script>
+    <script src="vendor/CSS3DRenderer.js?v=1"></script>
 
-    <script src="vendor/peerjs.min.js"></script>
+    <script src="vendor/peerjs.min.js?v=1"></script>
 
     <!-- YouTube IFrame API for the synced YouTube Screen prop (official loader
          endpoint, no version to pin; silently no-ops if YouTube is blocked). -->
@@ -3944,14 +3944,14 @@
     <script src="icons.js?v=103"></script>
     <script src="worldgen.js?v=106"></script>
     <script src="ocean.js?v=113"></script>
-    <script src="core.js?v=12.199"></script>
+    <script src="core.js?v=12.202"></script>
     <script src="fish.js?v=12.150"></script>
     <script src="character3d.js?v=100"></script>
     <script src="networking.js?v=12.124"></script>
     <script src="audio.js?v=12.133"></script>
     <script src="progression.js?v=101"></script>
-    <script src="ui.js?v=12.290"></script>
-    <script src="props.js?v=12.180"></script>
+    <script src="ui.js?v=12.294"></script>
+    <script src="props.js?v=12.184"></script>
     <script src="level-loader.js?v=97"></script>
     <script src="scratch.js?v=95"></script>
 
@@ -3978,7 +3978,7 @@
         <button class="close-x-btn" onclick="toggleScreenQueue()">×</button>
         <div class="overlay-header">
             <h2>Stream Queue</h2>
-            <div class="overlay-subtitle">Add videos; owner can remove.</div>
+            <div class="overlay-subtitle">Add videos; the screen's owner controls playback.</div>
         </div>
         <div style="width:90%; max-width:560px; display:flex; gap:6px; margin:10px 0;">
             <input type="text" id="screen-queue-input" placeholder="Paste YouTube/Twitch URL" style="flex:1;">

@@ -1215,6 +1215,9 @@ function attachYtVideo(data, group) {
 
     const entry = {
         data: {
+            // The prop id must survive here: the ENDED handler and the sync
+            // loop cleanup key off it (applyYtChange keeps it too).
+            id: data.id,
             provider: provider,
             videoId: provider === 'youtube' ? src.id : null,
             twitchId: provider === 'twitch' ? src.id : null,
@@ -1240,6 +1243,7 @@ function attachYtVideo(data, group) {
         retried: false
     };
     ytPlayers[data.id] = entry;
+    if (!Array.isArray(data.queue)) data.queue = entry.data.queue;
     mountScreenContent(entry);
 }
 
@@ -1691,15 +1695,16 @@ function createYtPlayer(entry) {
                     console.warn('[yt] embed rejected for', entry.data.videoId);
                 },
                 onStateChange: (e) => {
-                    // 0 = ENDED: play once, then stop syncing/replaying.
+                    // 0 = ENDED: hand the screen to the next queue item. The
+                    // host (or a single player) decides inside
+                    // advanceScreenQueue; everyone else follows the ytChange
+                    // broadcast that playScreenQueueIndex sends out.
                     if (e && e.data === 0) {
                         entry.ended = true;
                         try { entry.player.pauseVideo(); } catch (err) { }
                         const lid = entry.data && entry.data.id;
                         if (lid && ytSyncLoops[lid]) { clearInterval(ytSyncLoops[lid]); delete ytSyncLoops[lid]; }
-                        if (true) {
-                            setTimeout(() => advanceScreenQueue(propId), 500);
-                        }
+                        setTimeout(() => advanceScreenQueue(lid), 500);
                     }
                 }
             }
@@ -2099,19 +2104,29 @@ window.applyYtChange = function (data) {
     if (!src) return;
 
     e.provider = src.provider;
+    // Keep the prop id and the queue: dropping them here used to blank every
+    // receiver's queue panel after a video change and desync index-based
+    // removes. A queue snapshot on the message (sent by playScreenQueueIndex)
+    // is authoritative; otherwise keep what we had.
+    const prevQueue = (e.data && Array.isArray(e.data.queue)) ? e.data.queue : [];
     e.data = {
+        id: id,
         provider: src.provider,
         videoId: src.provider === 'youtube' ? src.id : null,
         twitchId: src.provider === 'twitch' ? src.id : null,
         twitchKind: src.provider === 'twitch' ? src.twitchKind : null,
+        queue: Array.isArray(data.queue) ? data.queue.slice() : prevQueue,
         startedAt: data.startedAt || Date.now(),
         placer: data.placer || (e.data && e.data.placer) || ''
     };
     e.syncAt = null;
     e.syncRecvAt = null;
     e.isLive = undefined;   // re-detect for the new video
+    e.ended = false;
+    e.__advAt = 0;
     // Rebuilds the shell contents for whichever provider is now active.
     mountScreenContent(e);
+    if (activeScreenId === id && typeof renderScreenQueue === 'function') renderScreenQueue();
 };
 
 // --- STREAM QUEUE (appended) ---
@@ -2159,11 +2174,15 @@ function renderScreenQueue() {
         const btns = document.createElement('div');
         btns.style.display = 'flex';
         btns.style.gap = '4px';
-        const playBtn = document.createElement('button');
-        playBtn.className = 'btn-sm';
-        playBtn.innerText = 'Play';
-        playBtn.onclick = () => playScreenQueueIndex(activeScreenId, idx);
-        btns.appendChild(playBtn);
+        // Playback is owner-only: only the placer (or the host) gets the Play
+        // button. Everyone else just watches and follows the owner's changes.
+        if (isOwner) {
+            const playBtn = document.createElement('button');
+            playBtn.className = 'btn-sm';
+            playBtn.innerText = 'Play';
+            playBtn.onclick = () => playScreenQueueIndex(activeScreenId, idx);
+            btns.appendChild(playBtn);
+        }
         if (isOwner) {
             const rmBtn = document.createElement('button');
             rmBtn.className = 'btn-sm';
@@ -2192,13 +2211,26 @@ async function addToScreenQueue(propId, src) {
     const entry = getScreenEntry(propId);
     if (!entry || !entry.data) return;
     if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
-    const item = { provider: src.provider, id: src.id, twitchKind: src.twitchKind || null, title: title, addedBy: String(myDeviceID || '') };
+    // addedBy is the DISPLAY name (myDeviceID is an opaque dev-xxxx id, which
+    // is what used to show up as a row of numbers in the queue panel).
+    const myName = (typeof saveState !== 'undefined' && saveState && saveState.displayName)
+        ? String(saveState.displayName) : 'Fisher';
+    const item = { provider: src.provider, id: src.id, twitchKind: src.twitchKind || null, title: title, addedBy: myName };
     entry.data.queue.push(item);
     const msg = { type: 'screenQueueAdd', propId: propId, item: item, placer: String(myDeviceID || '') };
     if (typeof isHost !== 'undefined' && isHost) {
         broadcastToClients(msg);
     } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
         hostConn.send(msg);
+    }
+    // Nothing playing yet (fresh screen): start the new video right away so
+    // the queue is hands-off from the first add. Only the host or a single
+    // player triggers it — a regular client's ytChange would be rejected by
+    // the host's ownership check, leaving the adder out of step. Client adds
+    // are started by the host when it relays the screenQueueAdd.
+    const idle = !entry.data.provider && !entry.data.videoId && !entry.data.twitchId;
+    if (idle && ((typeof isHost !== 'undefined' && isHost) || !(typeof hostConn !== 'undefined' && hostConn))) {
+        playScreenQueueIndex(propId, entry.data.queue.length - 1);
     }
 }
 
@@ -2227,6 +2259,17 @@ function playScreenQueueIndex(propId, idx) {
     const entry = getScreenEntry(propId);
     if (!entry || !entry.data || !Array.isArray(entry.data.queue)) return;
     if (idx < 0 || idx >= entry.data.queue.length) return;
+    // Playback control is owner-only: the screen's placer, the host (room
+    // authority — its auto-advance and idle-start also come through here), or
+    // anyone in single-player. Other clients only ever start a video by
+    // receiving the owner's ytChange broadcast; letting them run this locally
+    // would desync their player from the room.
+    const singlePlayer = (typeof isHost === 'undefined' || (!isHost && !hostConn));
+    const isPlacer = String(entry.data.placer || '') === String(myDeviceID || '');
+    if (!singlePlayer && !(typeof isHost !== 'undefined' && isHost) && !isPlacer) {
+        showToast('Only the player who placed this screen can play from its queue.', 'error');
+        return;
+    }
     const q = entry.data.queue[idx];
     const src = { provider: q.provider, id: q.id, twitchKind: q.twitchKind };
     entry.data.queue.splice(idx, 1);
@@ -2239,24 +2282,56 @@ function playScreenQueueIndex(propId, idx) {
     entry.syncAt = null;
     entry.syncRecvAt = null;
     entry.ended = false;
+    entry.__advAt = 0;
     if (typeof mountScreenContent === 'function') mountScreenContent(entry);
-    const msg = { type: 'ytChange', propId: propId, provider: src.provider, videoId: entry.data.videoId, twitchId: entry.data.twitchId, twitchKind: entry.data.twitchKind, startedAt: entry.data.startedAt, placer: String(myDeviceID || '') };
+    // The post-splice queue rides along so receivers splice the same item out
+    // (their local queues would otherwise keep it and index-based removes
+    // would drift out of alignment).
+    const msg = { type: 'ytChange', propId: propId, provider: src.provider, videoId: entry.data.videoId, twitchId: entry.data.twitchId, twitchKind: entry.data.twitchKind, startedAt: entry.data.startedAt, queue: entry.data.queue.slice(), placer: String(myDeviceID || '') };
     if (typeof isHost !== 'undefined' && isHost) {
         broadcastToClients(msg);
+        // Keep the authoritative records (late joiners rebuild screens from
+        // these via allProps) in step with what is now playing.
+        [myProps, activeProps].forEach(function (list) {
+            if (!Array.isArray(list)) return;
+            const rec = list.find(function (p) { return p.id === propId; });
+            if (!rec || rec === entry.data) return;
+            rec.provider = src.provider;
+            rec.videoId = entry.data.videoId;
+            rec.twitchId = entry.data.twitchId;
+            rec.twitchKind = entry.data.twitchKind;
+            rec.startedAt = entry.data.startedAt;
+            rec.queue = entry.data.queue.slice();
+        });
     } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
         hostConn.send(msg);
+    }
+    // Placement never carries a source any more, so the sync heartbeat has to
+    // be (re)started when a YouTube video actually starts. The placer or the
+    // host owns it; the loop itself refuses to double-start.
+    if (src.provider === 'youtube' && typeof startYtSyncLoop === 'function') {
+        const isPlacer = entry.data.placer === String(myDeviceID || '');
+        if ((typeof isHost !== 'undefined' && isHost) || isPlacer || !hostConn) {
+            startYtSyncLoop({ id: propId, startedAt: entry.data.startedAt });
+        }
     }
     renderScreenQueue();
 }
 
-// Auto-advance queue on YouTube end: host only
-// (hooked into onStateChange ENDED already sets ended; add advancement)
+// Auto-advance the queue when the current YouTube video ends. The ENDED
+// event in createYtPlayer and the tick-based detection in tickYtScreens can
+// BOTH schedule this for the same end, so __advAt collapses them into one
+// advance. Only the host or a single player advances; the rest of the room
+// follows the ytChange broadcast that playScreenQueueIndex sends.
 function advanceScreenQueue(propId) {
     const entry = getScreenEntry(propId);
     if (!entry || !entry.data || !Array.isArray(entry.data.queue) || entry.data.queue.length === 0) return;
     // Allow advancement in single-player (no host) too.
     const singlePlayer = (typeof isHost === 'undefined' || (!isHost && !hostConn));
     if (typeof isHost !== 'undefined' && !isHost && !singlePlayer) return;
+    const now = Date.now();
+    if (entry.__advAt && now - entry.__advAt < 4000) return;
+    entry.__advAt = now;
     playScreenQueueIndex(propId, 0);
 }
 // Prop sync over P2P is handled in ui.js (handleDataFromClient / handleDataFromHost),

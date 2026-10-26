@@ -18,7 +18,7 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v12.321";
+const GAME_VERSION = "v12.323";
 
 // Save-file schema version. Bump whenever a change can't be read by older
 // code, and add a matching step in migrateSave() (ui.js). Kept separate from
@@ -288,10 +288,10 @@ const BOBBER_TYPES = [
 
 // --- TOOLS DEFINITION ---
 const TOOLS = [
-    { id: 'hands', name: 'Hands', icon: 'âœ‹', price: 0 },
+    { id: 'hands', name: 'Hands', icon: '✋', price: 0 },
     { id: 'rod', name: 'Fishing Rod', icon: 'ðŸŽ£', price: 0 }, // Unlocks with rod purchase
     { id: 'axe', name: 'Axe', icon: 'ðŸª“', price: 500 },
-    { id: 'pickaxe', name: 'Pickaxe', icon: 'â›ï¸', price: 800 },
+    { id: 'pickaxe', name: 'Pickaxe', icon: '⛏️', price: 800 },
     { id: 'guitar', name: 'Guitar', icon: 'ðŸŽ¸', price: 1000 },
     { id: 'glove', name: 'Boxing Glove', icon: 'ðŸ¥Š', price: 1000 },
     { id: 'boat', name: 'Rowboat', icon: 'ðŸ›¶', price: 2500, notEquippable: true },
@@ -517,7 +517,7 @@ const DEFAULT_SAVE_STATE = {
     currentPattern: 'none',
 
     // Tools
-    // NOTE: the PvP Glove is NOT free â€” it is only added here once the player
+    // NOTE: the PvP Glove is NOT free — it is only added here once the player
     // actually buys it (see actionBuyTool / the Stylist shop), which also sets
     // hasGlove. It used to default to unlocked, so the shop wrongly said "Owned".
     unlockedTools: ['hands', 'rod'],
@@ -538,7 +538,7 @@ const DEFAULT_SAVE_STATE = {
     woodInventory: {},  // e.g. { wood: 10, oak: 3 }
     flowerInventory: {}, // e.g. { daisy: 20, rose: 5 }
 
-    // Progression (achievements / daily bounties / quests) â€” see progression.js
+    // Progression (achievements / daily bounties / quests) — see progression.js
     saveVersion: 2,
     achievements: {},       // { [id]: { unlocked: true, at: ts } }
     bounties: { day: '', items: [] },
