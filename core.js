@@ -18,7 +18,7 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v12.519";
+const GAME_VERSION = "v12.520";
 // Temporary rollout switch: retain both renderers while 2D selection is disabled.
 const TWO_D_MODE_AVAILABLE = false;
 

@@ -92,6 +92,12 @@ test('tutorial actions are recorded before first tick and while paused',()=>{
  api.event('cast');
  assert.equal(ctx.saveState.tutorialProgress.events.cast,true);
 });
+test('hiding the HUD also hides the quest tracker and tutorial callouts',()=>{
+ const css=fs.readFileSync(require.resolve('../guided-tutorial.css'),'utf8');
+ assert(css.includes('body.hud-hidden #guided-tour'));
+ assert(css.includes('body.hud-hidden #tutorial-brief'));
+ assert(css.includes('body.hud-hidden #tutorial-arrow'));
+});
 test('quest card measures the tournament HUD so anchor ads cannot overlap it',()=>{
  assert(source.includes('function positionTour()'));
  assert(source.includes("document.getElementById('tournament-hud')"));
