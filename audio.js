@@ -44,12 +44,41 @@ const createNoiseGain = (duration) => {
     return { noise, gain };
 };
 
-const createPanner = (pos) => {
+// A shaped water pull with a soft entry splash and a bubbling release.
+// Cache the waveform; every stroke needs only a short-lived source and filter.
+let rowingStrokeCache=null;
+function rowingStrokeBuffer(){
+    if(rowingStrokeCache)return rowingStrokeCache;
+    const duration=.82,buffer=audioCtx.createBuffer(1,Math.ceil(audioCtx.sampleRate*duration),audioCtx.sampleRate),data=buffer.getChannelData(0);
+    let low=0,slow=0;
+    for(let i=0;i<data.length;i++){
+        const t=i/audioCtx.sampleRate,w=Math.random()*2-1;
+        low+=.16*(w-low);slow+=.035*(w-slow);
+        const entry=Math.exp(-t*25)*(1-Math.exp(-t*160));
+        const pull=Math.sin(Math.PI*Math.min(1,t/.66))**2*Math.exp(-t*2);
+        const release=t>.28?Math.sin(Math.PI*Math.min(1,(t-.28)/.54))**2*Math.exp(-(t-.28)*5):0;
+        const bubbles=Math.sin(2*Math.PI*(155*t-52*t*t))*.035*release;
+        data[i]=(low*(entry*.75+pull*.85)+slow*pull*.65+bubbles)*Math.min(1,(duration-t)*40);
+    }
+    rowingStrokeCache=buffer;return buffer;
+}
+
+const MOVEMENT_SOUND_RANGES={footstep:14,swim:18,splash:18,sail:26};
+function worldSoundRange(name){return Object.prototype.hasOwnProperty.call(MOVEMENT_SOUND_RANGES,name)?MOVEMENT_SOUND_RANGES[name]:MAX_VOICE_DISTANCE;}
+function canHearWorldSound(name,pos,source){
+    if(source){const here=window.Housing?.presence?.().houseOwner||'';if(here!==(source.houseOwner||''))return false;}
+    if(!pos)return !Object.prototype.hasOwnProperty.call(MOVEMENT_SOUND_RANGES,name);
+    if(![pos.x,pos.y,pos.z].every(Number.isFinite))return false;
+    if(typeof player==='undefined'||!player?.position)return false;
+    const p=player.position,range=worldSoundRange(name);
+    return (p.x-pos.x)**2+(p.y-pos.y)**2+(p.z-pos.z)**2<range*range;
+}
+const createPanner = (pos,range=MAX_VOICE_DISTANCE) => {
     const panner = audioCtx.createPanner();
     panner.panningModel = 'HRTF';
     panner.distanceModel = 'linear';
     panner.refDistance = 1;
-    panner.maxDistance = MAX_VOICE_DISTANCE;
+    panner.maxDistance = range;
     panner.rolloffFactor = 1;
     if (pos) {
         panner.positionX.value = pos.x;
@@ -98,7 +127,9 @@ window.updateAudioListener = updateAudioListener;
 
 // --- PROCEDURAL SOUND ENGINE ---
 const Sound = {
-    playSpatial: (soundName, pos, variant = 0) => {
+    playSpatial: (soundName, pos, variant = 0, source = null) => {
+        // Cull first: a late packet must not leak through an old listener position.
+        if(!canHearWorldSound(soundName,pos,source))return false;
         if (audioCtx.state === 'suspended') audioCtx.resume();
 
         let nodes = null;
@@ -228,17 +259,13 @@ const Sound = {
                 osc.connect(gain); osc.start(); osc.stop(now + 0.05); nodes = { output: gain };
             }
             else if (soundName === 'sail') {
-                // A single oar stroke: a soft splash with a short watery tail.
-                const { noise, gain } = createNoiseGain(0.4);
-                const filter = audioCtx.createBiquadFilter();
-                filter.type = 'lowpass';
-                filter.frequency.setValueAtTime(1100, now);
-                filter.frequency.exponentialRampToValueAtTime(250, now + 0.35);
-                gain.gain.setValueAtTime(0.14, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-                noise.connect(filter);
-                noise.start();
-                nodes = { output: filter };
+                const source=audioCtx.createBufferSource(),filter=audioCtx.createBiquadFilter(),gain=audioCtx.createGain();
+                source.buffer=rowingStrokeBuffer();source.playbackRate.value=.96+Math.random()*.08;
+                filter.type='lowpass';filter.frequency.setValueAtTime(1800,now);filter.frequency.exponentialRampToValueAtTime(450,now+.7);
+                gain.gain.setValueAtTime(.38,now);gain.gain.setTargetAtTime(0,now+.7,.04);
+                source.connect(filter);filter.connect(gain);source.start(now);source.stop(now+.9);
+                source.onended=()=>{source.disconnect();filter.disconnect();gain.disconnect();};
+                nodes={output:gain};
             }
         }
 
@@ -288,7 +315,7 @@ const Sound = {
 
         if (nodes) {
             if (pos) {
-                const panner = createPanner(pos);
+                const panner = createPanner(pos,worldSoundRange(soundName));
                 nodes.output.connect(panner);
                 panner.connect(targetGain);
             } else {
@@ -354,7 +381,7 @@ const SailAudio = {
         SailAudio.noise.loop = true;
         SailAudio.filter = audioCtx.createBiquadFilter();
         SailAudio.filter.type = 'lowpass';
-        SailAudio.filter.frequency.value = 500;
+        SailAudio.filter.frequency.value = 280;
         SailAudio.gain = audioCtx.createGain();
         SailAudio.gain.gain.value = 0;
         SailAudio.noise.connect(SailAudio.filter);
@@ -372,7 +399,7 @@ const SailAudio = {
             SailAudio.active = true;
             SailAudio.noise.playbackRate.value = 0.9 + Math.random() * 0.2;
             SailAudio.gain.gain.cancelScheduledValues(audioCtx.currentTime);
-            SailAudio.gain.gain.setTargetAtTime(0.06, audioCtx.currentTime, 0.4);
+            SailAudio.gain.gain.setTargetAtTime(0.018, audioCtx.currentTime, 0.4);
         } else if (SailAudio.active) {
             SailAudio.active = false;
             SailAudio.gain.gain.cancelScheduledValues(audioCtx.currentTime);
@@ -457,16 +484,23 @@ const Music = {
 };
 
 // --- PROCEDURAL RAIN AUDIO ENGINE ---
+// Real rain is broadband: a soft low/mid body plus a high, airy hiss. The old
+// single 800 Hz low-pass layer sounded like distant static, so keep two
+// independent noise layers and fade them together.
 const RainAudio = {
     source: null,
+    hissSource: null,
     gainNode: null,
+    hissGainNode: null,
     filterNode: null,
+    highpassNode: null,
+    hissFilterNode: null,
     isPlaying: false,
 
     init: () => {
         if (!audioCtx) return;
 
-        // 1. Create Pink Noise Buffer (Sounds like water/rain)
+        // Pink-ish noise for the steady body of the rain.
         const bufferSize = 2 * audioCtx.sampleRate;
         const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
         const output = buffer.getChannelData(0);
@@ -482,11 +516,16 @@ const RainAudio = {
             b4 = 0.55000 * b4 + white * 0.5329522;
             b5 = -0.7616 * b5 - white * 0.0168980;
             output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
-            output[i] *= 0.11; // Lower base volume
+            output[i] *= 0.11;
             b6 = white * 0.115926;
         }
-
         RainAudio.buffer = buffer;
+
+        // Brighter noise for the fine hiss / droplets striking surfaces.
+        const hiss = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const hissOutput = hiss.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) hissOutput[i] = (Math.random() * 2 - 1) * 0.16;
+        RainAudio.hissBuffer = hiss;
     },
 
     toggle: (shouldPlay) => {
@@ -496,39 +535,64 @@ const RainAudio = {
 
         if (shouldPlay) {
             if (!RainAudio.isPlaying) {
-                // Setup Graph: Source -> Filter -> Gain -> Master
+                // Body: high-pass removes muddy rumble, low-pass keeps it from
+                // becoming harsh white noise.
                 RainAudio.source = audioCtx.createBufferSource();
                 RainAudio.source.buffer = RainAudio.buffer;
                 RainAudio.source.loop = true;
 
-                // Lowpass Filter: Makes it sound "muffled" and soft, not harsh static
+                RainAudio.highpassNode = audioCtx.createBiquadFilter();
+                RainAudio.highpassNode.type = 'highpass';
+                RainAudio.highpassNode.frequency.value = 260;
+                RainAudio.highpassNode.Q.value = 0.45;
+
                 RainAudio.filterNode = audioCtx.createBiquadFilter();
                 RainAudio.filterNode.type = 'lowpass';
-                RainAudio.filterNode.frequency.value = 800; // 800Hz is a nice soft rain sound
+                RainAudio.filterNode.frequency.value = 5200;
+                RainAudio.filterNode.Q.value = 0.35;
 
                 RainAudio.gainNode = audioCtx.createGain();
                 RainAudio.gainNode.gain.setValueAtTime(0, now);
 
-                RainAudio.source.connect(RainAudio.filterNode);
+                RainAudio.source.connect(RainAudio.highpassNode);
+                RainAudio.highpassNode.connect(RainAudio.filterNode);
                 RainAudio.filterNode.connect(RainAudio.gainNode);
-                RainAudio.gainNode.connect(sfxGain); // Use SFX slider for volume
+                RainAudio.gainNode.connect(sfxGain);
+
+                // Hiss: a separate, very quiet high-frequency layer gives rain
+                // its fine texture instead of a low rumbling wash.
+                RainAudio.hissSource = audioCtx.createBufferSource();
+                RainAudio.hissSource.buffer = RainAudio.hissBuffer;
+                RainAudio.hissSource.loop = true;
+
+                RainAudio.hissFilterNode = audioCtx.createBiquadFilter();
+                RainAudio.hissFilterNode.type = 'highpass';
+                RainAudio.hissFilterNode.frequency.value = 2600;
+
+                RainAudio.hissGainNode = audioCtx.createGain();
+                RainAudio.hissGainNode.gain.setValueAtTime(0, now);
+                RainAudio.hissSource.connect(RainAudio.hissFilterNode);
+                RainAudio.hissFilterNode.connect(RainAudio.hissGainNode);
+                RainAudio.hissGainNode.connect(sfxGain);
 
                 RainAudio.source.start(0);
+                RainAudio.hissSource.start(0);
                 RainAudio.isPlaying = true;
             }
 
-            // Fade In
-            RainAudio.gainNode.gain.setTargetAtTime(0.3, now, 2); // Target volume 0.3, takes ~2s
+            RainAudio.gainNode.gain.setTargetAtTime(0.24, now, 1.8);
+            RainAudio.hissGainNode.gain.setTargetAtTime(0.055, now, 1.8);
         } else {
             if (RainAudio.isPlaying && RainAudio.gainNode) {
-                // Fade Out
-                RainAudio.gainNode.gain.setTargetAtTime(0, now, 0.5);
+                RainAudio.gainNode.gain.setTargetAtTime(0, now, 0.45);
+                RainAudio.hissGainNode.gain.setTargetAtTime(0, now, 0.45);
 
-                // Fully stop after fade
                 setTimeout(() => {
                     if (!isRaining && RainAudio.source) {
-                        RainAudio.source.stop();
+                        try { RainAudio.source.stop(); } catch (e) { }
+                        try { RainAudio.hissSource?.stop(); } catch (e) { }
                         RainAudio.source = null;
+                        RainAudio.hissSource = null;
                         RainAudio.isPlaying = false;
                     }
                 }, 2000);
@@ -551,6 +615,8 @@ function broadcastSound(name, variant = 0) {
 
     const msg = {
         type: 'sound',
+        id: typeof myPeerId!=='undefined'?myPeerId:null,
+        houseOwner: window.Housing?.presence?.().houseOwner||'',
         name,
         pos: { x: player.position.x, y: player.position.y, z: player.position.z },
         var: variant

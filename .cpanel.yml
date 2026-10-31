@@ -17,9 +17,9 @@ deployment:
     - export DEPLOYPATH=$HOME/public_html/
     - /bin/mkdir -p "$DEPLOYPATH"
     - /bin/cp -f index.html editor.html "$DEPLOYPATH"
-    - /bin/cp -f core.js ui.js props.js fish.js ocean.js worldgen.js "$DEPLOYPATH"
-    - /bin/cp -f character3d.js networking.js audio.js progression.js "$DEPLOYPATH"
+    - /bin/cp -f favicon.ico favicon.svg favicon-16.png favicon-32.png favicon-48.png apple-touch-icon.png "$DEPLOYPATH"
+    - /bin/cp -f core.js ui.js character-studio.js character-studio.css character-thumbnails.js shop-try-on.js protogen-logo.js protogen-logo.css guided-tutorial.js guided-tutorial.css outdoor-props.js network-guard.js exploration.js rowboat.js props.js fish.js ocean.js worldgen.js "$DEPLOYPATH"
+    - /bin/cp -f character3d.js bobbers3d.js shop-preview.js emotes.js halloween.js boats.js mobile-ui.js mobile-ui.css networking.js audio.js reel-audio.js progression.js tournaments.js housing.js furniture.js performance.js "$DEPLOYPATH"
     - /bin/cp -f level-loader.js icons.js editor.js scratch.js "$DEPLOYPATH"
-    - /bin/cp -f patreon_banner.png "$DEPLOYPATH"
     - /bin/mkdir -p "$DEPLOYPATH/vendor"
     - /bin/cp -f vendor/peerjs.min.js vendor/three.min.js vendor/CSS3DRenderer.js vendor/Midi.js "$DEPLOYPATH/vendor/"

@@ -244,6 +244,13 @@
             n.userData.ref = data;
             n.userData.propKind = "npc";
             world.npcGroup.add(n);
+            if(data.type==='boatmaster'){
+                const zone=WorldGen.boatSpawnZone(data);
+                const marker=new THREE.Mesh(new THREE.BoxGeometry(zone.width,.35,zone.length),new THREE.MeshBasicMaterial({color:0x27ef65,transparent:true,opacity:.22,depthWrite:false}));
+                marker.position.set(zone.x,lv.seaLevel+.18,zone.z);marker.rotation.y=zone.rot;marker.name='boatSpawnArea';
+                const outline=new THREE.LineSegments(new THREE.EdgesGeometry(marker.geometry),new THREE.LineBasicMaterial({color:0x36ff78}));marker.add(outline);
+                world.npcGroup.add(marker);
+            }
         });
         if (lv.spawn) {
             const m = makeSpawnMarker();
@@ -446,18 +453,25 @@
                 if (dd < bestD) { bestD = dd; best = d; bestKind = k; }
             });
         };
-        scan(lv.props, "prop"); scan(lv.npcs, "npc");
+        scan(lv.props, "prop"); scan(lv.buildings, "building"); scan(lv.npcs, "npc");
+        scan(lv.trees, "tree"); scan(lv.rocks, "rock"); scan(lv.caves, "cave");
         if (!best) return false;
         pushUndo();
         const step = Math.PI / 4;
         // Props are placed at random angles — snap to the 45° grid first, so
         // every press lands on a clean multiple of 45°.
-        const cur = Number(best.rot) || 0;
-        best.rot = +(Math.round(cur / step) * step + dir * step).toFixed(3);
+        const current = Number(bestKind === "rock" ? best.ry : best.rot) || 0;
+        const next = +(Math.round(current / step) * step + dir * step).toFixed(3);
+        if (bestKind === "rock") best.ry = next; else best.rot = next;
         rebuildProps();
         markDirty();
-        const name = bestKind === "npc" ? WorldGen.npcType(best.type).name : WorldGen.propInfo(best.type).name;
-        const deg = Math.round(((best.rot * 180 / Math.PI) % 360 + 360) % 360);
+        const name = bestKind === "npc" ? WorldGen.npcType(best.type).name
+            : bestKind === "building" ? WorldGen.buildingInfo(best.type).name
+            : bestKind === "tree" ? "Tree"
+            : bestKind === "rock" ? "Rock"
+            : bestKind === "cave" ? WorldGen.caveInfo(best.size).name + " Cave"
+            : WorldGen.propInfo(best.type).name;
+        const deg = Math.round(((next * 180 / Math.PI) % 360 + 360) % 360);
         toast(name + " rotated — " + deg + "°");
         return true;
     }
@@ -1075,7 +1089,7 @@
             if (t) selectTool(t.id);
             if (e.code === "KeyG") { $("chk-grid").checked = !$("chk-grid").checked; $("chk-grid").onchange({ target: $("chk-grid") }); }
             if (e.code === "KeyF") frameLevel();
-            // R rotates the prop / NPC under the cursor. Only when the pointer
+            // R rotates the scenery under the cursor. Only when the pointer
             // is actually over the 3D view — otherwise state.pick is a stale
             // point from behind whatever panel the cursor moved onto.
             if (e.code === "KeyR" && document.elementFromPoint(mouse.x, mouse.y) === renderer.domElement) {

@@ -66,6 +66,33 @@
         };
     }
 
+    function randomIslandShape(rand){
+        const shapeType = rand();
+        let stretch, xScale, zScale;
+        if (shapeType < 0.25) {
+            // Very long and thin
+            stretch = 0.35 + rand() * 0.25;
+            xScale = stretch;
+            zScale = 1 / Math.max(0.25, stretch * (1.2 + rand() * 0.6));
+        } else if (shapeType < 0.5) {
+            // Wide and stubby
+            stretch = 1.4 + rand() * 0.8;
+            xScale = stretch;
+            zScale = 1 / Math.max(0.4, stretch / (1.1 + rand() * 0.5));
+        } else if (shapeType < 0.7) {
+            // Lumpy/irregular - asymmetric
+            xScale = 0.5 + rand() * 1.4;
+            zScale = 0.5 + rand() * 1.4;
+        } else {
+            // Classic ellipse
+            stretch = 0.45 + rand() * 1.1;
+            xScale = stretch;
+            zScale = 1 / Math.max(0.3, stretch);
+        }
+        const rotation = rand() * Math.PI * 2;
+        return {xScale,zScale,rotation};
+    }
+
     let _layout = null;
 
     // Deterministic island list. Cached after first call.
@@ -113,29 +140,7 @@
                 // Shape variation: islands aren't perfect circles. Each gets an
                 // elliptical stretch (xScale/zScale) plus a rotation, so some are
                 // long and thin, others round and blobby.
-                const shapeType = rand();
-                let stretch, xScale, zScale;
-                if (shapeType < 0.25) {
-                    // Very long and thin
-                    stretch = 0.35 + rand() * 0.25;
-                    xScale = stretch;
-                    zScale = 1 / Math.max(0.25, stretch * (1.2 + rand() * 0.6));
-                } else if (shapeType < 0.5) {
-                    // Wide and stubby
-                    stretch = 1.4 + rand() * 0.8;
-                    xScale = stretch;
-                    zScale = 1 / Math.max(0.4, stretch / (1.1 + rand() * 0.5));
-                } else if (shapeType < 0.7) {
-                    // Lumpy/irregular - asymmetric
-                    xScale = 0.5 + rand() * 1.4;
-                    zScale = 0.5 + rand() * 1.4;
-                } else {
-                    // Classic ellipse
-                    stretch = 0.45 + rand() * 1.1;
-                    xScale = stretch;
-                    zScale = 1 / Math.max(0.3, stretch);
-                }
-                const rotation = rand() * Math.PI * 2;
+                const {xScale,zScale,rotation}=randomIslandShape(rand);
 
                 islands.push({
                     x: x,
@@ -271,54 +276,39 @@
     // floor far away, rising smoothly to `peak` at the centre. Uses a cosine
     // dome so the shoreline is gentle (good for beaching a boat).
     function islandHeight(isl, x, z) {
-        const floor = (typeof OCEAN_FLOOR === "number") ? OCEAN_FLOOR : -9;
-
-        // Carve out ponds - if point is inside any pond, return pond surface level
-        try {
-            const lay = layout();
-            if (lay && lay.ponds) {
-                for (let i = 0; i < lay.ponds.length; i++) {
-                    const p = lay.ponds[i];
-                    const pdx = x - p.x, pdz = z - p.z;
-                    const pd = Math.sqrt(pdx * pdx + pdz * pdz);
-                    if (pd < p.radius * 1.8) {
-                        return -0.1; // Fully flattened basin
-                    }
-                }
-            }
-        } catch (e) { /* ignore */ }
-
-        // Also check if near pond even if not on this island's height contribution
-        try {
-            const lay = layout();
-            if (lay && lay.ponds) {
-                for (let i = 0; i < lay.ponds.length; i++) {
-                    const p = lay.ponds[i];
-                    const pdx = x - p.x, pdz = z - p.z;
-                    const pd = Math.sqrt(pdx * pdx + pdz * pdz);
-                    if (pd < p.radius * 1.8) {
-                        return Math.min(-0.1, floor);
-                    }
-                }
-            }
-        } catch (e) { /* ignore */ }
+        const floor=Number.isFinite(isl.floor)?isl.floor:((typeof OCEAN_FLOOR==='number')?OCEAN_FLOOR:-9);
+        // Custom islands must not inherit ponds from the default archipelago.
+        const ponds=Array.isArray(isl.ponds)?isl.ponds:layout().ponds;
+        for(const p of ponds||[])if(Math.hypot(x-p.x,z-p.z)<p.radius*1.8)return Number.isFinite(p.bed)?p.bed:-.1;
 
         const sh = shapeDistance(isl, x, z);
         const shelf = sh.shelf;
         const d = sh.d;
         if (d >= shelf) return floor;
 
+        if(isl.profile==='coastal'){
+            // Custom seas need a shoreline and usable interior, not a single dome.
+            const sea=isl.seaLevel,angle=Math.atan2((z-isl.z)/(isl.zScale||1),(x-isl.x)/(isl.xScale||1));
+            const raw=d/isl.radius,coast=1+.065*Math.sin(angle*3+isl.seed)+.035*Math.cos(angle*5+isl.seed);
+            const t=raw/(1+(coast-1)*Math.min(1,Math.max(0,(1.4-raw)/.25)));
+            const smooth=v=>{v=Math.max(0,Math.min(1,v));return v*v*(3-2*v);};
+            if(t>.96)return sea+.08+(floor-sea-.08)*smooth((t-.96)/.44);
+            if(t>.7)return sea+1.5-1.42*smooth((t-.7)/.26);
+            const plateau=Math.min(7,Math.max(1.1,isl.peak*isl.squash*.55));
+            return sea+1.5+plateau*smooth((.7-t)/.4);
+        }
+
         const t = d / shelf;
         const dome = (1 - Math.cos((1 - t) * Math.PI)) / 2;
-        const top = isl.peak * isl.squash;
+        const baseSea=typeof OCEAN_LEVEL==='number'?OCEAN_LEVEL:-3;
+        const top = isl.peak * isl.squash+(Number.isFinite(isl.seaLevel)?isl.seaLevel-baseSea:0);
         return floor + (top - floor) * dome;
     }
 
     // World terrain height for the open-ocean region. Returns null when the
     // caller should fall back to its own (home-island) height logic.
-    function heightAt(x, z) {
-        const lay = layout();
-        const floor = (typeof OCEAN_FLOOR === "number") ? OCEAN_FLOOR : -9;
+    function heightAt(x, z, lay = layout()) {
+        const floor = Number.isFinite(lay.floor)?lay.floor:((typeof OCEAN_FLOOR === "number") ? OCEAN_FLOOR : -9);
         const near = nearby(lay, x, z);
         if (!near) return floor;
 
@@ -354,9 +344,9 @@
     // One island as a radial grid mesh: rings of vertices from the centre out
     // to the shelf edge, coloured by height (deep -> shallow -> sand -> grass).
     function buildIslandMesh(isl) {
-        const sea = (typeof OCEAN_LEVEL === "number") ? OCEAN_LEVEL : -3;
-        const RINGS = 10;
-        const SEGS = 24;
+        const sea = Number.isFinite(isl.seaLevel)?isl.seaLevel:((typeof OCEAN_LEVEL === "number") ? OCEAN_LEVEL : -3);
+        const RINGS = isl.profile==='coastal'?16:10;
+        const SEGS = isl.profile==='coastal'?32:24;
         const shelf = isl.radius * 1.4;
 
         const positions = [];
@@ -371,7 +361,7 @@
         const tmp = new THREE.Color();
 
         // Vertex 0 is the apex.
-        positions.push(0, isl.peak * isl.squash, 0);
+        positions.push(0, islandHeight(isl,isl.x,isl.z), 0);
         tmp.copy(grassHi);
         colors.push(tmp.r, tmp.g, tmp.b);
 
@@ -379,12 +369,14 @@
             const rad = (r / RINGS) * shelf;
             for (let s = 0; s < SEGS; s++) {
                 const a = (s / SEGS) * Math.PI * 2;
-                const x = Math.cos(a) * rad;
-                const z = Math.sin(a) * rad;
+                // Build the entire rotated ellipse, matching the height query.
+                const sx=Math.cos(a)*rad*(isl.xScale||1),sz=Math.sin(a)*rad*(isl.zScale||1),rot=isl.rotation||0;
+                const x=sx*Math.cos(rot)-sz*Math.sin(rot),z=sx*Math.sin(rot)+sz*Math.cos(rot);
                 const h = islandHeight(isl, isl.x + x, isl.z + z);
                 positions.push(x, h, z);
 
-                if (h < sea - 3) tmp.copy(deep);
+                if(isl.profile==='coastal'&&h>=sea+1.5)tmp.copy(grass).lerp(grassHi,Math.min(1,(h-sea-1.5)/5));
+                else if (h < sea - 3) tmp.copy(deep);
                 else if (h < sea - 0.6) tmp.copy(deep).lerp(shallow, (h - (sea - 3)) / 2.4);
                 else if (h < sea + 1.2) tmp.copy(shallow).lerp(sand, Math.max(0, Math.min(1, (h - (sea - 0.6)) / 1.8)));
                 else if (h < sea + 4) tmp.copy(sand).lerp(grass, Math.max(0, Math.min(1, (h - (sea + 1.2)) / 2.8)));
@@ -436,17 +428,17 @@
     // Scatter trees / rocks / flowers on an island's dry land, plus the odd
     // prop or cave mouth. Appends colliders so the player can't walk through
     // the trunks on these islands too.
-    function decorateIsland(scene, group, isl, out) {
+    function decorateIsland(scene, group, isl, out, lay) {
         const WG = window.WorldGen;
         if (!WG) return;
         const rand = mulberry32(isl.seed);
-        const sea = (typeof OCEAN_LEVEL === "number") ? OCEAN_LEVEL : -3;
+        const sea = Number.isFinite(lay.seaLevel)?lay.seaLevel:((typeof OCEAN_LEVEL === "number") ? OCEAN_LEVEL : -3);
 
         // Check if this island has a pond nearby
         let hasPondNearby = false;
         if (window.Ocean) {
             try {
-                const lay = window.Ocean.layout();
+                // Use this world’s own ponds.
                 if (lay && lay.ponds) {
                     for (let pi = 0; pi < lay.ponds.length; pi++) {
                         if (Math.hypot(lay.ponds[pi].x - isl.x, lay.ponds[pi].z - isl.z) < isl.radius + 5) { hasPondNearby = true; break; }
@@ -464,12 +456,12 @@
             const d = rand() * isl.radius * (0.6 + rand() * 0.3);
             const x = isl.x + Math.cos(a) * d;
             const z = isl.z + Math.sin(a) * d;
-            const h = heightAt(x, z);
+            const h = heightAt(x, z, lay);
             if (h < sea + 0.5) continue;
             // Avoid pond area
             if (hasPondNearby && window.Ocean) {
                 try {
-                    const lay = window.Ocean.layout();
+                    // Use this world’s own ponds.
                     if (lay && lay.ponds) {
                         let inPond = false;
                         for (let pi = 0; pi < lay.ponds.length; pi++) {
@@ -502,11 +494,11 @@
             const d = rand() * isl.radius * 0.95;
             const x = isl.x + Math.cos(a) * d;
             const z = isl.z + Math.sin(a) * d;
-            const h = heightAt(x, z);
+            const h = heightAt(x, z, lay);
             if (h < sea + 0.35) continue;
             if (hasPondNearby && window.Ocean) {
                 try {
-                    const lay = window.Ocean.layout();
+                    // Use this world’s own ponds.
                     if (lay && lay.ponds) {
                         let inPond = false;
                         for (let pi = 0; pi < lay.ponds.length; pi++) {
@@ -538,7 +530,7 @@
             try {
                 const prop = WG.makeProp({ type: type.id, x: isl.x, z: isl.z, rot: rand() * Math.PI * 2 });
                 if (prop) {
-                    prop.position.set(isl.x, heightAt(isl.x, isl.z), isl.z);
+                    prop.position.set(isl.x, heightAt(isl.x, isl.z, lay), isl.z);
                     group.add(prop);
                 }
             } catch (e) { /* prop type not placeable — skip */ }
@@ -547,7 +539,7 @@
             try {
                 const cave = WG.makeCave({ size: "small", x: isl.x, z: isl.z });
                 if (cave) {
-                    cave.position.set(isl.x, heightAt(isl.x, isl.z), isl.z);
+                    cave.position.set(isl.x, heightAt(isl.x, isl.z, lay), isl.z);
                     group.add(cave);
                 }
             } catch (e) { /* non-fatal */ }
@@ -558,19 +550,19 @@
     // the rest of the world build uses: { group, trees, colliders }.
     function build(scene, opts) {
         opts = opts || {};
-        const lay = layout();
+        const lay = opts.layout || layout();
         const group = new THREE.Group();
-        group.name = "oceanIslands";
+        group.name = opts.name || "oceanIslands";
 
         const out = { group: group, trees: [], colliders: [], islands: lay.islands.slice(), ponds: lay.ponds ? lay.ponds.slice() : [] };
 
         for (const isl of lay.islands) {
             group.add(buildIslandMesh(isl));
-            if (opts.decorate !== false) decorateIsland(scene, group, isl, out);
+            if (opts.decorate !== false) decorateIsland(scene, group, isl, out, lay);
         }
 
         // Add pond meshes if any
-        if (lay.ponds) {
+        if (lay.ponds?.length) {
             const pondTex = window.createNoiseTexture ? window.createNoiseTexture(64, 64, '#3a9a9a', '#2a7a7a', 0.04, 77) : null;
             const darkTex = window.createNoiseTexture ? window.createNoiseTexture(64, 64, '#1a2a3a', '#0a1a2a', 0.04, 99) : null;
             lay.ponds.forEach(p => {
@@ -603,90 +595,107 @@
         return out;
     }
 
+    // Measure the authored land instead of treating the whole map rectangle as
+    // solid. A small island in a large editing canvas should still get nearby
+    // ocean islands; otherwise the generated ring starts hundreds of units from
+    // the player and appears to be missing.
+    function customLandBounds(level,sea){
+        if(!level||!Array.isArray(level.heights)||!Number.isFinite(level.size)||!Number.isFinite(level.grid))return null;
+        const g=level.grid,half=level.size/2,cs=level.size/g;
+        let minX=Infinity,minZ=Infinity,maxX=-Infinity,maxZ=-Infinity,found=false;
+        const points=[];
+        for(let gz=0;gz<g;gz++)for(let gx=0;gx<g;gx++){
+            if(!(level.heights[gz*g+gx]>sea+.2))continue;
+            const x=-half+(gx+.5)*cs,z=-half+(gz+.5)*cs;
+            points.push([x,z]);
+            if(x<minX)minX=x;if(x>maxX)maxX=x;if(z<minZ)minZ=z;if(z>maxZ)maxZ=z;
+            found=true;
+        }
+        if(!found)return {x:0,z:0,radius:0};
+        const cx=(minX+maxX)/2,cz=(minZ+maxZ)/2;
+        let radius=0;
+        for(const [x,z] of points){const d=Math.hypot(x-cx,z-cz);if(d>radius)radius=d;}
+        return {x:cx,z:cz,radius:radius+cs*.75};
+    }
+
     // Rebuild helper for custom levels: generate islands in the ocean *around*
     // a custom map so sailing past its edge still leads somewhere.
-    function layoutAround(size, seaLevel) {
-        const rand = mulberry32(xmur3(SEED + ":" + Math.round(size))());
-        const half = size / 2;
-        const inner = half + 80;
-        const outer = half + 560;           // custom levels get a 560-unit apron
-        const islands = [];
-        const target = 18;
-        let attempts = 0;
-
-        // Shared placer: try to drop one island of `radius`, enforcing the
-        // apron bounds and separation. Returns true on success.
-        const placeOne = (radius) => {
-            for (let a = 0; a < 120; a++) {
-                const angle = rand() * Math.PI * 2;
-                const t = Math.pow(rand(), 0.7);
-                const dist = inner + t * (outer - inner);
-                const x = Math.cos(angle) * dist;
-                const z = Math.sin(angle) * dist;
-                if (dist + radius * 1.4 > outer) continue;
-                if (dist - radius < inner) continue;   // keep big islands off the authored map
-                let ok = true;
-                for (const o of islands) {
-                    if (Math.hypot(x - o.x, z - o.z) < radius + o.radius + MIN_SEPARATION) { ok = false; break; }
-                }
-                if (!ok) continue;
-                // Shape variation, same scheme as layout(): each island gets an
-                // elliptical stretch (xScale/zScale) plus a rotation. These MUST
-                // be declared here - referencing them without defining them threw
-                // a ReferenceError that aborted setupThreeJS() and left the MAKE
-                // LOBBY button unwired on custom-level pages.
-                const shapeType = rand();
-                let stretch, xScale, zScale;
-                if (shapeType < 0.25) {
-                    stretch = 0.35 + rand() * 0.25;
-                    xScale = stretch;
-                    zScale = 1 / Math.max(0.25, stretch * (1.2 + rand() * 0.6));
-                } else if (shapeType < 0.5) {
-                    stretch = 1.4 + rand() * 0.8;
-                    xScale = stretch;
-                    zScale = 1 / Math.max(0.4, stretch / (1.1 + rand() * 0.5));
-                } else if (shapeType < 0.7) {
-                    xScale = 0.5 + rand() * 1.4;
-                    zScale = 0.5 + rand() * 1.4;
-                } else {
-                    stretch = 0.45 + rand() * 1.1;
-                    xScale = stretch;
-                    zScale = 1 / Math.max(0.3, stretch);
-                }
-                islands.push({
-                    x: x,
-                    z: z,
-                    radius: radius,
-                    xScale: xScale,
-                    zScale: zScale,
-                    rotation: rand() * Math.PI * 2,
-                    peak: MIN_PEAK + Math.pow(rand(), 0.8) * (MAX_PEAK - MIN_PEAK),
-                    squash: 0.4 + rand() * 0.95,
-                    seed: Math.floor(rand() * 1e9),
-                    hasProp: rand() < 0.4,
-                    hasCave: rand() < 0.3
-                });
-                return true;
+    function layoutAround(size,seaLevel,oceanFloor,level) {
+        const bounds=window.WorldGen.customOceanBounds(size),rand=mulberry32(xmur3(SEED+':custom-v4:'+Math.round(size))());
+        const sea=Number.isFinite(seaLevel)?seaLevel:0,floor=Number.isFinite(oceanFloor)?Math.min(oceanFloor,sea-.5):sea-6;
+        const land=level?customLandBounds(level,sea):null;
+        const centerX=land?land.x:0,centerZ=land?land.z:0;
+        // Keep a comfortable gap around authored land, but allow the ring to sit
+        // over the author's open water when the painted island is small.
+        const inner=land?Math.max(40,land.radius+55):bounds.inner;
+        const safeOuter=Math.max(inner+80,bounds.outer-Math.hypot(centerX,centerZ));
+        const islands=[],ponds=[];
+        function place(radius,landmark,angleHint,distanceHint){
+            const isl={radius,...randomIslandShape(rand),peak:MIN_PEAK+Math.pow(rand(),.8)*(MAX_PEAK-MIN_PEAK),squash:.4+rand()*.95,seed:Math.floor(rand()*1e9),hasProp:rand()<.4,hasCave:rand()<.3,seaLevel:sea,floor,ponds,profile:'coastal'};
+            const reach=radius*1.4*Math.max(isl.xScale,isl.zScale);isl.reach=reach;
+            for(let attempt=0;attempt<240;attempt++){
+                const angle=(attempt===0&&Number.isFinite(angleHint))?angleHint:rand()*Math.PI*2;
+                const dist=(attempt===0&&Number.isFinite(distanceHint))?distanceHint:inner+Math.pow(rand(),land?1.35:.7)*(safeOuter-inner);
+                if(dist-reach<inner+(landmark?20:0)||dist+reach>safeOuter)continue;
+                const x=centerX+Math.cos(angle)*dist,z=centerZ+Math.sin(angle)*dist;
+                // Never leave the playable ocean, and keep every shelf clear of
+                // the authored shoreline (the ring is measured from land bounds).
+                if(Math.hypot(x,z)+reach>bounds.outer)continue;
+                if(islands.some(other=>Math.hypot(x-other.x,z-other.z)<reach+other.reach+MIN_SEPARATION))continue;
+                islands.push({...isl,x,z});return true;
             }
             return false;
-        };
-
-        // Pass 1: a few landmark-sized islands first, like the default ocean,
-        // so the apron has real "big island" destinations.
-        for (let i = 0; i < 4 && islands.length < 4; i++) {
-            placeOne(LANDMARK_RADIUS + rand() * (MAX_RADIUS - LANDMARK_RADIUS));
         }
-
-        // Pass 2: the rest - the same long-tail size mix as the default map.
-        while (islands.length < target && attempts < target * 120) {
-            attempts++;
-            const radius = MIN_RADIUS + (rand() * rand()) * (MAX_RADIUS - MIN_RADIUS);
-            placeOne(radius);
+        // On an authored map, put a handful of small islets just outside the
+        // painted shoreline first. They guarantee that the generated ocean is
+        // visible from the player's island, even when the editing canvas is much
+        // larger than the land itself.
+        if(land){
+            for(let i=0;i<8;i++){
+                const angle=(i/8)*Math.PI*2+(rand()-.5)*.32;
+                const dist=Math.min(safeOuter-80,inner+45+rand()*Math.min(180,Math.max(55,(safeOuter-inner)*.2)));
+                place(MIN_RADIUS+rand()*(LANDMARK_RADIUS*.55),false,angle,dist);
+            }
         }
-        return { islands: islands, inner: inner, outer: outer };
+        // Same size mix, shape sampler and scenery builder as the default world.
+        let landmarks=0;for(let i=0;i<24&&landmarks<6;i++)if(place(LANDMARK_RADIUS+rand()*(MAX_RADIUS-LANDMARK_RADIUS),true))landmarks++;
+        for(let i=0;i<ISLAND_COUNT*160&&islands.length<ISLAND_COUNT;i++)place(MIN_RADIUS+Math.pow(rand(),.65)*(LANDMARK_RADIUS-2-MIN_RADIUS),false);
+        const result={...bounds,inner,centerX,centerZ,islands,ponds,seaLevel:sea,floor,cell:MAX_RADIUS*1.4*1.5+MIN_SEPARATION,grid:null};
+        buildLookupGrid(result);return result;
+    }
+
+    // The horizon is a visual extension of the same water surface, never terrain.
+    let horizon=null;
+    function extendWater(mesh){
+        const width=mesh.geometry.parameters.width,map=mesh.material.map,span=40000;
+        horizon={mesh,y:mesh.position.y,span,rx:map?map.repeat.x/width:0,rz:map?map.repeat.y/width:0,ox:map?map.offset.x+map.repeat.x*.5:0,oz:map?map.offset.y+map.repeat.y*.5:0};
+        mesh.geometry.dispose();mesh.geometry=new THREE.PlaneGeometry(span,span);
+        if(map){mesh.material.map=map.clone();mesh.material.map.repeat.set(horizon.rx*span,horizon.rz*span);}
+        mesh.userData.endlessWater=true;
+        return mesh;
+    }
+    function updateHorizon(camera,visible=true){
+        if(!horizon)return;const h=horizon,mesh=h.mesh;mesh.visible=visible;if(!visible)return;
+        const x=Math.floor(camera.position.x/128)*128,z=Math.floor(camera.position.z/128)*128;mesh.position.set(x,h.y,z);
+        if(mesh.material.map)mesh.material.map.offset.set(h.ox+x*h.rx-h.rx*h.span*.5,h.oz-z*h.rz-h.rz*h.span*.5);
+    }
+    function playableBounds(level=window.CUSTOM_LEVEL){
+        const radius=level?window.WorldGen.customOceanBounds(level.size).worldRadius:((typeof WORLD_RADIUS==='number')?WORLD_RADIUS:1000);
+        return {limit:radius-2,square:!!level};
+    }
+    function inBounds(x,z,padding=0,level=window.CUSTOM_LEVEL){
+        if(!Number.isFinite(x)||!Number.isFinite(z))return false;const b=playableBounds(level),r=Math.max(0,b.limit-padding);
+        return b.square?Math.abs(x)<=r&&Math.abs(z)<=r:Math.hypot(x,z)<=r;
+    }
+    function clampPosition(pos,padding=0,level=window.CUSTOM_LEVEL){
+        const b=playableBounds(level),r=Math.max(0,b.limit-padding);
+        if(b.square){pos.x=Math.max(-r,Math.min(r,pos.x));pos.z=Math.max(-r,Math.min(r,pos.z));}
+        else{const d=Math.hypot(pos.x,pos.z);if(d>r){pos.x*=r/d;pos.z*=r/d;}}
+        return pos;
     }
 
     window.Ocean = {
+        extendWater,updateHorizon,playableBounds,inBounds,clampPosition,
         layout: layout,
         layoutAround: layoutAround,
         heightAt: heightAt,

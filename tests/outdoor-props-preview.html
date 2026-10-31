@@ -1,0 +1,15 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Outdoor Prop Preview</title>
+<style>body{margin:0;background:#191b26;color:#e8ecf7;font:16px system-ui}header{padding:24px 32px}h1{margin:0 0 8px;font-size:26px}p{color:#9aa3c0}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;padding:0 24px 24px}article{background:#232636;border:1px solid #565d7d;padding:12px}img{width:100%;display:block}h2{font-size:16px;margin:8px 0}small{color:#d9b26a}</style>
+<header><h1>Outdoor props</h1><p>27 rebuilt decorations · permanent unlocks · house furniture is separate</p></header><main id="gallery"></main>
+<script src="../vendor/three.min.js"></script><script src="../outdoor-props.js"></script>
+<script>
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setSize(460,360);renderer.setPixelRatio(1);renderer.outputEncoding=THREE.sRGBEncoding;
+for(const item of OUTDOOR_PROPS){
+ const scene=new THREE.Scene();scene.background=new THREE.Color('#232636');scene.add(new THREE.HemisphereLight('#d7e8ff','#64513f',.75));const light=new THREE.DirectionalLight('#ffe5bc',.9);light.position.set(-3,7,5);scene.add(light);
+ const model=buildOutdoorProp(item.id);scene.add(model);const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3()),radius=Math.max(size.x,size.y,size.z)*1.1;
+ const camera=new THREE.PerspectiveCamera(35,460/360,.01,100);camera.position.copy(center).add(new THREE.Vector3(radius*.95,radius*.7,radius*1.6));camera.lookAt(center);renderer.render(scene,camera);
+ const card=document.createElement('article'),image=document.createElement('img');image.src=renderer.domElement.toDataURL();image.alt=item.name+' model';card.append(image);const title=document.createElement('h2');title.textContent=item.name;card.append(title);const price=document.createElement('small');price.textContent='$'+item.price.toLocaleString()+' permanent unlock';card.append(price);document.getElementById('gallery').append(card);
+ model.traverse(m=>{m.geometry?.dispose();m.material?.dispose();});
+}
+renderer.dispose();
+</script></html>

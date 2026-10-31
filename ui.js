@@ -68,6 +68,7 @@ function sailingReach() {
 // of both sinking to the sea bed. Covers the home lake/ponds, the open ocean,
 // generated ocean islands' shallows, and custom-level sea water.
 function waterSurfaceAt(x, z) {
+    if(window.Housing && Housing.inside && Housing.isInteriorPoint(x,z)) return null;
     if (isInVoid || isInLavaWorld) return null;
 
     // Custom level: the authored sea covers everything below its sea level,
@@ -418,6 +419,22 @@ function updateMerchantUI(container) {
     `;
 }
 
+function reconcileFishInventory(){
+    ensureInventorySlots();const counts=new Map();
+    for(const slot of saveState.invSlots)if(slot?.type==='fish')counts.set(slot.name,(counts.get(slot.name)||0)+(slot.count||1));
+    saveState.inventory=(Array.isArray(saveState.inventory)?saveState.inventory:[]).filter(fish=>{const left=counts.get(fish?.name)||0;if(!left)return false;counts.set(fish.name,left-1);return true;});
+}
+function refreshCookingAfterSale(){
+    window.GuidedTutorial?.event('sold');
+    reconcileFishInventory();
+    if(document.getElementById('cooking-ui')?.style.display==='flex')renderCookingUI();
+}
+function availableCookingFish(){
+    ensureInventorySlots();const counts=new Map();
+    for(const slot of saveState.invSlots)if(slot?.type==='fish')counts.set(slot.name,(counts.get(slot.name)||0)+(slot.count||1));
+    const result=[];(saveState.inventory||[]).forEach((f,idx)=>{if(!isCookableFish(f))return;const left=counts.get(f.name)||0;if(left>0){result.push({idx,f});counts.set(f.name,left-1);}});return result;
+}
+
 window.sellOneFish = function (name) {
     ensureInventorySlots();
     const slot = saveState.invSlots.find(s => s && s.type === 'fish' && s.name === name);
@@ -433,6 +450,7 @@ window.sellOneFish = function (name) {
     // remove from hotbar if count 0? keep hotbar as is (shows fish)
     autoSortInventory();
     saveState.money += price;
+    refreshCookingAfterSale();
     saveGame();
     Sound.sell();
     showToast(`Sold 1 ${name} for $${price}!`);
@@ -479,6 +497,7 @@ window.sellFishSpecies = function (name) {
     // auto-sort
     autoSortInventory();
     saveState.money += total;
+    refreshCookingAfterSale();
     saveGame();
     Sound.sell();
     showToast(`Sold ${count} ${name} for $${total}!`);
@@ -493,7 +512,7 @@ window.sellAllFish = function () {
         const s = saveState.invSlots[i];
         if (s && s.type === 'fish') {
             const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
-            const price = getFishSellPrice(name);
+            const price = getFishSellPrice(s.name);
             const c = s.count || 1;
             totalVal += price * c;
             count += c;
@@ -507,6 +526,7 @@ window.sellAllFish = function () {
     autoSortInventory();
     if (totalVal === 0) { showToast("No fish to sell!"); return; }
     saveState.money += totalVal;
+    refreshCookingAfterSale();
     saveGame();
     Sound.sell();
     showToast(`Sold ${count} fish for $${totalVal}!`);
@@ -529,7 +549,7 @@ window.actionSellFish = function () {
     saveState.invSlots.forEach(s => {
         if (s && s.type === 'fish') {
             const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
-            const price = getFishSellPrice(name);
+            const price = getFishSellPrice(s.name);
             const c = s.count || 1;
             totalVal += price * c;
             count += c;
@@ -548,6 +568,7 @@ window.actionSellFish = function () {
     }
 
     saveState.money += totalVal;
+    refreshCookingAfterSale();
     saveGame();
     Sound.sell();
     showToast(`Sold ${count} fish for $${totalVal}!`);
@@ -857,43 +878,14 @@ function copyFallback(text) {
 }
 
 function checkMobile() {
-    if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-        isMobile = true;
-
-
-        document.getElementById('mobile-controls').style.display = 'block';
-
-        document.getElementById('instructions').style.display = 'none';
-
-
-        const baitUI = document.getElementById('bait-ui');
-        baitUI.style.bottom = '10px';
-        baitUI.style.left = '50%';
-        baitUI.style.transform = 'translateX(-50%)';
-
-
-        document.getElementById('chat-toggle-mobile').onclick = () => {
-            const ui = document.getElementById('chat-ui');
-            ui.style.display = ui.style.display === 'none' ? 'flex' : 'none';
-            if (ui.style.display === 'flex') document.getElementById('chat-input').focus();
-        };
-        document.getElementById('mic-toggle-mobile').onclick = toggleMic;
-
-        checkOrientation();
-        window.addEventListener('resize', checkOrientation);
-    }
+    isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints>0 && matchMedia('(pointer: coarse)').matches);
+    document.body.classList.toggle('mobile-ui',isMobile);
+    if(isMobile){document.getElementById('mobile-controls').style.display='block';window.MobileUI?.init();}
+    checkOrientation();
 }
-
 function checkOrientation() {
-    const overlay = document.getElementById('rotate-overlay');
-    if (!overlay) return;
-
-    // Check if height is greater than width (Portrait Mode)
-    if (window.innerHeight > window.innerWidth) {
-        overlay.style.display = 'flex';
-    } else {
-        overlay.style.display = 'none';
-    }
+    // Both portrait and landscape are supported by the touch layout.
+    const overlay=document.getElementById('rotate-overlay');if(overlay)overlay.style.display='none';
 }
 
 async function initAudio(deviceId = null) {
@@ -1035,10 +1027,10 @@ function updateMicUI() {
     const col = isMicMuted ? 'var(--p-bad)' : 'var(--p-good)';
     if (localStream) {
         if (el) { el.innerText = txt; el.style.color = col; }
-        if (mobEl) { mobEl.innerText = txt; mobEl.style.color = col; }
+        if (mobEl) { mobEl.innerText = isMobile?(isMicMuted?'Voice muted':'Voice on'):txt; mobEl.style.color = col;mobEl.setAttribute('aria-pressed',String(!isMicMuted)); }
     } else {
         if (el) { el.innerText = '🚫'; el.style.color = 'var(--p-text-mute)'; }
-        if (mobEl) { mobEl.innerText = '🚫'; mobEl.style.color = 'var(--p-text-mute)'; }
+        if (mobEl) { mobEl.innerText = isMobile?'Voice unavailable':'🚫'; mobEl.style.color = 'var(--p-text-mute)'; }
     }
 }
 
@@ -1158,17 +1150,56 @@ function voiceWatchdog() {
 
 // Start the watchdog
 setInterval(voiceWatchdog, 2000);
+// Background tabs throttle animation frames; keep proximity volume moving.
+setInterval(syncRemoteVoiceVolumes, 500);
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (typeof audioCtx !== 'undefined' && audioCtx?.state === 'suspended') audioCtx.resume();
+    syncRemoteVoiceVolumes();
+});
 
+function setVoiceActivity(mesh, average, enabled) {
+    if(!mesh||!mesh.userData)return;
+    const u=mesh.userData,now=performance.now();u.voiceEnabled=!!enabled;u.voiceSampleAt=now;
+    const level=enabled&&Number.isFinite(average)?Math.max(0,Math.min(1,(average-10)/60)):0;
+    u.voiceLevel=enabled?(u.voiceLevel||0)*.45+level*.55:0;
+    if(level>0)u.voiceHoldUntil=now+90;
+    if(!enabled)u.voiceHoldUntil=0;
+}
+const VOICE_DATA_ARRAY = new Uint8Array(32);
+// Proximity volume must not depend on requestAnimationFrame: a background tab
+// throttles rendering, but incoming voice packets and timers keep running.
+function syncRemoteVoiceVolumes() {
+    if (!player || typeof MAX_VOICE_DISTANCE === 'undefined') return;
+    const localHouse = window.Housing ? Housing.owner : '';
+    Object.keys(otherPlayers).forEach(pid => {
+        const p = otherPlayers[pid],analyserId = p.voiceId || pid;
+        const audioEl = document.getElementById(`audio-${analyserId}`);
+        if (!audioEl) return;
+        const isolated = (p.lastData?.houseOwner || '') !== localHouse;
+        const muted = !!(p.lastData && p.lastData.isVoiceMuted) || localMutedVoice.includes(pid);
+        audioEl.muted = muted;
+        if (isolated || muted) { audioEl.volume = 0; return; }
+        const remote = p.targetPos || p.mesh.position;
+        const dist = player.position.distanceTo(remote);
+        audioEl.volume = dist > MAX_VOICE_DISTANCE
+            ? 0
+            : Math.max(0, Math.min(1, (1 - dist / MAX_VOICE_DISTANCE) * saveState.voiceVolume));
+        if (audioEl.paused) audioEl.play().catch(() => {});
+    });
+}
 function updateVoiceVisuals() {
-    const dataArray = new Uint8Array(32);
+    const dataArray = VOICE_DATA_ARRAY;
 
     // 1. Local Player
     if (voiceAnalysers['local'] && !isMicMuted && player) {
         voiceAnalysers['local'].getByteFrequencyData(dataArray);
         const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+        setVoiceActivity(player,avg,true);
         const icon = player.getObjectByName('talkingIcon');
-        if (icon) icon.visible = avg > 10;
+        if (icon) icon.visible = hudVisible && avg > 10;
     } else if (player) {
+        setVoiceActivity(player,0,false);
         const icon = player.getObjectByName('talkingIcon');
         if (icon) icon.visible = false;
     }
@@ -1177,6 +1208,8 @@ function updateVoiceVisuals() {
     Object.keys(otherPlayers).forEach(pid => {
         const p = otherPlayers[pid];
         const analyserId = p.voiceId || pid;
+        const localHouse=window.Housing?Housing.owner:'';
+        if((p.lastData.houseOwner||'')!==localHouse){const isolated=document.getElementById('audio-'+analyserId);if(isolated)isolated.volume=0;const icon=p.mesh.getObjectByName('talkingIcon');if(icon)icon.visible=false;setVoiceActivity(p.mesh,0,false);return;}
 
         // CHECK MUTE STATUS
         const isGloballyMuted = p.lastData && p.lastData.isVoiceMuted;
@@ -1186,6 +1219,7 @@ function updateVoiceVisuals() {
         let audioEl = document.getElementById(`audio-${analyserId}`);
 
         if (isMuted) {
+            setVoiceActivity(p.mesh,0,false);
             // --- FIX: HARD MUTE ---
             // Setting .muted = true cuts audio instantly, even if stream is active
             if (audioEl) audioEl.muted = true;
@@ -1200,23 +1234,15 @@ function updateVoiceVisuals() {
             voiceAnalysers[analyserId].getByteFrequencyData(dataArray);
             const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
             const icon = p.mesh.getObjectByName('talkingIcon');
-            if (icon) icon.visible = avg > 10;
-
-            if (audioEl) {
-                const dist = player.position.distanceTo(p.mesh.position);
-                if (dist > MAX_VOICE_DISTANCE) {
-                    audioEl.volume = 0;
-                } else {
-                    let vol = 1 - (dist / MAX_VOICE_DISTANCE);
-                    vol = vol * saveState.voiceVolume;
-                    audioEl.volume = Math.max(0, Math.min(1, vol));
-                }
-            }
+            setVoiceActivity(p.mesh,avg,!!player && player.position.distanceTo(p.mesh.position)<=MAX_VOICE_DISTANCE);
+            if (icon) icon.visible = hudVisible && avg > 10;
         } else {
+            setVoiceActivity(p.mesh,0,false);
             const icon = p.mesh.getObjectByName('talkingIcon');
             if (icon) icon.visible = false;
         }
     });
+    syncRemoteVoiceVolumes();
 }
 
 // --- GAME INITIALIZATION & LOBBY ---
@@ -1241,6 +1267,7 @@ window.onload = function () {
     }
     checkMobile();
     document.getElementById('loading').style.display = 'none';
+    document.body.classList.remove('game-active');
     document.getElementById('lobby-screen').style.display = 'flex';
 
     // Wire the lobby buttons BEFORE building the world. World generation can
@@ -1299,6 +1326,7 @@ function hostGame() {
 
 
     sessionStorage.removeItem('banned_ids');
+    window.NetworkGuard?.reset();
 
     peer = new Peer(roomId);
     peer.on('open', (id) => {
@@ -1325,8 +1353,12 @@ function hostGame() {
     peer.on('connection', (conn) => {
         // Check if incoming peer is on the ban list for this session.
         const bannedList = JSON.parse(sessionStorage.getItem('banned_ids') || '[]');
-        const incomingDeviceID = conn.metadata ? conn.metadata.deviceID : null;
+        const incomingDeviceID = typeof conn.metadata?.deviceID==='string'&&conn.metadata.deviceID.length<=64?conn.metadata.deviceID:null;
 
+        if(window.NetworkGuard?.blockedJoin(conn.peer,incomingDeviceID)||Object.keys(clientConns).length>=32){
+            conn.on('open',()=>{try{conn.send({type:'error',message:'Connection temporarily refused: room limit or recent abusive traffic.'});}finally{conn.close();}});
+            return;
+        }
         if ((incomingDeviceID && bannedList.includes(incomingDeviceID)) || bannedPeers.includes(conn.peer)) {
             conn.on('open', () => {
                 conn.send({ type: 'error', message: "You are BANNED." });
@@ -1353,24 +1385,7 @@ function hostGame() {
             // Only remove if this is still the active connection
             if (clientConns[conn.peer] === conn) {
 
-                // --- FIX: P2P HOST PROP REMOVAL ---
-                // 1. Find props owned by this peer
-                const propsToRemove = activeProps.filter(p => p.owner === conn.peer);
-
-                // 2. Remove them from Host's memory
-                activeProps = activeProps.filter(p => p.owner !== conn.peer);
-
-                // 3. Remove visually and tell other clients
-                propsToRemove.forEach(p => {
-                    removePropFromWorld(p.id); // Remove from Host screen
-                    broadcastToClients({ type: 'propRemoved', id: p.id }); // Tell others
-                });
-                // ----------------------------------
-
-                removePlayer(conn.peer);
-                broadcastPlayerList();
-                updateHostPanel();
-                publishLobby(); // player left: refresh the browser count
+                cleanupPeerConnection(conn);
             }
         });
 
@@ -1607,6 +1622,9 @@ const LOBBY_HEARTBEAT_MS = 10000;
 
 let lobbyHeartbeatTimer = null;
 let lobbyPublished = false;
+// Capability stays in this hosting tab only: never in a save, URL or listing.
+let lobbyDirectorySession = null;
+let lobbyDirectoryVerified = false;
 let myLobbyName = '';
 let serverBrowserTimer = null;
 
@@ -1625,6 +1643,7 @@ const MAX_LOBBY_TAGS = 10;
 // wipe what the player typed.
 let browserTagFilter = new Set();
 let browserAdultOnly = false;
+let browserSort = 'players';
 
 function masterEnabled() { return !!MASTER_SERVER_URL; }
 
@@ -1640,7 +1659,7 @@ async function masterRequest(path, body) {
             signal: controller.signal,
             cache: 'no-store'
         });
-        if (!res.ok) throw new Error('Master responded ' + res.status);
+        if (!res.ok) { const error=new Error('Master responded '+res.status);error.status=res.status;throw error; }
         return await res.json();
     } finally {
         clearTimeout(timer);
@@ -1683,18 +1702,19 @@ function lobbyDraft() {
 }
 
 function renderTagButtons(container, selected, onToggle) {
-    container.innerHTML = '';
-    LOBBY_TAGS.forEach(tagName => {
-        const btn = document.createElement('button');
+    if(!container)return;
+    if(container.children.length!==LOBBY_TAGS.length){
+        container.innerHTML='';
+        for(const tag of LOBBY_TAGS)container.appendChild(document.createElement('button'));
+    }
+    LOBBY_TAGS.forEach((tagName,index) => {
+        const btn = container.children[index];
         btn.type = 'button';
-        btn.className = 'btn-sm';
+        btn.className = 'server-tag-filter';
         btn.textContent = tagName;
         const on = selected.has(tagName);
-        btn.style.cssText = 'margin:0;' + (on
-            ? 'background:var(--p-good);color:#111;border-color:var(--p-line);'
-            : 'opacity:0.65;');
+        btn.setAttribute('aria-pressed',String(on));
         btn.onclick = () => onToggle(tagName);
-        container.appendChild(btn);
     });
 }
 
@@ -1709,7 +1729,7 @@ function openCreateLobby() {
     const adultBox = document.getElementById('lobby-adult-input');
     if (adultBox) adultBox.checked = saveState.lobbyAdult === true;
 
-    const selected = new Set(Array.isArray(saveState.lobbyTags) ? saveState.lobbyTags : []);
+    const selected = new Set((Array.isArray(saveState.lobbyTags) ? saveState.lobbyTags : []).filter(tag=>LOBBY_TAGS.includes(tag)).slice(0,MAX_LOBBY_TAGS));
     const tagBox = document.getElementById('lobby-tag-buttons');
     const counter = document.getElementById('lobby-tag-count');
 
@@ -1720,10 +1740,23 @@ function openCreateLobby() {
         paint();
     };
     const paint = () => {
-        if (counter) counter.textContent = selected.size + '/' + MAX_LOBBY_TAGS;
+        if (counter) counter.textContent = selected.size + '/' + MAX_LOBBY_TAGS+' selected';
         renderTagButtons(tagBox, selected, toggle);
+        const badges=document.getElementById('lobby-selected-tags');
+        if(badges){
+            badges.replaceChildren();
+            if(!selected.size)badges.textContent='No tags selected · optional';
+            else{
+                const tags=[...selected];
+                for(const tag of tags.slice(0,3)){const chip=document.createElement('span');chip.className='server-tag-chip';chip.textContent=tag;badges.appendChild(chip);}
+                if(tags.length>3){const more=document.createElement('span');more.className='server-tag-chip more';more.textContent='+'+(tags.length-3);more.title=tags.slice(3).join(', ');badges.appendChild(more);}
+            }
+        }
+        const clear=document.getElementById('lobby-clear-tags');if(clear)clear.disabled=!selected.size;
     };
     openCreateLobby._selected = selected;
+    const drawer=document.getElementById('lobby-tag-drawer');if(drawer)drawer.open=false;
+    const clear=document.getElementById('lobby-clear-tags');if(clear)clear.onclick=()=>{selected.clear();paint();};
     paint();
 
     overlay.style.display = 'flex';
@@ -1772,43 +1805,78 @@ function lobbyPlayerCount() {
     return 1 + Object.keys(clientConns || {}).length;
 }
 
-// The master keys P2P rows by this stable device id, so re-hosting the same
-// machine updates one row instead of leaving stale duplicates behind. The
-// ephemeral room/peer id is still sent separately for joins.
+// A fresh, unguessable listing id belongs to one hosting session. A tab that
+// loses its capability creates a new listing rather than claiming an old id.
 function lobbyDirectoryId() {
-    const device = (typeof myDeviceID !== 'undefined' && myDeviceID) ? String(myDeviceID) : '';
-    return 'dev:' + (device || myPeerId || 'unknown');
+    if(lobbyDirectorySession&&!lobbyDirectorySession.closed&&lobbyDirectorySession.peerId===myPeerId)return lobbyDirectorySession.id;
+    const bytes=new Uint8Array(24);crypto.getRandomValues(bytes);
+    lobbyDirectorySession={id:'lobby:'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join(''),peerId:myPeerId,secret:null,closed:false,flight:null,removing:null,warned:false};
+    return lobbyDirectorySession.id;
+}
+
+function removeOwnedLobby(session){
+    if(!session?.secret)return Promise.resolve();
+    if(session.removing)return session.removing;
+    session.removing=masterRequest('/unregister',{id:session.id,lobbyId:session.id,lobby_secret:session.secret}).catch(()=>{});
+    return session.removing;
 }
 
 async function publishLobby() {
     if (!isHost || !myPeerId || !masterEnabled()) return;
 
     if (!lobbyIsPublic()) {
-        if (lobbyPublished) unpublishLobby();
+        if (lobbyDirectorySession) unpublishLobby();
         return;
     }
 
+    let session,ownsFlight=false;
     try {
-        await masterRequest('/register', {
+        lobbyDirectoryId();session=lobbyDirectorySession;
+        if(session.flight){await session.flight;return;}
+        ownsFlight=true;
+        session.flight=(async()=>{
+        if(!lobbyDirectoryVerified){
+            const health=await masterRequest('/health');
+            if(health?.ownershipVersion!==1)throw new Error('Directory security update required; use room codes until the master is updated.');
+            lobbyDirectoryVerified=true;
+        }
+        if(session.closed||!isHost||myPeerId!==session.peerId)return;
+        const result=await masterRequest('/register', {
             kind: 'p2p',
-            id: lobbyDirectoryId(),
-            lobbyId: lobbyDirectoryId(),
-            peerId: myPeerId,
+            id: session.id,
+            lobbyId: session.id,
+            peerId: session.peerId,
             name: myLobbyName || defaultLobbyName(),
             host: saveState.displayName,
             players: lobbyPlayerCount(),
-            room: currentRoomId || myPeerId,
+            room: session.peerId,
             version: GAME_VERSION,
             locked: false,
             tags: Array.isArray(saveState.lobbyTags) ? saveState.lobbyTags.slice(0, MAX_LOBBY_TAGS) : [],
-            adult: saveState.lobbyAdult === true
+            adult: saveState.lobbyAdult === true,
+            ...(session.secret?{lobby_secret:session.secret}:{})
         });
-        lobbyPublished = true;
+        if(result?.ownershipVersion!==1||result.id!==session.id)throw new Error('Directory did not confirm secure ownership.');
+        if(!session.secret){
+            if(typeof result.lobby_secret!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(result.lobby_secret))throw new Error('Directory did not issue a lobby capability.');
+            session.secret=result.lobby_secret;
+        }
+        if(session.closed||!isHost||myPeerId!==session.peerId||!lobbyIsPublic()){session.closed=true;await removeOwnedLobby(session);return;}
+        if(lobbyDirectorySession===session)lobbyPublished = true;
+        })();
+        await session.flight;
     } catch (err) {
         // An unreachable master is not fatal: hosting still works, and a room
         // code still lets friends join.
-        lobbyPublished = false;
+        if(!session||lobbyDirectorySession===session)lobbyPublished = false;
+        if(session&&(err?.status===401||err?.status===403||err?.status===409)){
+            session.closed=true;
+            if(lobbyDirectorySession===session)lobbyDirectorySession=null;
+        }
+        if(session&&!session.warned){session.warned=true;showToast('Public listing unavailable. Friends can still join with your room code.');}
         console.warn('[master] could not publish lobby:', err && err.message);
+    } finally {
+        if(session&&ownsFlight)session.flight=null;
     }
 }
 
@@ -1828,19 +1896,21 @@ function stopLobbyHeartbeat() {
 function unpublishLobby() {
     lobbyPublished = false;
     stopLobbyHeartbeat();
-    if (!masterEnabled() || !myPeerId) return Promise.resolve();
-    const dirId = lobbyDirectoryId();
-    return masterRequest('/unregister', { id: dirId, lobbyId: dirId, peerId: myPeerId }).catch(() => { });
+    const session=lobbyDirectorySession;lobbyDirectorySession=null;
+    if(!session)return Promise.resolve();session.closed=true;
+    if(!masterEnabled())return Promise.resolve();
+    return session.flight?session.flight.catch(()=>{}).then(()=>removeOwnedLobby(session)):removeOwnedLobby(session);
 }
 
 // Called from beforeunload: a beacon is the only request guaranteed to leave
 // the browser while the page is being torn down.
 function leaveLobbyDirectory() {
     stopLobbyHeartbeat();
-    if (!lobbyPublished || !masterEnabled() || !myPeerId) return;
+    const session=lobbyDirectorySession;
+    if(session)session.closed=true;
+    if (!session?.secret || !masterEnabled()) return;
     lobbyPublished = false;
-    const dirId = lobbyDirectoryId();
-    const payload = JSON.stringify({ id: dirId, lobbyId: dirId, peerId: myPeerId });
+    const payload = JSON.stringify({ id: session.id, lobbyId: session.id, lobby_secret: session.secret });
     try {
         const blob = new Blob([payload], { type: 'text/plain;charset=UTF-8' });
         if (navigator.sendBeacon && navigator.sendBeacon(MASTER_SERVER_URL + '/unregister', blob)) return;
@@ -1860,31 +1930,40 @@ function leaveLobbyDirectory() {
 async function openServerBrowser() {
     document.getElementById('server-browser-overlay').style.display = 'flex';
     initBrowserFilters();
+    const filters=document.getElementById('server-browser-filters');
+    // Start compact: the table is the focus, filters expand only when needed.
+    if(filters&&!filters.dataset.initialized){filters.open=false;filters.dataset.initialized='1';}
+    const result=document.getElementById('server-result-count');if(result)result.textContent='Loading…';
     refreshServerBrowser();
     if (serverBrowserTimer) clearInterval(serverBrowserTimer);
     serverBrowserTimer = setInterval(refreshServerBrowser, 5000);
 }
 
-// Builds the tag-filter buttons and wires the search box / 18+ toggle the
-// first time the browser opens. Filter state survives refreshes.
+function paintBrowserTagFilter(btn) {
+    const active = browserTagFilter.has(String(btn.dataset && btn.dataset.tag || ''));
+    btn.className = 'server-tag-filter' + (active ? ' active' : '');
+    btn.setAttribute('aria-pressed', String(active));
+}
+
+// Builds the compact filter toggles and wires the search box, sort and 18+
+// toggle the first time the browser opens. Filter state survives refreshes.
 function initBrowserFilters() {
+    updateServerFilterCount();
     const tagBox = document.getElementById('server-tag-filters');
     if (tagBox && !tagBox.childElementCount) {
         LOBBY_TAGS.forEach(tagName => {
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'btn-sm';
+            btn.className = 'server-tag-filter';
+            btn.dataset.tag = tagName;
             btn.textContent = tagName;
-            btn.style.cssText = 'margin:0;font-size:12px;padding:3px 8px;opacity:0.65;';
             btn.onclick = () => {
                 if (browserTagFilter.has(tagName)) browserTagFilter.delete(tagName);
                 else browserTagFilter.add(tagName);
-                btn.style.cssText = 'margin:0;font-size:12px;padding:3px 8px;' +
-                    (browserTagFilter.has(tagName)
-                        ? 'background:var(--p-good);color:#111;border-color:var(--p-line);opacity:1;'
-                        : 'opacity:0.65;');
-                refreshServerBrowser();
+                paintBrowserTagFilter(btn);
+                updateServerFilterCount();refreshServerBrowser();
             };
+            paintBrowserTagFilter(btn);
             tagBox.appendChild(btn);
         });
     }
@@ -1901,9 +1980,31 @@ function initBrowserFilters() {
         adultToggle.checked = browserAdultOnly;
         adultToggle.addEventListener('change', () => {
             browserAdultOnly = adultToggle.checked;
+            updateServerFilterCount();refreshServerBrowser();
+        });
+    }
+
+    const sort = document.getElementById('server-sort');
+    if (sort && !sort.dataset.wired) {
+        sort.dataset.wired = '1';
+        sort.value = browserSort;
+        sort.addEventListener('change', () => {
+            browserSort = sort.value || 'players';
             refreshServerBrowser();
         });
     }
+}
+
+function updateServerFilterCount(){
+    const count=browserTagFilter.size+(browserAdultOnly?1:0);
+    const el=document.getElementById('server-filter-count');if(el)el.textContent=count?count+' active':'All lobbies';
+}
+function clearServerBrowserFilters(){
+    browserTagFilter.clear();browserAdultOnly=false;
+    const search=document.getElementById('server-search-input');if(search)search.value='';
+    const adult=document.getElementById('server-adult-filter');if(adult)adult.checked=false;
+    document.querySelectorAll('#server-tag-filters button').forEach(btn=>paintBrowserTagFilter(btn));
+    updateServerFilterCount();refreshServerBrowser();
 }
 
 function closeServerBrowser() {
@@ -1920,11 +2021,12 @@ async function refreshServerBrowser() {
     if (document.getElementById('server-browser-overlay').style.display !== 'flex') return;
 
     if (!masterEnabled()) {
-        container.innerHTML = '<div style="padding:10px;">No master server configured.</div>';
+        container.innerHTML = '<div class="server-browser-empty">No master server configured.</div>';
+        const count = document.getElementById('server-result-count'); if (count) count.textContent = 'Offline';
         return;
     }
-    if (!container.dataset.ready) {
-        container.innerHTML = '<div style="padding:10px;">Loading servers…</div>';
+    if (!container.dataset.loaded) {
+        container.innerHTML = '<div class="server-browser-empty">Loading servers…</div>';
     }
 
     let servers;
@@ -1933,7 +2035,8 @@ async function refreshServerBrowser() {
         servers = Array.isArray(data) ? data : ((data && data.servers) || []);
     } catch (err) {
         container.dataset.loaded = '1';
-        container.innerHTML = '<div style="padding:10px;color:var(--p-bad);">Could not reach the master server.</div>';
+        container.innerHTML = '<div class="server-browser-empty" style="color:var(--p-bad);">Could not reach the master server.</div>';
+        const count = document.getElementById('server-result-count'); if (count) count.textContent = 'Offline';
         return;
     }
     renderServerList(container, servers);
@@ -1941,6 +2044,7 @@ async function refreshServerBrowser() {
 
 function renderServerList(container, servers) {
     container.dataset.loaded = '1';
+    updateServerFilterCount();
 
     const query = (document.getElementById('server-search-input')?.value || '').trim().toLowerCase();
     const filtered = servers.filter(s => {
@@ -1959,11 +2063,24 @@ function renderServerList(container, servers) {
         return true;
     });
 
+    const rows = filtered.slice().sort((a, b) => {
+        if (browserSort === 'name') return String(a.name || '').localeCompare(String(b.name || ''));
+        if (browserSort === 'newest') {
+            const aa = parseInt(a.age, 10), bb = parseInt(b.age, 10);
+            return (Number.isFinite(aa) ? aa : 1e9) - (Number.isFinite(bb) ? bb : 1e9);
+        }
+        const pa = Math.max(0, parseInt(a.players, 10) || 0), pb = Math.max(0, parseInt(b.players, 10) || 0);
+        return pb - pa || String(a.name || '').localeCompare(String(b.name || ''));
+    });
+
+    const count = document.getElementById('server-result-count');
+    if (count) count.textContent = rows.length ? rows.length + (rows.length === 1 ? ' server' : ' servers') : 'No servers';
+    const scrollTop = container.scrollTop || 0;
     container.innerHTML = '';
 
-    if (!filtered.length) {
+    if (!rows.length) {
         const empty = document.createElement('div');
-        empty.style.padding = '10px';
+        empty.className = 'server-browser-empty';
         empty.textContent = servers.length
             ? 'No lobbies match your filters.'
             : (lobbyPublished
@@ -1973,7 +2090,10 @@ function renderServerList(container, servers) {
         return;
     }
 
-    filtered.forEach(s => container.appendChild(buildServerRow(s)));
+    rows.forEach(s => container.appendChild(buildServerRow(s)));
+    // The list refreshes every five seconds; never yank the player back to the
+    // top while they are scanning the lower rows.
+    container.scrollTop = scrollTop;
 }
 
 function buildServerRow(s) {
@@ -1981,70 +2101,107 @@ function buildServerRow(s) {
         (s.id === lobbyDirectoryId() || (myPeerId && s.peerId === myPeerId));
 
     const row = document.createElement('div');
-    row.style.cssText = 'background:var(--p-face-2);border:2px solid var(--p-line);margin-bottom:6px;' +
-        'padding:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;';
+    row.className = 'server-browser-row' + (isMine ? ' is-mine' : '');
 
     const info = document.createElement('div');
-    info.style.minWidth = '0';
+    info.className = 'server-browser-info';
 
     const title = document.createElement('div');
-    title.style.cssText = 'font-weight:bold;overflow:hidden;text-overflow:ellipsis;';
+    title.className = 'server-browser-title';
 
-    const tag = document.createElement('span');
-    tag.textContent = isMine ? 'YOUR LOBBY' : 'PLAYER';
-    tag.style.cssText = 'font-size:12px;padding:1px 6px;border:1px solid var(--p-line);' +
-        'color:var(--p-text-dim);margin-right:6px;vertical-align:middle;';
-    title.appendChild(tag);
+    const status = document.createElement('span');
+    status.className = 'server-browser-status';
+    status.title = 'Online';
+    title.appendChild(status);
 
     const nameSpan = document.createElement('span');
+    nameSpan.className = 'server-browser-name';
     // textContent: a hostile master entry can never inject markup here.
     nameSpan.textContent = String(s.name || 'Server').slice(0, 40);
     title.appendChild(nameSpan);
 
-    const meta = document.createElement('div');
-    meta.style.cssText = 'font-size:15px;color:var(--p-text-dim);margin-top:3px;';
-    const players = Math.max(0, Math.min(999, parseInt(s.players, 10) || 0));
-    const maxPlayers = Math.max(0, Math.min(999, parseInt(s.maxPlayers, 10) || 0));
-    const bits = [maxPlayers > players ? `${players}/${maxPlayers} Players` : (players === 1 ? '1 Player' : players + ' Players')];
-    if (s.host) bits.push('by ' + String(s.host).slice(0, 16));
-    if (s.room || s.peerId) bits.push('code ' + String(s.room || s.peerId).slice(0, 24));
-    if (parseInt(s.age, 10) >= 60) bits.push('up ' + Math.floor(s.age / 60) + 'm');
-    meta.textContent = bits.join(' · ');
-
-    info.appendChild(title);
-    info.appendChild(meta);
-
-    // Tag chips + 18+ marker, so a glance is enough to judge the room.
-    const tags = Array.isArray(s.tags) ? s.tags.slice(0, 8) : [];
-    if (tags.length || s.adult === true) {
-        const chipRow = document.createElement('div');
-        chipRow.style.cssText = 'margin-top:5px;display:flex;flex-wrap:wrap;gap:4px;';
-        if (s.adult === true) {
-            const adultChip = document.createElement('span');
-            adultChip.textContent = '18+';
-            adultChip.style.cssText = 'font-size:12px;padding:1px 6px;border:1px solid #c0392b;' +
-                'background:#5a1f1a;color:#ffb3ab;';
-            chipRow.appendChild(adultChip);
-        }
-        tags.forEach(tagName => {
-            const chip = document.createElement('span');
-            chip.textContent = String(tagName).slice(0, 24);
-            chip.style.cssText = 'font-size:12px;padding:1px 6px;border:1px solid var(--p-line);' +
-                'color:var(--p-text-dim);background:var(--p-sunken);';
-            chipRow.appendChild(chip);
-        });
-        info.appendChild(chipRow);
+    if (isMine) {
+        const mineBadge = document.createElement('span');
+        mineBadge.className = 'server-browser-badge mine';
+        mineBadge.textContent = 'Your lobby';
+        title.appendChild(mineBadge);
+    }
+    if (s.adult === true) {
+        const adultBadge = document.createElement('span');
+        adultBadge.className = 'server-browser-badge adult';
+        adultBadge.textContent = '18+';
+        title.appendChild(adultBadge);
     }
 
+    info.appendChild(title);
+
+    // Keep the row scannable: two tags and a count, with the full set on hover.
+    const allTags = Array.isArray(s.tags) ? s.tags.map(t => String(t)).filter(Boolean) : [];
+    if (allTags.length) {
+        const tagRow = document.createElement('div');
+        tagRow.className = 'server-browser-tags';
+        allTags.slice(0, 2).forEach(tagName => {
+            const chip = document.createElement('span');
+            chip.className = 'server-tag-chip';
+            chip.textContent = tagName.slice(0, 24);
+            chip.title = tagName;
+            tagRow.appendChild(chip);
+        });
+        if (allTags.length > 2) {
+            const more = document.createElement('span');
+            more.className = 'server-tag-chip more';
+            more.textContent = '+' + (allTags.length - 2);
+            more.title = allTags.join(' · ');
+            tagRow.appendChild(more);
+        }
+        info.appendChild(tagRow);
+    }
+
+    const players = Math.max(0, Math.min(999, parseInt(s.players, 10) || 0));
+    const maxPlayers = Math.max(0, Math.min(999, parseInt(s.maxPlayers, 10) || 0));
+    if (maxPlayers > 0 && players >= maxPlayers) {
+        status.className = 'server-browser-status full';
+        status.title = 'Full';
+    }
+    const playersEl = document.createElement('div');
+    playersEl.className = 'server-browser-players';
+    const playerStrong = document.createElement('strong');
+    playerStrong.textContent = String(players);
+    playersEl.appendChild(playerStrong);
+    if (maxPlayers > 0) {
+        const playerMax = document.createElement('small');
+        playerMax.textContent = '/' + maxPlayers;
+        playersEl.appendChild(playerMax);
+    }
+    playersEl.title = maxPlayers > 0 ? players + ' of ' + maxPlayers + ' players' : players + ' players';
+
+    const hostEl = document.createElement('div');
+    hostEl.className = 'server-browser-host';
+    hostEl.textContent = s.host ? String(s.host).slice(0, 20) : '—';
+    hostEl.title = s.host ? String(s.host) : 'Unknown host';
+
+    const ageSeconds = parseInt(s.age, 10);
+    let ageText = '—';
+    if (Number.isFinite(ageSeconds) && ageSeconds >= 0) {
+        ageText = ageSeconds < 60 ? 'Now' : ageSeconds < 3600 ? Math.floor(ageSeconds / 60) + 'm' : Math.floor(ageSeconds / 3600) + 'h';
+    }
+    const ageEl = document.createElement('div');
+    ageEl.className = 'server-browser-age';
+    ageEl.textContent = ageText;
+    ageEl.title = ageText === 'Now' ? 'Listed just now' : ageText === '—' ? 'Age unavailable' : 'Listed ' + ageText + ' ago';
+
     const btn = document.createElement('button');
-    btn.className = 'btn-sm btn-green';
-    btn.style.flexShrink = '0';
-    btn.innerText = isMine ? 'HOSTING' : 'JOIN';
+    btn.className = 'btn-sm btn-green server-browser-join';
+    btn.textContent = isMine ? 'HOSTING' : 'JOIN';
     btn.disabled = !!isMine;
+    btn.setAttribute('aria-label', (isMine ? 'Your lobby: ' : 'Join ') + String(s.name || 'server').slice(0, 30));
     if (isMine) btn.style.opacity = '0.5';
     btn.onclick = () => joinBrowsedServer(s);
 
     row.appendChild(info);
+    row.appendChild(playersEl);
+    row.appendChild(hostEl);
+    row.appendChild(ageEl);
     row.appendChild(btn);
     return row;
 }
@@ -2220,8 +2377,24 @@ function createDetailedTree(leafMat, trunkMat) {
 
 // --- TERRAIN HEIGHT SYSTEM ---
 window.getTerrainHeight = function getTerrainHeight(x, z) {
+    if(window.Housing && Housing.inside && Housing.isInteriorPoint(x,z)) return 0;
     if (typeof isInVoid !== 'undefined' && isInVoid) return 0;
     if (typeof isInLavaWorld !== 'undefined' && isInLavaWorld) return 0;
+
+    // --- CUSTOM LEVEL MODE ---
+    // A level built in editor.html fully replaces the procedural island, so the
+    // whole playing surface comes straight from the level's height grid. Past
+    // the authored map edge the generated ocean islands take over.
+    if (window.CUSTOM_LEVEL && window.Level) {
+        const lvl = window.CUSTOM_LEVEL;
+        const authored = window.Level.sampleHeight(lvl, x, z);
+        // Authored land always wins. In authored water (including the open sea
+        // around a small island) generated islands may sit inside the level
+        // square, so take the higher of the two surfaces.
+        if (authored > lvl.seaLevel + 0.15) return authored;
+        if (window.customOcean && window.Ocean) return Math.max(authored, window.Ocean.heightAt(x, z, window.customOcean));
+        return authored;
+    }
 
     // Flatten terrain around ocean island ponds so they sit nicely in the land
     if (window.Ocean) {
@@ -2240,26 +2413,6 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
         } catch (e) { /* ignore */ }
     }
 
-    // --- CUSTOM LEVEL MODE ---
-    // A level built in editor.html fully replaces the procedural island, so the
-    // whole playing surface comes straight from the level's height grid. Past
-    // the authored map edge the generated ocean islands take over.
-    if (window.CUSTOM_LEVEL && window.Level) {
-        const lvl = window.CUSTOM_LEVEL;
-        if (window.Level.inBounds(lvl, x, z)) {
-            return window.Level.sampleHeight(lvl, x, z);
-        }
-        if (window.customOcean && window.Ocean && typeof window.Ocean.islandHeight === 'function') {
-            let h = lvl.oceanFloor;
-            for (const isl of window.customOcean.islands) {
-                const ih = window.Ocean.islandHeight(isl, x, z);
-                if (ih > h) h = ih;
-            }
-            return h;
-        }
-        return window.Level.sampleHeight(lvl, x, z);
-    }
-
     // --- -1. DOCK (Absolute Priority) ---
     // Dock at X=0, Z=90-170, Y=0.3 (slightly above ground to prevent z-fighting)
     if (x > -6 && x < 6 && z > 85 && z < 170) {
@@ -2269,14 +2422,6 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
     // Dock Approach Area (Flatten terrain around dock entrance)
     if (z > 70 && z < 100 && Math.abs(x) < 12) {
         return 0; // Flat ground leading to dock
-    }
-
-    // --- 0. PLATFORMS (Highest Priority) ---
-    if (window.parkourPlatforms) {
-        for (const p of window.parkourPlatforms) {
-            const r = p.scale * 1.5;
-            if (Math.hypot(x - p.x, z - p.z) < r) return p.y;
-        }
     }
 
     // --- FLAT ZONES ---
@@ -2302,6 +2447,10 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
     const distDarkPond = Math.sqrt((x - 60) ** 2 + (z - 50) ** 2);
     if (distDarkPond < 24) return 0; // radius 14 + 10 buffer
 
+    // 6. Void overlook (86, -58) - flat stone shrine terrace.
+    const distVoidShrine = Math.sqrt((x - 86) ** 2 + (z + 58) ** 2);
+    if (distVoidShrine < 12) return 0;
+
     // --- PLATFORMS & CLIFFS ---
     // (Parkour logic moved to top priority)
 
@@ -2319,7 +2468,8 @@ window.getTerrainHeight = function getTerrainHeight(x, z) {
         Math.max(0, distCabin - 20),
         Math.max(0, distWaterfall - 35),
         Math.max(0, distPond - 15),
-        Math.max(0, distDarkPond - 24) // Include dark pond in smoothing
+        Math.max(0, distDarkPond - 24), // Include dark pond in smoothing
+        Math.max(0, distVoidShrine - 12)
     );
 
     // Blend factor (0 to 1 over 15 units)
@@ -2392,7 +2542,7 @@ function createFlowerMesh(color) {
 // Keeps the cave mouth / waterfall approach readable and walkable.
 // Used by both procedural spawners and decorative passes.
 function isInCaveEntranceZone(x, z) {
-    return (Math.abs(x) < 24 && z > -120 && z < -70);
+    return (Math.abs(x) < 24 && z > -120 && z < -62);
 }
 
 // The decor group (buildings, props, cave entrances) that addLevelProps builds
@@ -2525,7 +2675,7 @@ function spawnCustomLevelFlowers(level) {
 // avoid, so they don't sprout inside a trunk or boulder.
 function spawnOceanIslandFlowers(isl, rand, keepOut) {
     if (!isl || typeof rand !== 'function' || !window.Ocean) return 0;
-    const sea = (typeof OCEAN_LEVEL === 'number') ? OCEAN_LEVEL : -3;
+    const sea = Number.isFinite(isl.seaLevel)?isl.seaLevel:((typeof OCEAN_LEVEL === 'number') ? OCEAN_LEVEL : -3);
     const floristryXP = (saveState.skills && saveState.skills.floristry) ? saveState.skills.floristry.xp : 0;
     const floristryLevel = getLevelFromXP(floristryXP);
 
@@ -2572,11 +2722,75 @@ function spawnOceanIslandFlowers(isl, rand, keepOut) {
     return planted;
 }
 
+// Shared default NPC locations keep procedural scenery clear of every vendor.
+function getDefaultNpcSpawns() {
+    const shore = LAKE_RADIUS + 3;
+    return {
+        merchant: { x: shore, z: 0 },
+        stylist: { x: -shore, z: 0 },
+        bait: { x: 0, z: shore },
+        tutorial: { x: 0, z: -shore },
+        lava: { x: 16, z: 16 },
+        fisher: { x: -shore, z: -shore },
+        scratch: { x: shore, z: -9 },
+        halloween: { x: LAKE_RADIUS + 8, z: 12 }
+    };
+}
+function isDefaultNpcAreaClear(x, z, sceneryRadius = 3) {
+    // Six units of open ground plus the largest tree canopy / rock radius.
+    const clearance = 6 + sceneryRadius;
+    return Object.values(getDefaultNpcSpawns()).every(npc =>
+        Math.hypot(x - npc.x, z - npc.z) >= clearance);
+}
+
+// The default island has a readable path network. Keeping the routes here lets
+// both the scenery pass and the path mesh builder use the exact same layout.
+const DEFAULT_PATH_RING = Array.from({ length: 33 }, (_, i) => {
+    const angle = i / 32 * Math.PI * 2;
+    return { x: Math.cos(angle) * 30, z: Math.sin(angle) * 30 };
+});
+const DEFAULT_PATHS = [
+    { width: 3.1, points: DEFAULT_PATH_RING },
+    { width: 3.6, points: [{ x: 0, z: 30 }, { x: 0, z: 85 }] },
+    { width: 3.1, points: [{ x: 0, z: -30 }, { x: 0, z: -62 }] },
+    { width: 2.8, points: [{ x: 25, z: 0 }, { x: 30, z: 0 }] },
+    { width: 2.8, points: [{ x: 29, z: 14 }, { x: 41, z: 29 }, { x: 47, z: 41 }] },
+    { width: 2.8, points: [{ x: -29, z: 0 }, { x: -45, z: -14 }, { x: -52, z: -22 }] },
+    { width: 2.8, points: [{ x: -29, z: 0 }, { x: -30, z: 12 }, { x: -34, z: 19 }, { x: -40, z: 16 }] },
+    { width: 2.9, points: [{ x: 26, z: -12 }, { x: 48, z: -30 }, { x: 72, z: -50 }, { x: 84, z: -58 }] }
+];
+// Seats face a view instead of sitting across the walking paths.
+const DEFAULT_BENCHES = [
+    { x: -47, z: -24, rot: -2.00 },
+    { x: 50, z: 35, rot: 0.59 },
+    { x: 23, z: 25, rot: -2.40 },
+    { x: -23, z: 25, rot: 2.40 },
+    { x: -32, z: 24, rot: -2.42 },
+    { x: 8, z: 87, rot: 0 }
+];
+function distanceToPathSegmentSq(px, pz, a, b) {
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const lengthSq = dx * dx + dz * dz;
+    let t = lengthSq ? ((px - a.x) * dx + (pz - a.z) * dz) / lengthSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    return (px - (a.x + dx * t)) ** 2 + (pz - (a.z + dz * t)) ** 2;
+}
+function isOnDefaultPath(x, z, extra = 0) {
+    for (const path of DEFAULT_PATHS) {
+        const reach = path.width / 2 + extra;
+        for (let i = 1; i < path.points.length; i++) {
+            if (distanceToPathSegmentSq(x, z, path.points[i - 1], path.points[i]) <= reach * reach) return true;
+        }
+    }
+    return false;
+}
+
 function generateWorld(seedStr) {
+    if(window.Housing)Housing.cancelForWorldChange();
     treeMeshes.forEach(t => scene.remove(t));
     treeMeshes = []; treeColliders = [];
     pickableFlowers = []; // Track pickable flowers separately
-    lavaColliders = [];
+    // Lava collision data belongs to its own arena, not the main-map scatter.
     disposeDecorGroup(customLevelDecor);
     customLevelDecor = null;
 
@@ -2589,6 +2803,7 @@ function generateWorld(seedStr) {
         // Also grow pickable flowers on the level's open land, clear of the
         // props and NPCs the author placed.
         spawnCustomLevelFlowers(window.CUSTOM_LEVEL);
+        if(window.oceanWorld?.custom){treeMeshes.push(...window.oceanWorld.trees);treeColliders.push(...window.oceanWorld.colliders);for(const flower of window.oceanWorld.flowers||[])if(!flower.userData.isPicked){scene.add(flower);treeMeshes.push(flower);pickableFlowers.push(flower);}}
         return;
     }
 
@@ -2599,25 +2814,26 @@ function generateWorld(seedStr) {
     const safeZone = 15;
 
     // --- PROTECTED ZONES (No Spawn) ---
-    // Spawn Point (25,0,0), Merchant (23,0,0), Stylist (-23,0,0), Bait (0,0,23), Guard (16,0,16)
     const protectedZones = [
         { x: 25, z: 0, r: 8 },  // Player Spawn
-        { x: 23, z: 0, r: 6 },  // Merchant
-        { x: -23, z: 0, r: 6 }, // Stylist
-        { x: 0, z: 23, r: 6 },  // Bait Shop
-        { x: 16, z: 16, r: 6 }, // Inferno Guard
         { x: -40, z: 10, r: 15 }, // Cabin
         // --- WATER BODIES ---
         { x: -60, z: -30, r: 14 }, // Light Pond
         { x: 60, z: 50, r: 26 },   // Dark Pond (radius 14 + buffer)
+        { x: 86, z: -58, r: 13 },  // Void shrine
         // Dock area
         { x: 0, z: 130, r: 8 },    // Dock center
     ];
 
     function isSafe(x, z) {
+        if (!isDefaultNpcAreaClear(x, z)) return false;
 
         // Keep the cave mouth / waterfall approach clear
         if (isInCaveEntranceZone(x, z)) return false;
+
+        // Keep the refreshed path network and the full dock walkable.
+        if (isOnDefaultPath(x, z, 2.2)) return false;
+        if (Math.abs(x) < 8 && z > 82 && z < 168) return false;
 
         // Static protected zones (spawn, NPCs, pond, coarse river points, etc.)
         for (let zone of protectedZones) {
@@ -2736,6 +2952,7 @@ function generateWorld(seedStr) {
         // Dock (0, 130, r=8) + Walking path (Z > 85, |X| < 6)
         if (z > 80 && Math.abs(x) < 8) continue; // Dock path
         if ((x) ** 2 + (z - 130) ** 2 < 12 * 12) continue; // Dock end
+        if (isOnDefaultPath(x, z, 2.2)) continue;
 
         let tooClose = false;
         for (let t of treeColliders) {
@@ -2784,51 +3001,11 @@ function generateWorld(seedStr) {
 
 
 function handleDataFromClient(clientId, data) {
-    // DEBUG: Log all incoming data from clients (if debug mode enabled)
-    if (saveState.debugMode && data.type !== 'update') {
-        console.log('[P2P HOST] Received from', clientId, ':', data.type, data);
-    }
-
-    // --- 1. SECURITY: RATE LIMIT CHECK ---
-    const now = Date.now();
-
-    // Initialize user in rate limiter if missing
-    if (!rateLimits[clientId]) {
-        rateLimits[clientId] = { lastGeneral: 0 };
-    }
-
-    const userLimit = rateLimits[clientId];
-
-    // Per-type packet budgets. A single shared flood budget used to be
-    // consumed by the client's 50ms 'update' ticks, so any one-shot message
-    // arriving inside that window was silently dropped — the visible glitch:
-    // non-host players needed several clicks on a prop before it appeared.
-    // Each type now has its own budget, so nothing competes for one
-    // allowance; unknown types still share the general flood budget.
-    // (Values come from SPAM_THRESHOLDS in audio.js where they exist.)
-    const TYPE_BUDGETS = {
-        chat: SPAM_THRESHOLDS.chat,       // 500ms
-        sound: SPAM_THRESHOLDS.sound,     // 200ms
-        anim: SPAM_THRESHOLDS.anim,       // 300ms
-        punch_hit: SPAM_THRESHOLDS.anim,  // 300ms
-        update: 40,                       // clients tick at 50ms; still flood-proof
-        placeProp: 250,                   // capped at 10 props per owner on top
-        undoProp: 300
-    };
-    const budgetMs = TYPE_BUDGETS[data.type];
-    if (budgetMs !== undefined) {
-        const key = 'budget_' + data.type;
-        if (now - (userLimit[key] || 0) < budgetMs) return; // dropped: too fast for this type
-        userLimit[key] = now;
-    }
-    else if (now - userLimit.lastGeneral < SPAM_THRESHOLDS.general) {
-        return; // Silently drop packets if they are spamming raw data too fast
-    }
-    else {
-        userLimit.lastGeneral = now;
-    }
-    // ----------------------------------------
-
+    if(!window.NetworkGuard||!NetworkGuard.accept(clientId,data))return;
+    if(window.Exploration&&typeof data?.type==='string'&&data.type.startsWith('explore:')){Exploration.client(clientId,data);return;}
+    if (window.Tournaments && data && typeof data.type === "string" && data.type.startsWith("tournament:")) { Tournaments.client(clientId, data); return; }
+    if(window.Boats&&typeof data?.type==='string'&&data.type.startsWith('boat:')){Boats.handleClient(clientId,data);return;}
+    if(window.Housing && data && typeof data.type==='string' && data.type.startsWith('house:')) { Housing.handleClient(clientId,data); return; }
     try {
         if (otherPlayers[clientId]) {
             otherPlayers[clientId].lastSeen = Date.now();
@@ -2836,17 +3013,20 @@ function handleDataFromClient(clientId, data) {
 
         if (data.type === 'update') {
             if (!data.payload || !data.payload.pos) return;
-            if (isNaN(data.payload.pos.x) || isNaN(data.payload.pos.y) || isNaN(data.payload.pos.z)) return;
+            if (![data.payload.pos.x,data.payload.pos.y,data.payload.pos.z].every(Number.isFinite)) return;
 
+            const sharedSeat=window.Boats?.authoritativePresence(clientId);
+            if(sharedSeat){data.payload.pos={x:sharedSeat.x,y:sharedSeat.y,z:sharedSeat.z};data.payload.rot=sharedSeat.rot;data.payload.sitting=sharedSeat.sitting;data.payload.sailing=false;}
             // Boundary Check — the world now includes the open ocean up to
             // WORLD_RADIUS (plus the custom-level apron), so accept those too.
-            const oceanLimit = (typeof WORLD_RADIUS === 'number' ? WORLD_RADIUS : 1000) + 60;
-            const isIsland = Math.abs(data.payload.pos.x) < oceanLimit && Math.abs(data.payload.pos.z) < oceanLimit;
+            const isIsland = window.Ocean.inBounds(data.payload.pos.x,data.payload.pos.z,-.001);
             const isVoid = Math.abs(data.payload.pos.x - 10000) < 500 && Math.abs(data.payload.pos.z - 10000) < 500;
             // Allow Lava world coordinates too
             const isLava = Math.abs(data.payload.pos.x + 20000) < 500;
 
-            if (!isIsland && !isVoid && !isLava) return;
+            const isHouse=window.Housing && Housing.validatePresence(clientId,data.payload);
+            if(data.payload.houseOwner && !isHouse)return;
+            if (!isIsland && !isVoid && !isLava && !isHouse) return;
 
             // If player is not in our list, create them.
             if (!otherPlayers[clientId]) {
@@ -2901,14 +3081,18 @@ function handleDataFromClient(clientId, data) {
             const entry = ytPlayers[data.propId];
             if (entry && entry.data) {
                 if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
+                if(entry.data.queue.length>=50)return;
                 const item = data.item || (data.src ? { provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null, title: null, addedBy: data.placer } : null);
-                if (item) entry.data.queue.push(item);
+                if (item && entry.data.queue.length<50) entry.data.queue.push(item);
             }
             broadcastToClients(data);
+            if (window.Housing && typeof Housing.addHouseTvQueue === 'function') Housing.addHouseTvQueue(data);
             // First video on an idle screen: the host starts it for the whole
             // room (a client's own ytChange would fail the ownership check in
-            // the ytChange branch below).
+            // the ytChange branch below). House TVs only auto-start when the
+            // host is the owner; guests may add but the owner controls playback.
             if (entry && entry.data && entry.data.queue.length > 0 &&
+                (!entry.isHouse || entry.houseOwnerLocal) &&
                 !entry.data.provider && !entry.data.videoId && !entry.data.twitchId &&
                 typeof playScreenQueueIndex === 'function') {
                 playScreenQueueIndex(data.propId, entry.data.queue.length - 1);
@@ -2939,25 +3123,25 @@ function handleDataFromClient(clientId, data) {
             broadcastToClients(data);
 
         } else if (data.type === 'sound') {
+            const emitter=otherPlayers[clientId]?.lastData;
+            if(!emitter?.pos)return;
+            data={type:'sound',name:data.name,var:data.var,pos:{...emitter.pos},id:clientId,houseOwner:emitter.houseOwner||''};
             // MIDI Mute Check
             if (data.name === 'guitar') {
                 if (otherPlayers[clientId] && otherPlayers[clientId].lastData.isMidiMuted) return;
                 if (localMutedMidi.includes(clientId)) return;
             }
 
-            Sound.playSpatial(data.name, data.pos, data.var);
+            Sound.playSpatial(data.name, data.pos, data.var, data);
             if (isHost) broadcastToClients(data);
 
         } else if (data.type === 'placeProp') {
-            // P2P HOST: Handle Prop Placement Request
-            const ownerProps = activeProps.filter(p => p.owner === clientId);
-            if (ownerProps.length >= 10) {
-                const oldest = ownerProps[0];
-                activeProps = activeProps.filter(p => p.id !== oldest.id);
-                broadcastToClients({ type: 'propRemoved', id: oldest.id });
-                removePropFromWorld(oldest.id); // Remove visually on host
+            const placement=validateRemotePropPlacement(clientId,data);
+            if(!placement.ok){
+                if(placement.abuse)window.NetworkGuard?.strike(clientId,placement.error,8);
+                try{clientConns[clientId]?.send({type:'prop:notice',id:data.propId,message:placement.error});}catch(e){}
+                return;
             }
-
             // Keep the placer's prop id exactly as sent, so the sync keys (and
             // undo history) are consistent across every peer's records.
             const ytId = (typeof data.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.videoId))
@@ -2986,7 +3170,7 @@ function handleDataFromClient(clientId, data) {
                 twitchId: twVod || twCh,
                 twitchKind: twVod ? 'video' : (twCh ? 'channel' : null),
                 startedAt: (typeof data.startedAt === 'number') ? data.startedAt : Date.now(),
-                placer: (typeof data.placer === 'string') ? data.placer.substring(0, 64) : '',
+                placer: String(clientConns[clientId]?.deviceID||clientId),
                 owner: clientId,
                 timestamp: Date.now()
             };
@@ -2994,12 +3178,14 @@ function handleDataFromClient(clientId, data) {
             spawnPropMesh(newProp); // Spawn visually on host
             broadcastToClients({ type: 'propPlaced', prop: newProp });
 
+        } else if(data.type==='ytPlayback'){
+            const clean=validateScreenPlaybackRequest(data,clientId,activeProps);if(!clean)return;
+            broadcastToClients(clean);applyScreenPlayback(clean);
         } else if (data.type === 'ytSync') {
-            // Video sync heartbeat from the placer: relay to the other clients
-            // AND consume it here for the host's own screen (unless the host
-            // IS the placer, which the placer-side filter already handles).
-            if (isHost) broadcastToClients(data);
-            applyYtSync(data);
+            const rec=activeProps.find(p=>p.id===data.propId);
+            if(!rec||rec.type!=='screen'||rec.owner!==clientId||rec.paused||rec.videoId!==data.videoId||!Number.isFinite(data.at)||data.at<0||data.at>1e7)return;
+            const clean={type:'ytSync',propId:rec.id,videoId:rec.videoId,at:data.at,ts:Date.now(),placer:rec.placer||''};
+            broadcastToClients(clean);applyYtSync(clean);
 
         } else if (data.type === 'ytChange') {
             // A placer swapped the video on their screen. Validate, update the
@@ -3017,12 +3203,13 @@ function handleDataFromClient(clientId, data) {
                 ? data.startedAt : Date.now();
             const rec = activeProps.find(p => p.id === data.propId);
             if (!rec) return;                      // unknown screen: ignore
-            if (rec.owner !== clientId && !isHost) return; // only the placer (or host) may change it
+            if (rec.owner !== clientId) return; // A client may only control its own screen.
             rec.provider = provider;
             rec.videoId = ytId;
             rec.twitchId = twVod || twCh;
             rec.twitchKind = twVod ? 'video' : (twCh ? 'channel' : null);
             rec.startedAt = startedAt;
+            rec.paused=false;rec.pausedAt=0;
             // playScreenQueueIndex sends the post-splice queue so every
             // viewer removes the same item; carry it into the record (late
             // joiners) and into the relay.
@@ -3084,6 +3271,10 @@ function handleDataFromClient(clientId, data) {
 }
 
 function handleDataFromHost(data) {
+    if(window.Exploration&&typeof data?.type==='string'&&data.type.startsWith('explore:')){Exploration.host(data);return;}
+    if(window.Boats&&typeof data?.type==='string'&&data.type.startsWith('boat:')){Boats.handleHost(data);return;}
+    if (window.Tournaments && data && typeof data.type === "string" && data.type.startsWith("tournament:")) { Tournaments.host(data); return; }
+    if(window.Housing && data && typeof data.type==='string' && data.type.startsWith('house:')) { Housing.handleHost(data); return; }
     if (data.type === 'error') {
         alert(data.message);
         location.reload();
@@ -3196,13 +3387,23 @@ function handleDataFromHost(data) {
         // The host relays our own add back to us; we already pushed it
         // locally in addToScreenQueue, so applying it again duplicated the
         // row on the adder's screen.
+        let entry = null;
         if (String(data.placer || '') !== String(myDeviceID || '')) {
-            const entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
+            entry = (typeof ytPlayers !== 'undefined') ? ytPlayers[data.propId] : null;
             if (entry && entry.data) {
                 if (!Array.isArray(entry.data.queue)) entry.data.queue = [];
                 const item = data.item || (data.src ? { provider: data.src.provider, id: data.src.id, twitchKind: data.src.twitchKind || null, title: null, addedBy: data.placer } : null);
-                if (item) entry.data.queue.push(item);
+                if (item && entry.data.queue.length<50) entry.data.queue.push(item);
             }
+        }
+        if (window.Housing && typeof Housing.addHouseTvQueue === 'function') Housing.addHouseTvQueue(data);
+        // If this client is the house owner and the TV is idle, start the
+        // first queued video just like the outdoor player's host does.
+        if (entry && entry.isHouse && entry.houseOwnerLocal && entry.data &&
+            entry.data.queue && entry.data.queue.length > 0 &&
+            !entry.data.provider && !entry.data.videoId && !entry.data.twitchId &&
+            typeof playScreenQueueIndex === 'function') {
+            playScreenQueueIndex(data.propId, entry.data.queue.length - 1);
         }
         if (activeScreenId === data.propId && typeof renderScreenQueue === 'function') renderScreenQueue();
     }
@@ -3252,6 +3453,7 @@ function handleDataFromHost(data) {
         }
     }
     else if (data.type === 'sound') {
+        if(data.id===myPeerId)return;
         // --- MIDI MUTE CHECK START ---
         if (data.name === 'guitar') {
             // 1. Check Global/Admin Mute (Server Flag)
@@ -3263,7 +3465,7 @@ function handleDataFromHost(data) {
         }
         // --- MIDI MUTE CHECK END ---
 
-        Sound.playSpatial(data.name, data.pos, data.var);
+        Sound.playSpatial(data.name, data.pos, data.var, data);
     }
     else if (data.type === 'punch_hit') handleHit(data);
     else if (data.type === 'anim' && data.anim === 'punch') {
@@ -3273,11 +3475,13 @@ function handleDataFromHost(data) {
         }
     }
     // P2P Prop Sync
+    else if(data.type==='prop:notice')window.propPlacementNotice?.(data);
     else if (data.type === 'propPlaced') spawnPropMesh(data.prop);
     else if (data.type === 'propRemoved') removePropFromWorld(data.id);
     else if (data.type === 'allProps') { if (Array.isArray(data.props)) data.props.slice(0, 1000).forEach(p => spawnPropMesh(p)); }
     // Video heartbeat relayed by the host (either from the placer client, or
     // broadcast by theHost when theHost is the placer).
+    else if (data.type === 'ytPlayback') applyScreenPlayback(data);
     else if (data.type === 'ytSync') applyYtSync(data);
     // The placer swapped the screen's video.
     else if (data.type === 'ytChange') applyYtChange(data);
@@ -3302,7 +3506,7 @@ function broadcastPlayerList() {
     });
 }
 
-function broadcastToClients(msg) { Object.values(clientConns).forEach(conn => { if (conn.open) conn.send(msg); }); }
+function broadcastToClients(msg) { Object.values(clientConns).forEach(conn => { if(conn.open){try{conn.send(msg);}catch(e){console.warn('Peer send failed; continuing room broadcast.');}} }); }
 function sendUpdate() {
     if (!player) return;
 
@@ -3311,9 +3515,25 @@ function sendUpdate() {
     myData.rot = player.rotation.y;
     myData.bobber = (bobber && fishingState !== 'idle' && fishingState !== 'charging') ? { x: bobber.position.x, y: bobber.position.y, z: bobber.position.z } : null;
 
+    if(window.Housing)Object.assign(myData,Housing.presence());
     myData.color = saveState.catColor;
     myData.belly = saveState.bellyColor;
     myData.eye = saveState.eyeColor;
+    myData.bodyPaint = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaint) : '');
+    myData.bodyPaintBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintBack) : '');
+    myData.bodyPaintLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLeft) : '');
+    myData.bodyPaintRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintRight) : '');
+    myData.bodyPaintHeadFront = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadFront) : '');
+    myData.bodyPaintHeadBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadBack) : '');
+    myData.bodyPaintHeadLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadLeft) : '');
+    myData.bodyPaintHeadRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadRight) : '');
+    myData.bodyPaintHeadTop = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadTop) : '');
+    myData.bodyPaintHeadBottom = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadBottom) : '');
+    myData.bodyPaintArmLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintArmLeft) : '');
+    myData.bodyPaintArmRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintArmRight) : '');
+    myData.bodyPaintLegLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLegLeft) : '');
+    myData.bodyPaintLegRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLegRight) : '');
+    myData.bodyPaintColor = (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(saveState.bodyPaintColor) : '#ffffff');
     myData.hat = saveState.currentHat;
     myData.species = saveState.species; // Keep for backwards compatibility
     // Modular parts
@@ -3321,12 +3541,14 @@ function sendUpdate() {
     myData.eyes = saveState.currentEyes;
     myData.nose = saveState.currentNose;
     myData.misc = saveState.currentMisc;
+    myData.protogenLogo=globalThis.window?.ProtogenLogo?.normalize(saveState.protogenLogo)||'';
     myData.tail = saveState.currentTail;
     myData.guitar = isGuitarActive;
     myData.glove = isGloveActive;
     myData.title = saveState.currentTitle;
     myData.heldFish = localHeldFish;
     myData.shirt = saveState.currentShirt;
+    myData.pants = saveState.currentPants;
     myData.collar = saveState.currentCollar;
     myData.name = saveState.displayName;
     myData.rod = saveState.currentRod;
@@ -3340,15 +3562,19 @@ function sendUpdate() {
     // Dive/prone state for remote animation sync.
     myData.dive = isDiving;
     myData.prone = isProne;
+    myData.reeling = fishingState==='reeling'&&!!minigame.active;
+    myData.sitting = isSitting||!!window.Boats?.isSeated();
+    myData.typing = chatTypingActive();
+    myData.idle = !!player.userData.standingIdle;
+    myData.jumping = !!player.userData.jumpAirborne;
+    myData.jumpVelocity = myData.jumping?THREE.MathUtils.clamp(playerVelocity.y,-50,50):0;
+    myData.emote = window.Emotes?.networkState()||null;
 
     myData.bobberType = saveState.currentBobber;
 
     // DETERMINE CURRENT TOOL - use same mapping as selectTool()
-    const toolMap = ['rod', 'hands', 'axe', 'guitar', 'glove', 'pickaxe'];
-    let toolId = toolMap[saveState.activeToolIndex] || 'rod';
-
-    // If we are holding a rod but hands are hidden (via '1' key toggle), force tool to 'hands'
-    if (toolId === 'rod' && isHandsHidden) toolId = 'hands';
+    const toolId=equippedToolFromSave();
+    myData.handsEmpty=toolId==='hands'&&!localHeldFish;
 
     myData.tool = toolId;
 
@@ -3390,6 +3616,44 @@ function sendUpdate() {
 }
 setInterval(sendUpdate, 50);
 
+function equippedToolFromSave(){
+    const entry=saveState.hotbar?.[saveState.activeHotbarIndex];
+    if(isGuitarActive)return 'guitar';if(isGloveActive)return 'glove';
+    if(localHeldFish||isHandsHidden)return 'hands';
+    if(player?.getObjectByName('axe')?.visible)return 'axe';
+    if(player?.getObjectByName('pickaxe')?.visible)return 'pickaxe';
+    if(entry)return entry.type==='tool'?entry.id:'hands';
+    return ['rod','hands','axe','guitar','glove','pickaxe'][saveState.activeToolIndex]||'hands';
+}
+function makeHeldTool(type,name){
+    let tool;
+    if(saveState.model3D&&window.Character3D?.buildTool)tool=Character3D.buildTool(type);
+    else{
+        const texture=type==='axe'?createAxeTexture():type==='pickaxe'?createPickaxeTexture():type==='guitar'?createGuitarTexture():createGloveTexture();
+        if(type==='axe'||type==='pickaxe'){
+            const geometry=new THREE.PlaneGeometry(2.5,2.5);geometry.translate(.5,.5,0);
+            tool=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({map:texture,transparent:true,side:THREE.DoubleSide,alphaTest:.5}));tool.rotation.set(-.2,-Math.PI/2,0);tool.scale.x=-1;
+        }else{tool=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,alphaTest:.5}));tool.scale.setScalar(type==='guitar'?1.5:1.2);}
+        tool.userData={is3D:false,toolType:type};
+    }
+    tool.name=name;tool.position.set(type==='guitar'?.3:.56,type==='guitar'?1.05:.84875,type==='glove'?.5:.43);
+    if(!tool.userData.is3D)tool.position.set(type==='guitar'?.3:.6,type==='guitar'||type==='glove'?1.25:.96,type==='guitar'?.2:type==='glove'?.5:.1);
+    if(tool.userData.is3D&&type!=='guitar'&&type!=='glove')tool.rotation.x=.3;
+    return tool;
+}
+function syncRemoteHeldItems(group,data){
+    const selected=data.guitar?'guitar':data.glove?'glove':data.heldFish?'fish':data.handsEmpty||data.tool==='hands'?'hands':data.tool||'hands';
+    const names={rod:'rod',guitar:'guitarMesh',glove:'gloveMesh',axe:'axeMesh',pickaxe:'pickaxeMesh',fish:'heldFishSprite'};
+    for(const [type,name] of Object.entries(names)){
+        let item=group.getObjectByName(name);
+        if(type!==selected){if(item)item.visible=false;continue;}
+        const wrong=item&&(!!item.userData.is3D!==!!saveState.model3D||(type==='rod'&&item.userData.rodId!==(data.rod||'bamboo'))||(type==='fish'&&(item.userData.fishName!==data.heldFish.name||item.userData.size!==(data.heldFish.size||1))));
+        if(wrong){disposeCharacterBody(item);item.parent.remove(item);item=null;}
+        if(!item){item=type==='rod'?makeRod(data.rod):type==='fish'?makeHeldFish(data.heldFish.name,data.heldFish.color,data.heldFish.size):makeHeldTool(type,name);group.add(item);}
+        item.visible=true;
+    }
+}
+
 function createRemotePlayer(id, data) {
     // Ensure we use the name from the data, or fallback to Fisher
     const nameToUse = data.name || "Fisher";
@@ -3407,8 +3671,10 @@ function createRemotePlayer(id, data) {
         data.hairColor || ''
     );
 
-    // Apply full cosmetics (shirt, collar, pattern, modular parts, ...).
+    group.userData.characterKind = 'player';
+    // Apply full cosmetics (shirt, collar, body paint, modular parts, ...).
     replaceCharacterBody(group, characterCfgFromData(data));
+    syncRemoteHeldItems(group,data);
 
     scene.add(group);
 
@@ -3467,6 +3733,7 @@ function updateRemotePlayer(id, data) {
             const newTex = createNameTagTexture(data.name);
             if (oldNameTag.material.map) oldNameTag.material.map.dispose();
             oldNameTag.material.map = newTex;
+            oldNameTag.scale.set(3*newTex.image.width/256,.75,1);
             oldNameTag.material.needsUpdate = true;
         }
     }
@@ -3484,15 +3751,17 @@ function updateRemotePlayer(id, data) {
         }
     }
 
-    // 3. VISUALS SYNC (Colors, Hat, Shirt, Collar, Pattern, Parts)
+    // 3. VISUALS SYNC (Colors, Hat, Shirt, Collar, Body Paint, Parts)
     const partsChanged = (p.lastData.ears !== data.ears || p.lastData.eyes !== data.eyes ||
         p.lastData.nose !== data.nose || p.lastData.misc !== data.misc ||
         p.lastData.tail !== data.tail || p.lastData.hair !== data.hair);
     const partColorsChanged = (p.lastData.earsColor !== data.earsColor || p.lastData.noseColor !== data.noseColor ||
-        p.lastData.miscColor !== data.miscColor || p.lastData.tailColor !== data.tailColor || p.lastData.hairColor !== data.hairColor);
+        p.lastData.miscColor !== data.miscColor || p.lastData.tailColor !== data.tailColor || p.lastData.hairColor !== data.hairColor || p.lastData.handColor !== data.handColor || p.lastData.footColor !== data.footColor || p.lastData.tailAccentColor !== data.tailAccentColor);
+    const paintChanged = key => (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(p.lastData[key]) : '') !== (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data[key]) : '');
+    const paintColorChanged = (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(p.lastData.bodyPaintColor) : '#ffffff') !== (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(data.bodyPaintColor) : '#ffffff');
     if (p.lastData.color !== data.color || p.lastData.belly !== data.belly || p.lastData.hat !== data.hat ||
-        p.lastData.eye !== data.eye || p.lastData.species !== data.species || p.lastData.shirt !== data.shirt ||
-        p.lastData.collar !== data.collar || p.lastData.pattern !== data.pattern || partsChanged || partColorsChanged) {
+        (globalThis.window?.ProtogenLogo?.normalize(p.lastData.protogenLogo)||'')!==(globalThis.window?.ProtogenLogo?.normalize(data.protogenLogo)||'') || p.lastData.eye !== data.eye || p.lastData.species !== data.species || p.lastData.shirt !== data.shirt || p.lastData.pants !== data.pants ||
+        p.lastData.collar !== data.collar || paintChanged('bodyPaint') || paintChanged('bodyPaintBack') || paintChanged('bodyPaintLeft') || paintChanged('bodyPaintRight') || paintChanged('bodyPaintHeadFront') || paintChanged('bodyPaintHeadBack') || paintChanged('bodyPaintHeadLeft') || paintChanged('bodyPaintHeadRight') || paintChanged('bodyPaintHeadTop') || paintChanged('bodyPaintHeadBottom') || paintChanged('bodyPaintArmLeft') || paintChanged('bodyPaintArmRight') || paintChanged('bodyPaintLegLeft') || paintChanged('bodyPaintLegRight') || paintColorChanged || partsChanged || partColorsChanged) {
 
         // Determine if using new parts system or legacy species
         replaceCharacterBody(p.mesh, characterCfgFromData(data));
@@ -3512,6 +3781,7 @@ function updateRemotePlayer(id, data) {
     p.lastData.isVoiceMuted = wasVoiceMuted;
     p.lastData.isChatMuted = wasChatMuted;
     p.lastData.isMidiMuted = wasMidiMuted;
+    if (document.hidden) syncRemoteVoiceVolumes();
     // Update Position
     // FIX: Handle both nested 'pos' and flat 'x,y,z'
     if (data.pos) {
@@ -3524,145 +3794,12 @@ function updateRemotePlayer(id, data) {
     if (typeof data.rot === 'number') p.targetRot = data.rot;
     // --- FIX END ---
 
-    // 5. HELD ITEMS (Guitar, Glove, Fish, Rod, Empty)
-    const rod = p.mesh.getObjectByName("rod");
-    let guitar = p.mesh.getObjectByName("guitarMesh");
-    let glove = p.mesh.getObjectByName("gloveMesh");
-    // Change to 'axe' and 'pickaxe' to match existing naming if we want, but unique names help
-    let axe = p.mesh.getObjectByName("axeMesh");
-    let pickaxe = p.mesh.getObjectByName("pickaxeMesh");
-    let fishSprite = p.mesh.getObjectByName("heldFishSprite");
-
-    // A. Guitar Logic
-    if (data.guitar === true) {
-        if (!guitar) {
-            // ... (keep your existing guitar creation code) ...
-            const tex = createGuitarTexture();
-            const mat = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5 });
-            guitar = new THREE.Sprite(mat); guitar.name = 'guitarMesh'; guitar.position.set(0.3, 1.25, 0.2); guitar.scale.set(1.5, 1.5, 1); p.mesh.add(guitar);
-        }
-        guitar.visible = true;
-        if (glove) glove.visible = false;
-        if (fishSprite) fishSprite.visible = false;
-        if (rod) rod.visible = false;
-    }
-    // B. Glove Logic
-    else if (data.glove === true) {
-        if (!glove) {
-            // ... (keep your existing glove creation code) ...
-            const tex = createGloveTexture();
-            const mat = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5 });
-            glove = new THREE.Sprite(mat); glove.name = 'gloveMesh'; glove.position.set(0.6, 1.25, 0.5); glove.scale.set(1.2, 1.2, 1); p.mesh.add(glove);
-        }
-        if (glove) glove.visible = true;
-        if (guitar) guitar.visible = false;
-        if (fishSprite) fishSprite.visible = false;
-        if (rod) rod.visible = false;
-    }
-    // C. Held Fish Logic
-    else if (data.heldFish) {
-        if (!fishSprite || fishSprite.userData.fishName !== data.heldFish.name) {
-            if (fishSprite) { disposeCharacterBody(fishSprite); p.mesh.remove(fishSprite); }
-            fishSprite = makeHeldFish(data.heldFish.name, data.heldFish.color, data.heldFish.size);
-            p.mesh.add(fishSprite);
-        }
-        fishSprite.visible = true;
-        if (guitar) guitar.visible = false;
-        if (glove) glove.visible = false;
-        if (rod) rod.visible = false;
-        if (axe) axe.visible = false;
-        if (pickaxe) pickaxe.visible = false;
-    }
-    // D. Axe Logic
-    else if (data.tool === 'axe') {
-        if (!axe) {
-            // Match equipAxe() exactly
-            const tex = createAxeTexture();
-            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-            const geo = new THREE.PlaneGeometry(2.5, 2.5);
-            geo.translate(0.5, 0.5, 0); // Pivot adjustment
-
-            axe = new THREE.Mesh(geo, mat);
-            axe.name = 'axeMesh';
-
-            axe.position.set(0.6, 0.96, 0.1);
-            axe.rotation.set(-0.2, -Math.PI / 2, 0);
-            axe.scale.x = -1; // FLIP SPRITE
-
-            p.mesh.add(axe);
-        }
-        axe.visible = true;
-        if (pickaxe) pickaxe.visible = false;
-        if (rod) rod.visible = false;
-        if (guitar) guitar.visible = false;
-        if (glove) glove.visible = false;
-        if (fishSprite) fishSprite.visible = false;
-    }
-    // E. Pickaxe Logic
-    else if (data.tool === 'pickaxe') {
-        if (!pickaxe) {
-            // Match equipPickaxe() exactly
-            const tex = createPickaxeTexture();
-            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-            const geo = new THREE.PlaneGeometry(2.5, 2.5);
-            geo.translate(0.5, 0.5, 0);
-
-            pickaxe = new THREE.Mesh(geo, mat);
-            pickaxe.name = 'pickaxeMesh';
-
-            pickaxe.position.set(0.6, 0.96, 0.1);
-            pickaxe.rotation.set(-0.2, -Math.PI / 2, 0);
-            pickaxe.scale.x = -1; // Flip like axe
-
-            p.mesh.add(pickaxe);
-        }
-        pickaxe.visible = true;
-        if (axe) axe.visible = false;
-        if (rod) rod.visible = false;
-        if (guitar) guitar.visible = false;
-        if (glove) glove.visible = false;
-        if (fishSprite) fishSprite.visible = false;
-    }
-    // F. Hands Empty Logic
-    else if (data.handsEmpty || data.tool === 'hands') {
-        if (rod) rod.visible = false;
-        if (guitar) guitar.visible = false;
-        if (glove) glove.visible = false;
-        if (fishSprite) fishSprite.visible = false;
-        if (axe) axe.visible = false;
-        if (pickaxe) pickaxe.visible = false;
-    }
-    // G. Default: Rod
-    else {
-        if (rod) {
-            rod.visible = true;
-            // Ensure correct rod texture (lazy way: recreate if ID changed, or just trust init)
-            // We won't re-init texture every frame here to save perf, usually createRemotePlayer handles it.
-            // But if they switch rods, we might want to handle that in VISUALS SYNC section.
-        }
-        if (guitar) guitar.visible = false;
-        if (glove) glove.visible = false;
-        if (fishSprite) fishSprite.visible = false;
-        if (axe) axe.visible = false;
-        if (pickaxe) pickaxe.visible = false;
-
-        // Ensure rod exists and skin is correct
-        if (!rod || (data.rod && rod.userData.rodId !== data.rod)) {
-            if (rod) { disposeCharacterBody(rod); p.mesh.remove(rod); }
-
-            const rodId = data.rod || 'bamboo';
-            const newRod = makeRod(rodId);
-            newRod.userData.rodId = rodId;
-            p.mesh.add(newRod);
-        } else {
-            rod.visible = true;
-        }
-    }
+    syncRemoteHeldItems(p.mesh,data);
 
     // 6. BOBBER & LINE SYNC
     if (data.bobber) {
         if (!p.bobberMesh || p.bobberType !== data.bobberType) {
-            if (p.bobberMesh) scene.remove(p.bobberMesh);
+            if (p.bobberMesh) {scene.remove(p.bobberMesh);disposeCharacterBody(p.bobberMesh);}
 
             p.bobberType = data.bobberType || 'classic';
             p.bobberMesh = createBobberMesh(p.bobberType);
@@ -3701,7 +3838,7 @@ function updateRemotePlayer(id, data) {
             activeRod.rotation.x = rodAngleFor(activeRod, true);
         }
     } else {
-        if (p.bobberMesh) { scene.remove(p.bobberMesh); scene.remove(p.lineMesh); p.bobberMesh = null; p.lineMesh = null; }
+        if (p.bobberMesh) { scene.remove(p.bobberMesh);disposeCharacterBody(p.bobberMesh); scene.remove(p.lineMesh); p.bobberMesh = null; p.lineMesh = null; }
 
         // RESET REMOTE ROD (Idle Position)
         const activeRod = p.mesh.getObjectByName("rod");
@@ -3725,7 +3862,69 @@ function initChatPool() {
     }
 }
 
+let gameAnchorSyncTimer = null;
+let lastGameAnchorSpace = -1;
+
+// Auto anchor ads can collapse, expand, or be dismissed by the player. Follow
+// their live height instead of keeping one fixed strip, so the HUD drops back
+// down when the ad shrinks and rises again when it expands.
+function measureGameAnchorHeight() {
+    let height = 0;
+    const fixedAtBottom = (el) => {
+        if (!el.getBoundingClientRect) return 0;
+        const rect = el.getBoundingClientRect();
+        // Include the gap below the ad (safe-area insets included) so the HUD
+        // clears the ad even when it is not flush against the viewport edge.
+        if (rect.height < 18 || rect.bottom < window.innerHeight - 100) return 0;
+        let node = el;
+        while (node && node !== document.documentElement) {
+            const pos = getComputedStyle(node).position;
+            if (pos === 'fixed' || pos === 'sticky') return Math.max(0, window.innerHeight - rect.top);
+            node = node.parentElement;
+        }
+        return 0;
+    };
+
+    document.querySelectorAll('[data-anchor-status]').forEach((el) => {
+        const status = String(el.getAttribute('data-anchor-status') || '').toLowerCase();
+        if (/hidden|dismiss|removed|closed/.test(status)) return;
+        height = Math.max(height, fixedAtBottom(el));
+        el.querySelectorAll('iframe').forEach((frame) => {
+            height = Math.max(height, fixedAtBottom(frame));
+        });
+    });
+
+    // Some anchor builds only expose the fixed ad iframe.
+    document.querySelectorAll('ins.adsbygoogle, iframe[src*="googleads"], iframe[src*="doubleclick"], iframe[id^="aswift_"]').forEach((frame) => {
+        height = Math.max(height, fixedAtBottom(frame));
+    });
+    return height;
+}
+
+function syncGameAnchorSpace() {
+    if (!document.body.classList.contains('game-active')) return;
+    const height = measureGameAnchorHeight();
+    const gap = (window.matchMedia && window.matchMedia('(max-width:900px)').matches) ? 8 : 14;
+    const next = height ? Math.ceil(height + gap) : 0;
+    if (next === lastGameAnchorSpace) return;
+    lastGameAnchorSpace = next;
+    document.body.style.setProperty('--game-anchor-space', next + 'px');
+}
+
+function startGameAnchorSync() {
+    syncGameAnchorSpace();
+    if (gameAnchorSyncTimer) return;
+    gameAnchorSyncTimer = setInterval(syncGameAnchorSpace, 500);
+    window.addEventListener('resize', syncGameAnchorSpace);
+    window.visualViewport?.addEventListener('resize', syncGameAnchorSpace);
+}
+
 function startGame() {
+    // Bottom anchor ads live in the viewport's reserved safe strip. Only lift
+    // the gameplay HUD once the player is actually in a session.
+    document.body.classList.add('game-active');
+    startGameAnchorSync();
+    window.Boats?.start();
     if (!isMobile) document.getElementById('chat-ui').style.display = 'flex';
     Music.init();
     initChatPool();
@@ -3748,11 +3947,7 @@ function sendChatMessage(text) {
     const safeText = text.substring(0, 256);
     if (!safeText.trim()) return;
 
-    const embeddedHtml = safeEmbedImage(safeText);
-
-    // Check if it's actually an image URL (not just different due to escaping)
-    const imgRegex = /^https?:\/\/.+\.(png|jpg|jpeg|gif|webp)$/i;
-    const isImageUrl = imgRegex.test(safeText);
+    const isImageUrl = !!allowedChatImageUrl(safeText);
 
     // 2. Display locally immediately
     displayChatMessage(saveState.displayName, safeText, 'local');
@@ -3774,18 +3969,21 @@ function sendChatMessage(text) {
 }
 
 // --- SECURITY FIX: Safe Image Embedding ---
-// Only direct image URLs may render inline. GIF-picker links are additionally
-// restricted to the picker's own media hosts (see isAllowedGifUrl) so a peer
-// cannot post an arbitrary URL and force every client to fetch it.
+// Validate on RECEIPT as well as local display: modified peers can bypass the
+// send UI. Exact CDN names only; never a suffix/substring match or an IP host.
+const CHAT_IMAGE_HOSTS = ['i.imgur.com', 'i.redd.it', 'preview.redd.it'];
+function allowedChatImageUrl(text) {
+    if(typeof text!=='string'||text.length>512)return null;
+    let url;try{url=new URL(text.trim());}catch(error){return null;}
+    if(url.protocol!=='https:'||url.username||url.password||url.port)return null;
+    if(!CHAT_IMAGE_HOSTS.includes(url.hostname)&&!GIF_MEDIA_HOSTS.includes(url.hostname))return null;
+    if(!/\.(png|jpe?g|gif|webp|avif)$/i.test(url.pathname))return null;
+    url.hash='';return url.href;
+}
 function safeEmbedImage(text) {
-    const escaped = escapeHTML(text);
-    // Strict check for image URL
-    const imgRegex = /^https?:\/\/.+\.(png|jpg|jpeg|gif|webp)$/i;
-    if (!imgRegex.test(text)) return escaped;
-    // A giphy/tenor media link is the only kind the picker produces; anything
-    // that looks like one but sits on another host is left as plain text.
-    if (/giphy\.com|tenor\.com/i.test(text) && !isAllowedGifUrl(text)) return escaped;
-    return `<img src="${escaped}" class="chat-img" style="max-width:200px; max-height:200px; border-radius:10px; vertical-align:middle;" alt="Image">`;
+    const allowed=allowedChatImageUrl(text);
+    if(!allowed)return escapeHTML(text);
+    return `<img src="${escapeHTML(allowed)}" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="chat-img" style="max-width:200px; max-height:200px; border-radius:10px; vertical-align:middle;" alt="Image from an approved image host">`;
 }
 
 // ===========================================================================
@@ -3826,13 +4024,8 @@ const GIF_MEDIA_HOSTS = ['media.giphy.com', 'media0.giphy.com', 'media1.giphy.co
                          'i.giphy.com'];
 
 function isAllowedGifUrl(url) {
-    if (typeof url !== 'string' || url.length > 512) return false;
-    let u;
-    try { u = new URL(url); } catch (e) { return false; }
-    if (u.protocol !== 'https:') return false;
-    const host = u.hostname.toLowerCase();
-    if (!GIF_MEDIA_HOSTS.includes(host)) return false;
-    return /\.(gif|webp|mp4|png)$/i.test(u.pathname);
+    const allowed=allowedChatImageUrl(url);
+    return !!allowed&&GIF_MEDIA_HOSTS.includes(new URL(allowed).hostname);
 }
 
 let gifSearchAbort = null;
@@ -3862,6 +4055,7 @@ function gifRenderResults(results, append) {
         if (!isAllowedGifUrl(preview) || !isAllowedGifUrl(full)) continue;
 
         const img = document.createElement('img');
+        img.referrerPolicy = 'no-referrer';
         img.src = preview;
         img.alt = (r.content_description || 'GIF').substring(0, 100);
         img.loading = 'lazy';
@@ -4101,8 +4295,7 @@ function displayChatMessage(name, text, id) {
 
     // --- CHAT BUBBLES ---
     // Check if it's an image URL to decide bubble content
-    const imgRegex = /^https?:\/\/.+\.(png|jpg|jpeg|gif|webp)$/i;
-    const isImageUrl = imgRegex.test(rawText);
+    const isImageUrl = !!allowedChatImageUrl(rawText);
     const bubbleContent = isImageUrl ? 'Image posted...' : rawText;
 
     if (id && id !== 'local' && id !== 'system' && otherPlayers[id]) {
@@ -4126,69 +4319,31 @@ function displayChatMessage(name, text, id) {
     }
 }
 
+function wrapChatBubbleText(text,measure,maxWidth){
+    const lines=[];
+    for(const paragraph of text.split(/\r?\n/)){
+        let line='';
+        for(const word of paragraph.split(/\s+/).filter(Boolean)){
+            const candidate=line?line+' '+word:word;
+            if(measure(candidate)<=maxWidth){line=candidate;continue;}
+            if(line){lines.push(line);line='';}
+            const letters=typeof Intl!=='undefined'&&Intl.Segmenter?Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(word),part=>part.segment):Array.from(word);
+            for(const letter of letters){if(line&&measure(line+letter)>maxWidth){lines.push(line);line='';}line+=letter;}
+        }
+        lines.push(line);
+    }
+    return lines;
+}
 function showChatBubble(parentMesh, text) {
-
-    const existing = parentMesh.getObjectByName("chatBubble");
-    if (existing) parentMesh.remove(existing);
-
-
-    const maxMsgLength = 256;
-    const maxCharsPerLine = 24;
-    const fontSize = 22;
-    const lineHeight = 28;
-    const padding = 20;
-
-
-    let safeText = text.substring(0, maxMsgLength);
-    let rawWords = safeText.split(' ');
-    let lines = [];
-    let currentLine = "";
-
-    rawWords.forEach(word => {
-
-        if (word.length > maxCharsPerLine) {
-
-            if (currentLine.length > 0) {
-                lines.push(currentLine);
-                currentLine = "";
-            }
-
-            for (let i = 0; i < word.length; i += maxCharsPerLine) {
-                let chunk = word.substring(i, i + maxCharsPerLine);
-
-
-                if (chunk.length === maxCharsPerLine && (i + maxCharsPerLine < word.length)) {
-                    lines.push(chunk);
-                } else {
-                    currentLine = chunk;
-                }
-            }
-        }
-
-        else {
-
-            if (currentLine.length + word.length + 1 > maxCharsPerLine) {
-                lines.push(currentLine);
-                currentLine = word;
-            } else {
-
-                currentLine += (currentLine.length > 0 ? " " : "") + word;
-            }
-        }
-    });
-
-    if (currentLine.length > 0) lines.push(currentLine);
-
-
-
-    const canvasWidth = 256;
-    const canvasHeight = (lines.length * lineHeight) + padding;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-    const ctx = canvas.getContext('2d');
-
+    const existing=parentMesh.getObjectByName('chatBubble');
+    if(existing){parentMesh.remove(existing);existing.material?.map?.dispose();existing.material?.dispose();}
+    const fontSize=22,lineHeight=28,padding=20,canvasWidth=256;
+    const safeText=Array.from(String(text||'')).slice(0,256).join('');
+    const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+    ctx.font='bold '+fontSize+'px Arial';
+    const lines=wrapChatBubbleText(safeText,line=>ctx.measureText(line).width,canvasWidth-padding*2);
+    const canvasHeight=lines.length*lineHeight+padding*2;
+    canvas.width=canvasWidth;canvas.height=canvasHeight;
 
     ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
     ctx.strokeStyle = "white";
@@ -4265,6 +4420,7 @@ function createLavaWorld() {
     const groundGeo = new THREE.CylinderGeometry(80, 80, 5, 32);
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x4E342E });
     lavaFloorMesh = new THREE.Mesh(groundGeo, groundMat);
+    lavaFloorMesh.name='lavaWorldFloor';
     lavaFloorMesh.position.set(-20000, -2.5, 0);
     scene.add(lavaFloorMesh);
 
@@ -4276,6 +4432,7 @@ function createLavaWorld() {
         emissiveIntensity: 0.5
     });
     lavaLakeMesh = new THREE.Mesh(lakeGeo, lakeMat);
+    lavaLakeMesh.name='lavaWorldLake';
     lavaLakeMesh.rotation.x = -Math.PI / 2;
     lavaLakeMesh.position.set(-20000, 0.1, 0);
     scene.add(lavaLakeMesh);
@@ -4292,6 +4449,7 @@ function createLavaWorld() {
         { x: -20000 + 35, z: 0 },   // Merchant
         { x: -20000 - 35, z: 0 },   // Stylist
         { x: -20000, z: 35 },       // Bait
+        { x: -19950, z: 0 },        // Return portal
     ];
     const safeRadius = 8; // Distance to keep clear around NPCs
 
@@ -4343,24 +4501,116 @@ function createLavaWorld() {
     const particlesMat = new THREE.PointsMaterial({ color: 0xffaa00, size: 0.5 });
     const embers = new THREE.Points(particlesGeo, particlesMat);
     scene.add(embers);
+
+    if(!lavaExitPortalMesh){
+        lavaExitPortalMesh=new THREE.Group();
+        const disc=new THREE.Mesh(new THREE.CircleGeometry(2.7,32),new THREE.MeshBasicMaterial({color:0xff8a3c,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));
+        disc.rotation.x=-Math.PI/2;lavaExitPortalMesh.add(disc);
+        const rim=new THREE.Mesh(new THREE.RingGeometry(2.8,3.6,32),new THREE.MeshBasicMaterial({color:0xffd09a,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));
+        rim.rotation.x=-Math.PI/2;rim.position.y=.02;lavaExitPortalMesh.add(rim);
+        lavaExitPortalMesh.position.set(-19950,.25,0);
+        lavaExitPortalMesh.name='lavaExitPortal';
+        scene.add(lavaExitPortalMesh);
+        const light=new THREE.PointLight(0xff7a35,1.3,20);light.position.set(-19950,2,0);scene.add(light);
+    }
+    if(lavaExitPortalMesh.parent!==scene)scene.add(lavaExitPortalMesh);
 }
 
 
 let waterfallMesh;
+
+// Convex cave rocks keep their real world-space faces and vertical clearance.
+function makeCaveRockCollider(rock){
+    rock.updateMatrixWorld(true);
+    const bounds=new THREE.Box3().setFromObject(rock),center=rock.getWorldPosition(new THREE.Vector3());
+    const positions=rock.geometry.attributes.position,index=rock.geometry.index,planes=[];
+    const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),normal=new THREE.Vector3(),edge=new THREE.Vector3();
+    const count=index?index.count:positions.count;
+    for(let i=0;i<count;i+=3){
+        a.fromBufferAttribute(positions,index?index.getX(i):i).applyMatrix4(rock.matrixWorld);
+        b.fromBufferAttribute(positions,index?index.getX(i+1):i+1).applyMatrix4(rock.matrixWorld);
+        c.fromBufferAttribute(positions,index?index.getX(i+2):i+2).applyMatrix4(rock.matrixWorld);
+        normal.copy(b).sub(a).cross(edge.copy(c).sub(a));if(normal.lengthSq()<1e-12)continue;normal.normalize();
+        if(normal.dot(edge.copy(center).sub(a))>0)normal.negate();
+        planes.push({x:normal.x,y:normal.y,z:normal.z,d:normal.dot(a)});
+    }
+    return {minX:bounds.min.x,maxX:bounds.max.x,minZ:bounds.min.z,maxZ:bounds.max.z,minY:bounds.min.y,maxY:bounds.max.y,planes,caveRock:true};
+}
+function caveRockSurfaceY(collider,x,z){
+    if(x<collider.minX||x>collider.maxX||z<collider.minZ||z>collider.maxZ)return -Infinity;
+    let top=Infinity,bottom=-Infinity;
+    for(const p of collider.planes){
+        const d=p.d-p.x*x-p.z*z;
+        if(Math.abs(p.y)<1e-8){if(d<0)return -Infinity;continue;}
+        if(p.y>0)top=Math.min(top,d/p.y);else bottom=Math.max(bottom,d/p.y);
+    }
+    return top>=bottom?top:-Infinity;
+}
+function caveRockTopAt(x,z,feetY,previousFeetY=feetY){
+    if(window.CUSTOM_LEVEL||window.Housing?.inside)return -Infinity;
+    let top=-Infinity;
+    for(const collider of staticColliders){
+        if(!collider.caveRock)continue;
+        const surface=caveRockSurfaceY(collider,x,z);
+        if(Number.isFinite(surface)&&(feetY>=surface-.12||(previousFeetY>=surface&&previousFeetY>=feetY)))top=Math.max(top,surface);
+    }
+    return top;
+}
+function staticColliderHits(collider,position,radius=.5,height=2.6){
+    if(position.x<=collider.minX-radius||position.x>=collider.maxX+radius||position.z<=collider.minZ-radius||position.z>=collider.maxZ+radius)return false;
+    if(!collider.planes)return true; // Existing house/dock rectangle behavior.
+    if(position.y>=collider.maxY-.05||position.y+height<=collider.minY)return false;
+    const surface=caveRockSurfaceY(collider,position.x,position.z);
+    if(Number.isFinite(surface)&&position.y>=surface-.12)return false;
+    const centerY=position.y+height/2;
+    return collider.planes.every(p=>p.x*position.x+p.y*centerY+p.z*position.z-p.d<=radius*Math.hypot(p.x,p.z)+height/2*Math.abs(p.y));
+}
+function caveRockBlocksLine(start,end,collider){
+    let enter=0,exit=1;
+    for(const p of collider.planes){
+        const a=p.x*start.x+p.y*(start.y+1.2)+p.z*start.z-p.d,b=p.x*end.x+p.y*(end.y+1.2)+p.z*end.z-p.d;
+        if(a>0&&b>0)return false;if(a<=0&&b<=0)continue;
+        const t=a/(a-b);if(a>0)enter=Math.max(enter,t);else exit=Math.min(exit,t);
+        if(enter>exit)return false;
+    }
+    return true;
+}
+
+function cavePlatformRoute(){
+    const route=[];
+    // Each two-unit rise is below the normal 2.5-unit jump apex.
+    for(let i=0;i<21;i++)route.push({x:-20+i*.5,y:(i+1)*2,z:i%2?-71:-67,halfX:2,halfZ:1.5});
+    for(const [x,z] of [[-7,-72],[-4,-77],[-1,-82],[0,-87]])route.push({x,y:42,z,halfX:2,halfZ:1.5});
+    route[route.length-1].halfX=4;route[route.length-1].halfZ=3;
+    return route;
+}
+function createCavePlatforms(){
+    const route=cavePlatformRoute();window.parkourPlatforms=route;
+    const stone=new THREE.MeshStandardMaterial({color:0x858c94,roughness:1,flatShading:true});
+    const underside=new THREE.MeshStandardMaterial({color:0x555e66,roughness:1,flatShading:true});
+    for(const p of route){
+        const slab=new THREE.Mesh(new THREE.BoxGeometry(p.halfX*2,.45,p.halfZ*2),stone);
+        slab.name='caveJumpPlatform';slab.position.set(p.x,p.y-.225,p.z);scene.add(slab);
+        const support=new THREE.Mesh(new THREE.ConeGeometry(1.4,1.1,5),underside);
+        support.rotation.z=Math.PI;support.position.set(p.x,p.y-1,p.z);scene.add(support);
+    }
+}
+function cavePlatformTopAt(x,z,feetY,previousFeetY=feetY){
+    if(window.CUSTOM_LEVEL||window.Housing?.inside)return -Infinity;
+    let top=-Infinity;
+    for(const p of window.parkourPlatforms||[]){
+        if(Math.abs(x-p.x)>p.halfX+.15||Math.abs(z-p.z)>p.halfZ+.15)continue;
+        const crossingDown=previousFeetY>=p.y&&previousFeetY>=feetY;
+        if((feetY>=p.y-.12||crossingDown)&&p.y>top)top=p.y;
+    }
+    return top;
+}
 
 function createWaterfallZone() {
     // Replaced BoxGeometry Walls with Organic Rock Clusters
     // Use a fixed seed for waterfall generation so it syncs for everyone
     const seed = xmur3('waterfall zone')();
     const rand = mulberry32(seed);
-
-    // Static Colliders (Keep logic similar but invisible helpers?)
-    // Left Wall Collider
-    staticColliders.push({ minX: -60, maxX: -4, minZ: -120, maxZ: -79 });
-    // Right Wall Collider
-    staticColliders.push({ minX: 6, maxX: 60, minZ: -120, maxZ: -79 });
-    // Back Wall Collider
-    staticColliders.push({ minX: -60, maxX: 60, minZ: -130, maxZ: -99 });
 
     // --- MOUNTAIN & CAVE GENERATION ---
     // Generate a mountain shape using stacked rocks
@@ -4408,7 +4658,7 @@ function createWaterfallZone() {
         scene.add(rock);
 
         // CRITICAL: ADD COLLISION
-        treeColliders.push({ x: x, z: z, radius: s * 0.8 });
+        staticColliders.push(makeCaveRockCollider(rock));
     }
 
     // 2. Explicit Cave Roof / Archway
@@ -4421,8 +4671,7 @@ function createWaterfallZone() {
         const rock = createRockMesh(s, rand);
         rock.position.set(x, y, z);
         scene.add(rock);
-        // No floor collision needed for roof, but strictly speaking doesn't hurt
-        // treeColliders.push({ x: x, z: z, radius: s * 0.8 }); 
+        staticColliders.push(makeCaveRockCollider(rock)); 
     }
 
     // --- WATERFALL ---
@@ -4500,45 +4749,301 @@ function createWaterfallZone() {
     // Splash Particles (Simple)
     // We already have addHotspotParticles, maybe add more for splash?
 
-    // --- PARKOUR PLATFORMS ---
-    // Add jumping platforms leading up to the top of the waterfall
-    // Heights and distances designed for player jump height (~2.5 units)
-    // MOVED TO LEFT SIDE of cave entrance, climbing the rock face.
-    const parkourPlatforms = [
-        { x: -28, y: 3, z: -80, scale: 4.5 },    // 1. Base (Left of entrance, outside)
-        { x: -35, y: 9, z: -85, scale: 4 },      // 2. Up the left face
-        { x: -38, y: 15, z: -92, scale: 4 },     // 3. Rounding the corner
-        { x: -30, y: 22, z: -98, scale: 3.5 },   // 4. Moving back/in
-        { x: -20, y: 28, z: -100, scale: 3.5 },  // 5. Approaching center
-        { x: -10, y: 35, z: -102, scale: 4 },    // 6. Near summit
-        { x: 0, y: 42, z: -105, scale: 5 },      // 7. Summit Ledge
-    ];
+    // A visible route with flat tops and jump-height spacing.
+    createCavePlatforms();
+}
 
-    window.parkourPlatforms = parkourPlatforms; // Expose for physics collisions
-
-    // Use natural rock clusters
-    parkourPlatforms.forEach((p, i) => {
-        // Main stepping stone
-        const platformRock = createRockMesh(p.scale * 1.1, rand);
-        platformRock.position.set(p.x, p.y - 0.5, p.z);
-        // Random rotation for organic look
-        platformRock.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
-        platformRock.material = platformRock.material.clone();
-        platformRock.material.color.setHex(0x666666);
-        scene.add(platformRock);
-
-        // Support rock (visual only) to connect to cliff
-        if (p.y > 5) {
-            const support = createRockMesh(p.scale * 0.9, rand);
-            support.position.set(p.x - 2, p.y - 3, p.z - 2);
-            support.rotation.set(rand(), rand(), rand());
-            scene.add(support);
+// ---------------------------------------------------------------------------
+// DEFAULT ISLAND REFRESH
+// Shared-island dressing: paths, village props, pond details, shrines and
+// readable routes to the cave, dock, ponds and Void rift.
+// ---------------------------------------------------------------------------
+function createPathRibbon(points, width, color, map = null, lift = 0.06) {
+    const positions = [], uvs = [], indices = [];
+    const sections = [];
+    let travelled = 0;
+    for (let p = 1; p < points.length; p++) {
+        const a = points[p - 1], b = points[p];
+        const dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
+        if (length < 0.01) continue;
+        const nx = -dz / length, nz = dx / length;
+        const steps = Math.max(1, Math.ceil(length / 2.4));
+        for (let s = 0; s <= steps; s++) {
+            const t = s / steps, x = a.x + dx * t, z = a.z + dz * t;
+            const half = width / 2;
+            sections.push({
+                x, z, nx, nz,
+                lx: x + nx * half, lz: z + nz * half,
+                rx: x - nx * half, rz: z - nz * half,
+                v: (travelled + length * t) / 8
+            });
         }
-
-        // NOTE: We do NOT add to treeColliders here. 
-        // If we did, the 2D collision system would prevent the player from stepping ONTO the X/Z coordinates.
-        // Vertical physics is handled by getTerrainHeight checking window.parkourPlatforms.
+        travelled += length;
+    }
+    if (sections.length < 2) return;
+    for (const section of sections) {
+        positions.push(section.lx, getTerrainHeight(section.lx, section.lz) + lift, section.lz);
+        positions.push(section.rx, getTerrainHeight(section.rx, section.rz) + lift, section.rz);
+        uvs.push(0, section.v, 1, section.v);
+    }
+    for (let i = 1; i < sections.length; i++) {
+        const a = (i - 1) * 2, b = i * 2;
+        indices.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshStandardMaterial({
+        color, map, roughness: 1, metalness: 0, side: THREE.DoubleSide,
+        polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
     });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = 'islandPath';
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+}
+
+function makeDecorProp(type, x, z, rotation = 0, scale = 1) {
+    if (!window.WorldGen?.makeProp) return null;
+    const prop = WorldGen.makeProp({ type });
+    prop.position.set(x, getTerrainHeight(x, z), z);
+    prop.rotation.y = rotation;
+    prop.scale.setScalar(scale);
+    scene.add(prop);
+    return prop;
+}
+
+function addPathLamp(x, z, lit = false) {
+    const y = getTerrainHeight(x, z);
+    const group = new THREE.Group();
+    const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.13, 2.5, 6),
+        new THREE.MeshStandardMaterial({ color: 0x4b3829, roughness: 1 })
+    );
+    pole.position.y = 1.25;
+    group.add(pole);
+    const lantern = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.34, 0),
+        new THREE.MeshStandardMaterial({ color: 0xffe6a8, emissive: 0xffa94e, emissiveIntensity: 1.15, roughness: 0.35 })
+    );
+    lantern.position.y = 2.68;
+    group.add(lantern);
+    const cap = new THREE.Mesh(
+        new THREE.ConeGeometry(0.32, 0.28, 4),
+        new THREE.MeshStandardMaterial({ color: 0x4b3829, roughness: 1 })
+    );
+    cap.position.y = 3.02; cap.rotation.y = Math.PI / 4;
+    group.add(cap);
+    group.position.set(x, y, z);
+    scene.add(group);
+    if (lit) {
+        const light = new THREE.PointLight(0xffbb66, 0.7, 16);
+        light.position.set(x, y + 2.7, z);
+        scene.add(light);
+    }
+    return group;
+}
+
+function addLilyPads(cx, cz, radius, count, color, seed) {
+    const rand = mulberry32(seed);
+    const geometry = new THREE.CircleGeometry(1, 10, 0.22, Math.PI * 1.8);
+    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.8, side: THREE.DoubleSide });
+    for (let i = 0; i < count; i++) {
+        const angle = rand() * Math.PI * 2, distance = Math.sqrt(rand()) * radius * 0.62;
+        const pad = new THREE.Mesh(geometry, material);
+        pad.rotation.x = -Math.PI / 2;
+        pad.rotation.z = rand() * Math.PI * 2;
+        pad.scale.setScalar(0.28 + rand() * 0.42);
+        pad.position.set(cx + Math.cos(angle) * distance, 0.145, cz + Math.sin(angle) * distance);
+        scene.add(pad);
+    }
+}
+
+function addReedCluster(cx, cz, radius, count, seed) {
+    const rand = mulberry32(seed);
+    const stalkGeo = new THREE.CylinderGeometry(0.025, 0.04, 1.5, 4);
+    const stalkMat = new THREE.MeshStandardMaterial({ color: 0x557a3c, roughness: 0.9 });
+    const tipGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.24, 5);
+    const tipMat = new THREE.MeshStandardMaterial({ color: 0x8b6b3c, roughness: 1 });
+    const group = new THREE.Group();
+    for (let i = 0; i < count; i++) {
+        const angle = rand() * Math.PI * 2, distance = radius + (rand() - 0.5) * 1.6;
+        const height = 0.8 + rand() * 0.75;
+        const reed = new THREE.Group();
+        const stalk = new THREE.Mesh(stalkGeo, stalkMat);
+        stalk.scale.y = height / 1.5; stalk.position.y = height / 2;
+        const tip = new THREE.Mesh(tipGeo, tipMat);
+        tip.position.y = height + 0.1;
+        reed.add(stalk, tip);
+        reed.position.set(cx + Math.cos(angle) * distance, 0.14, cz + Math.sin(angle) * distance);
+        reed.rotation.z = (rand() - 0.5) * 0.16;
+        group.add(reed);
+    }
+    scene.add(group);
+}
+
+function addPondGlow(cx, cz, radius, color, opacity = 0.22) {
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(radius * 0.91, radius * 1.03, 48),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(cx, 0.14, cz);
+    scene.add(ring);
+}
+
+function addDeadTree(x, z, scale = 1, seed = 1) {
+    const rand = mulberry32(seed);
+    const group = new THREE.Group();
+    const bark = new THREE.MeshStandardMaterial({ color: 0x3c332c, roughness: 1 });
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.28, 3.4, 6), bark);
+    trunk.position.y = 1.7; group.add(trunk);
+    for (let i = 0; i < 4; i++) {
+        const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.1, 1.5, 5), bark);
+        branch.position.set(0, 2.1 + i * 0.34, 0);
+        branch.rotation.z = (i % 2 ? -1 : 1) * (0.65 + rand() * 0.45);
+        branch.rotation.y = rand() * Math.PI * 2;
+        branch.position.x = (i % 2 ? 1 : -1) * 0.42;
+        group.add(branch);
+    }
+    group.position.set(x, getTerrainHeight(x, z), z);
+    group.scale.setScalar(scale);
+    scene.add(group);
+}
+
+function addCaveDecor() {
+    addPathLamp(4.2, -45, false);
+    addPathLamp(-4.2, -55, false);
+    const crystalMat = new THREE.MeshStandardMaterial({ color: 0x77d8ff, emissive: 0x1d6b9c, emissiveIntensity: 0.9, roughness: 0.2 });
+    const crystalGeo = new THREE.OctahedronGeometry(0.6, 0);
+    [[6.5, -90], [-7, -88], [8, -99], [-6, -100]].forEach(([x, z], i) => {
+        const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+        crystal.position.set(x, 0.65, z);
+        crystal.scale.set(0.8, 1.8 + (i % 2) * 0.7, 0.8);
+        crystal.rotation.z = (i - 1.5) * 0.18;
+        scene.add(crystal);
+    });
+    const mushroomMat = new THREE.MeshStandardMaterial({ color: 0x8f74d8, emissive: 0x4a2e83, emissiveIntensity: 0.8, roughness: 0.6 });
+    const mushroomGeo = new THREE.SphereGeometry(0.16, 8, 5);
+    for (let i = 0; i < 8; i++) {
+        const angle = i / 8 * Math.PI * 2;
+        const cap = new THREE.Mesh(mushroomGeo, mushroomMat);
+        cap.position.set(Math.cos(angle) * (10 + (i % 3)), 0.45, -95 + Math.sin(angle) * (10 + (i % 2)));
+        scene.add(cap);
+    }
+}
+
+function createVoidShrine(x, z) {
+    const y = getTerrainHeight(x, z);
+    const stone = new THREE.MeshStandardMaterial({ color: 0x4b4b5e, roughness: 0.95 });
+    const darkStone = new THREE.MeshStandardMaterial({ color: 0x292b3d, roughness: 1 });
+    const rune = new THREE.MeshBasicMaterial({ color: 0x9b6dff, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(7, 32), stone);
+    floor.rotation.x = -Math.PI / 2; floor.position.set(x, y + 0.05, z); scene.add(floor);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(4.1, 5.4, 32), rune);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(x, y + 0.13, z); scene.add(ring);
+    for (const side of [-1, 1]) {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.85, 4.4, 0.85), darkStone);
+        pillar.position.set(x + side * 4.1, y + 2.2, z); scene.add(pillar);
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.35, 1.35), stone);
+        cap.position.set(x + side * 4.1, y + 4.48, z); scene.add(cap);
+    }
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(9.1, 0.7, 0.9), darkStone);
+    lintel.position.set(x, y + 4.6, z); scene.add(lintel);
+    for (let i = 0; i < 5; i++) {
+        const shard = createRockMesh(0.35 + (i % 2) * 0.25);
+        shard.position.set(x + Math.cos(i * 1.7) * 3.4, y + 2.2 + i * 0.55, z + Math.sin(i * 1.7) * 3.4);
+        scene.add(shard);
+    }
+    const light = new THREE.PointLight(0x9b6dff, 1.1, 26);
+    light.position.set(x, y + 4, z); scene.add(light);
+    spawnPortal(x, z, false, true);
+}
+
+function createLavaShrine(x, z) {
+    const y = getTerrainHeight(x, z);
+    const stone = new THREE.MeshStandardMaterial({ color: 0x2c2421, roughness: 0.95 });
+    const ember = new THREE.MeshBasicMaterial({ color: 0xff6b2c, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false });
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(5.2, 28), stone);
+    floor.rotation.x = -Math.PI / 2; floor.position.set(x, y + 0.05, z); scene.add(floor);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.4, 2.2, 28), ember);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(x, y + 0.13, z); scene.add(ring);
+    for (let i = 0; i < 6; i++) {
+        const rock = createRockMesh(0.55 + (i % 3) * 0.22);
+        const angle = i / 6 * Math.PI * 2;
+        rock.position.set(x + Math.cos(angle) * 4.2, y + 0.2, z + Math.sin(angle) * 4.2);
+        scene.add(rock);
+    }
+    const light = new THREE.PointLight(0xff6b2c, 0.8, 18);
+    light.position.set(x, y + 2.2, z); scene.add(light);
+}
+
+function createDefaultIslandDecor() {
+    const pathTex = createNoiseTexture(64, 64, '#b79766', '#8b6c48', 0.07, 771);
+    pathTex.wrapS = pathTex.wrapT = THREE.RepeatWrapping;
+    for (const path of DEFAULT_PATHS) {
+        createPathRibbon(path.points, path.width + 0.8, 0x6c543a, null, 0.045);
+        createPathRibbon(path.points, path.width, 0xffffff, pathTex, 0.075);
+    }
+
+    // A small stone spawn terrace.
+    const terrace = new THREE.Mesh(
+        new THREE.CircleGeometry(5.5, 32),
+        new THREE.MeshStandardMaterial({ color: 0x9b927d, roughness: 1 })
+    );
+    terrace.rotation.x = -Math.PI / 2;
+    terrace.position.set(27, 0.05, 0);
+    scene.add(terrace);
+
+    // Lake and pond character.
+    addPondGlow(0, 0, 20, 0x9ceaff, 0.18);
+    addLilyPads(0, 0, 20, 14, 0x47784d, 41);
+    addReedCluster(0, 0, 21.5, 7, 43);
+    addReedCluster(0, 0, 22.2, 5, 47);
+
+    addPondGlow(-60, -30, 10, 0xa9f5ff, 0.36);
+    addLilyPads(-60, -30, 10, 9, 0x6e9e66, 53);
+    addReedCluster(-60, -30, 8.4, 5, 59);
+    const lightPondLight = new THREE.PointLight(0x9ceaff, 0.5, 20);
+    lightPondLight.position.set(-60, 2.4, -30); scene.add(lightPondLight);
+    makeDecorProp('flowers', -48, -22, 0, 1.2);
+    makeDecorProp('bush', -70, -18, 0, 1.1);
+
+    addPondGlow(60, 50, 14, 0x7a5ca8, 0.28);
+    addLilyPads(60, 50, 14, 6, 0x324d48, 67);
+    addReedCluster(60, 50, 12.4, 5, 71);
+    addDeadTree(74, 37, 0.9, 73);
+    addDeadTree(48, 66, 0.72, 79);
+    const darkPondLight = new THREE.PointLight(0x7555a8, 0.45, 22);
+    darkPondLight.position.set(60, 2.2, 50); scene.add(darkPondLight);
+    makeDecorProp('sign', 49, 44, -Math.PI / 4);
+
+    // Path lanterns and village life.
+    addPathLamp(23, 2, true);
+    addPathLamp(-23, 2, false);
+    addPathLamp(3.8, 33, false);
+    addPathLamp(-3.8, 80, true);
+    addPathLamp(-43, -18, false);
+    addPathLamp(51, 48, false);
+    addPathLamp(78, -56, false);
+    addPathLamp(16, 20, false);
+    for (const bench of DEFAULT_BENCHES) makeDecorProp('bench', bench.x, bench.z, bench.rot);
+    makeDecorProp('barrel', 28, -4, 0, 1.15);
+    makeDecorProp('crate', 31, -6, 0.3, 1.05);
+    makeDecorProp('barrel', -29, 7, 0, 1.05);
+    makeDecorProp('sign', 20, 5, -Math.PI * 0.18);
+    makeDecorProp('bush', -49, 18, 0, 1.1);
+    makeDecorProp('flowers', -45, 20, Math.PI * 0.4, 1.2);
+    makeDecorProp('flowers', -53, 4, -Math.PI * 0.3, 1.1);
+    makeDecorProp('barrel', 4, 92, 0, 1.15);
+    makeDecorProp('crate', -4, 96, -0.2, 1.05);
+    addPathLamp(5, 92, false);
+
+    addCaveDecor();
+    createLavaShrine(16, 16);
+    createVoidShrine(86, -58);
 }
 
 function addHotspotParticles(x, y, z) {
@@ -4551,7 +5056,38 @@ function addHotspotParticles(x, y, z) {
     scene.add(parts);
 }
 
+const LIGHT_SUN_DAY = new THREE.Color(0xfff2d8);
+const LIGHT_SUN_GOLD = new THREE.Color(0xffb067);
+const LIGHT_MOON = new THREE.Color(0x9bb8ff);
+const LIGHT_FILL_DAY = new THREE.Color(0xb7dcff);
+const LIGHT_FILL_NIGHT = new THREE.Color(0x788de8);
+const LIGHT_HEMI_DAY_SKY = new THREE.Color(0xfff0cf);
+const LIGHT_HEMI_DAY_GROUND = new THREE.Color(0x2a3138);
+const LIGHT_HEMI_NIGHT_SKY = new THREE.Color(0x273a6e);
+const LIGHT_HEMI_NIGHT_GROUND = new THREE.Color(0x080b16);
+const _lightSun = new THREE.Color();
+const _lightHemiSky = new THREE.Color();
+const _lightHemiGround = new THREE.Color();
+const _lightFill = new THREE.Color();
+
+function applyWorldLights(sunColor, sunIntensity, hemiSky, hemiGround, hemiIntensity, fillColor, fillIntensity) {
+    if (sunLight) {
+        sunLight.color.copy(sunColor);
+        sunLight.intensity = sunIntensity;
+    }
+    if (hemiLight) {
+        hemiLight.color.copy(hemiSky);
+        hemiLight.groundColor.copy(hemiGround);
+        hemiLight.intensity = hemiIntensity;
+    }
+    if (fillLight) {
+        fillLight.color.copy(fillColor);
+        fillLight.intensity = fillIntensity;
+    }
+}
+
 function updateDayNightCycle(dt) {
+    if(window.Housing && Housing.inside)return;
 
     // Always run local time simulation for smooth movement
     if (typeof DAY_DURATION !== 'undefined') {
@@ -4559,73 +5095,103 @@ function updateDayNightCycle(dt) {
         if (worldTime >= 24) worldTime -= 24;
     }
 
-    // 1. Calculate Colors
-    let lightIntensity = 0.65; // Reduced for cozy/warm feel (was 1.0)
-
     // --- LAVA WORLD OVERRIDE ---
     if (isInLavaWorld) {
-        lightIntensity = 0.8;
-
-        if (sunLight) {
-            sunLight.color.setHex(0xffaa00); // Orange light
-            sunLight.intensity = 0.8;
-        }
-
-        // Apply immediately
         _optColor1.setHex(0x220000);
         scene.background = _optColor1;
         scene.fog.color = _optColor1;
+        _lightSun.setHex(0xffa04a);
+        _lightHemiSky.setHex(0x5a1c0a);
+        _lightHemiGround.setHex(0x160000);
+        _lightFill.setHex(0xff5a28);
+        applyWorldLights(_lightSun, 1.2, _lightHemiSky, _lightHemiGround, 0.34, _lightFill, 0.28);
         return; // Skip standard day/night cycle
     }
 
     // --- VOID OVERRIDE ---
     if (isInVoid) {
         _optColor1.setHex(0x000000);
-        lightIntensity = 0.5;
-        // Apply immediately
         scene.background = _optColor1;
         scene.fog.color = _optColor1;
+        _lightSun.setHex(0x8aa5ff);
+        _lightHemiSky.setHex(0x101a3a);
+        _lightHemiGround.setHex(0x000000);
+        _lightFill.setHex(0x9a76ff);
+        applyWorldLights(_lightSun, 0.52, _lightHemiSky, _lightHemiGround, 0.26, _lightFill, 0.18);
         return;
     }
 
     // --- STANDARD WORLD CYCLE ---
-    // Normalize time to 0-24
-    // 6 AM to 6 PM = Day
+    // Start with comfortable midday values, then blend through dawn/dusk.
+    let sunIntensity = 1.05;
+    let hemiIntensity = 0.44;
+    let fillIntensity = 0.23;
+    _lightSun.copy(LIGHT_SUN_DAY);
+    _lightHemiSky.copy(LIGHT_HEMI_DAY_SKY);
+    _lightHemiGround.copy(LIGHT_HEMI_DAY_GROUND);
+    _lightFill.copy(LIGHT_FILL_DAY);
+
     if (worldTime >= 6 && worldTime < 18) {
         // Sunrise (6am - 7am)
         if (worldTime < 7) {
-            _optColor1.copy(NIGHT_COLOR).lerp(DAY_COLOR, (worldTime - 6));
-            lightIntensity = 0.3 + (worldTime - 6) * 0.35; // 0.3 -> 0.65
+            const t = worldTime - 6;
+            _optColor1.copy(NIGHT_COLOR).lerp(DAY_COLOR, t);
+            sunIntensity = 0.32 + t * 0.73;
+            hemiIntensity = 0.22 + t * 0.22;
+            fillIntensity = 0.10 + t * 0.13;
+            _lightSun.copy(LIGHT_SUN_GOLD).lerp(LIGHT_SUN_DAY, t);
+            _lightHemiSky.copy(LIGHT_HEMI_NIGHT_SKY).lerp(LIGHT_HEMI_DAY_SKY, t);
+            _lightHemiGround.copy(LIGHT_HEMI_NIGHT_GROUND).lerp(LIGHT_HEMI_DAY_GROUND, t);
+            _lightFill.copy(LIGHT_FILL_NIGHT).lerp(LIGHT_FILL_DAY, t);
         }
         // Sunset (5pm - 6pm)
         else if (worldTime > 17) {
-            _optColor1.copy(DAY_COLOR).lerp(SUNSET_COLOR, (worldTime - 17));
-            lightIntensity = 0.65 - (worldTime - 17) * 0.35; // 0.65 -> 0.3
+            const t = worldTime - 17;
+            _optColor1.copy(DAY_COLOR).lerp(SUNSET_COLOR, t);
+            sunIntensity = 1.05 - t * 0.5;
+            hemiIntensity = 0.44 - t * 0.22;
+            fillIntensity = 0.23 - t * 0.13;
+            _lightSun.copy(LIGHT_SUN_DAY).lerp(LIGHT_SUN_GOLD, Math.min(1, t * 1.4));
+            _lightHemiSky.copy(LIGHT_HEMI_DAY_SKY).lerp(LIGHT_HEMI_NIGHT_SKY, t);
+            _lightHemiGround.copy(LIGHT_HEMI_DAY_GROUND).lerp(LIGHT_HEMI_NIGHT_GROUND, t);
+            _lightFill.copy(LIGHT_FILL_DAY).lerp(LIGHT_FILL_NIGHT, t);
         }
         // Middle of Day
         else {
             _optColor1.copy(DAY_COLOR);
-            lightIntensity = 0.65; // Cozy daytime light
         }
     } else {
-        // Night
-        lightIntensity = 0.2; // Dim light
-
-        // Dusk (6pm - 7pm)
+        // Dusk (6pm - 7pm) fades the last warm light into moonlight.
         if (worldTime >= 18 && worldTime < 19) {
-            _optColor1.copy(SUNSET_COLOR).lerp(NIGHT_COLOR, (worldTime - 18));
+            const t = worldTime - 18;
+            _optColor1.copy(SUNSET_COLOR).lerp(NIGHT_COLOR, t);
+            sunIntensity = 0.55 - t * 0.23;
+            hemiIntensity = 0.22;
+            fillIntensity = 0.10;
+            _lightSun.copy(LIGHT_SUN_GOLD).lerp(LIGHT_MOON, t);
+            _lightHemiSky.copy(LIGHT_HEMI_NIGHT_SKY);
+            _lightHemiGround.copy(LIGHT_HEMI_NIGHT_GROUND);
+            _lightFill.copy(LIGHT_FILL_NIGHT);
         }
         // Middle of Night
         else {
             _optColor1.copy(NIGHT_COLOR);
+            sunIntensity = 0.32;
+            hemiIntensity = 0.22;
+            fillIntensity = 0.10;
+            _lightSun.copy(LIGHT_MOON);
+            _lightHemiSky.copy(LIGHT_HEMI_NIGHT_SKY);
+            _lightHemiGround.copy(LIGHT_HEMI_NIGHT_GROUND);
+            _lightFill.copy(LIGHT_FILL_NIGHT);
         }
     }
 
-    // Rain Override: Darken the sky if it's raining.
+    // Rain keeps the world readable while still feeling overcast.
     if (isRaining) {
-        const rainColor = new THREE.Color(0x445566);
-        _optColor1.lerp(rainColor, 0.9);
-        lightIntensity *= 0.5; // Darken light during rain
+        _optColor1.lerp(_rainColor, 0.9);
+        sunIntensity *= 0.58;
+        hemiIntensity *= 0.78;
+        fillIntensity *= 0.68;
     }
 
     // Apply Visuals
@@ -4655,17 +5221,26 @@ function updateDayNightCycle(dt) {
         window.starSystem.position.set(skyAnchorX, 0, skyAnchorZ);
     }
 
-    // Update Light
+    // Update Light. The main light follows the sun by day and the moon at night.
     if (sunLight) {
         if (worldTime > 6 && worldTime < 18) {
-            sunLight.position.copy(sunMesh.position);
-            sunLight.intensity = lightIntensity;
-            sunLight.color.setHex(0xffffff);
+            if (sunMesh) sunLight.position.copy(sunMesh.position);
+            sunLight.color.copy(_lightSun);
+            sunLight.intensity = sunIntensity;
         } else {
-            sunLight.position.copy(moonMesh.position);
-            sunLight.intensity = lightIntensity * 0.5;
-            sunLight.color.setHex(0x4444ff);
+            if (moonMesh) sunLight.position.copy(moonMesh.position);
+            sunLight.color.copy(_lightSun);
+            sunLight.intensity = sunIntensity;
         }
+    }
+    if (hemiLight) {
+        hemiLight.color.copy(_lightHemiSky);
+        hemiLight.groundColor.copy(_lightHemiGround);
+        hemiLight.intensity = hemiIntensity;
+    }
+    if (fillLight) {
+        fillLight.color.copy(_lightFill);
+        fillLight.intensity = fillIntensity;
     }
 
     // Stars visibility (fade in at night)
@@ -4689,51 +5264,182 @@ function updateDayNightCycle(dt) {
 }
 
 function createRainSystem() {
-    const rainCount = 2000;
+    const rainCount = 1600;
     const geom = new THREE.BufferGeometry();
-    const positions = [];
-    const velocities = [];
+    const positions = new Float32Array(rainCount * 6);
+    const drops = [];
+
+    const writeDrop = (index, drop) => {
+        const o = index * 6;
+        // A streak leans slightly with the wind: top is offset from the foot.
+        positions[o] = drop.x - drop.length * 0.09;
+        positions[o + 1] = drop.y + drop.length;
+        positions[o + 2] = drop.z - drop.length * 0.025;
+        positions[o + 3] = drop.x;
+        positions[o + 4] = drop.y;
+        positions[o + 5] = drop.z;
+    };
 
     for (let i = 0; i < rainCount; i++) {
-        // Random positions above the island
-        positions.push((Math.random() - 0.5) * 200); // x
-        positions.push(Math.random() * 50 + 10);     // y (height)
-        positions.push((Math.random() - 0.5) * 200); // z
-        velocities.push(0.4 + Math.random() * 0.3);  // Slower, gentler rain
+        const drop = {
+            x: (Math.random() - 0.5) * 94,
+            y: Math.random() * 46,
+            z: (Math.random() - 0.5) * 94,
+            length: 0.8 + Math.random() * 1.5,
+            speed: 18 + Math.random() * 17
+        };
+        drops.push(drop);
+        writeDrop(i, drop);
     }
 
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geom.userData = { velocities: velocities };
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.userData = { drops, writeDrop };
 
-    // Create thin elongated rain streak texture
-    const canvas = document.createElement('canvas');
-    canvas.width = 1;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-
-    // Gradient from top (transparent) to bottom (blue-white)
-    const gradient = ctx.createLinearGradient(0, 0, 0, 64);
-    gradient.addColorStop(0, 'rgba(150, 200, 255, 0)');
-    gradient.addColorStop(0.2, 'rgba(180, 210, 255, 0.4)');
-    gradient.addColorStop(1, 'rgba(220, 235, 255, 0.9)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 1, 64);
-
-    const rainTexture = new THREE.CanvasTexture(canvas);
-
-    const mat = new THREE.PointsMaterial({
-        color: 0xccddff,
-        size: 0.4,
+    const material = new THREE.LineBasicMaterial({
+        color: 0xcfe8ff,
         transparent: true,
-        opacity: 0.8,
-        map: rainTexture,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false
+        opacity: 0.48,
+        depthWrite: false,
+        blending: THREE.NormalBlending
     });
 
-    rainSystem = new THREE.Points(geom, mat);
+    rainSystem = new THREE.LineSegments(geom, material);
+    rainSystem.frustumCulled = false; // follows the player each frame
     rainSystem.visible = false; // Start off
     scene.add(rainSystem);
+}
+
+// --- RETRO POST-PROCESSING ---
+// The scene is rendered into a small nearest-neighbour target, then a
+// full-screen pass restores it with a gentle colour grade and vignette. The
+// low-resolution target supplies the chunky pixel look without changing the
+// canvas size, so DOM overlays, screen punching and input stay untouched.
+let retroPipeline = null;
+const RETRO_PIXEL_SIZES = [2, 3, 4];
+
+function retroPixelSize() {
+    const size = Number(saveState.retroPixelSize);
+    return RETRO_PIXEL_SIZES.includes(size) ? size : 3;
+}
+
+function createRetroPipeline() {
+    const target = new THREE.WebGLRenderTarget(1, 1, {
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+        depthBuffer: true,
+        stencilBuffer: false
+    });
+    target.texture.generateMipmaps = false;
+
+    const material = new THREE.ShaderMaterial({
+        uniforms: {
+            tDiffuse: { value: target.texture },
+            uResolution: { value: new THREE.Vector2(1, 1) },
+            uTime: { value: 0 }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = vec4(position.xy, 0.0, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D tDiffuse;
+            uniform vec2 uResolution;
+            uniform float uTime;
+            varying vec2 vUv;
+
+            float hash(vec2 p) {
+                return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+            }
+
+            void main() {
+                vec4 texel = texture2D(tDiffuse, vUv);
+                vec3 color = texel.rgb;
+
+                // Richer but still natural: a little contrast and saturation,
+                // then warm highlights and cool shadows.
+                color = (color - 0.5) * 1.05 + 0.5;
+                float luma = dot(color, vec3(0.299, 0.587, 0.114));
+                color = mix(vec3(luma), color, 1.13);
+                color.r += 0.014 * smoothstep(0.55, 1.0, luma);
+                color.b += 0.011 * (1.0 - smoothstep(0.35, 0.85, luma));
+
+                // Soft vignette keeps focus in the middle of the screen.
+                vec2 p = vUv - 0.5;
+                float vignette = 1.0 - smoothstep(0.28, 0.78, length(p));
+                color *= mix(0.87, 1.0, vignette);
+
+                // Very light animated grain, hidden wherever the punch pass
+                // made the canvas transparent for an embedded video screen.
+                float grain = hash(floor(vUv * uResolution) + floor(uTime * 12.0)) - 0.5;
+                color += grain * 0.028 * texel.a;
+
+                gl_FragColor = vec4(clamp(color, 0.0, 1.0), texel.a);
+            }
+        `,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        blending: THREE.NoBlending
+    });
+
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    quad.frustumCulled = false;
+    const quadScene = new THREE.Scene();
+    quadScene.add(quad);
+    const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    retroPipeline = {
+        target, material, quadScene, quadCamera,
+        width: 1, height: 1
+    };
+    resizeRetroPipeline();
+    return retroPipeline;
+}
+
+function ensureRetroPipeline() {
+    return retroPipeline || createRetroPipeline();
+}
+
+function resizeRetroPipeline() {
+    if (!retroPipeline || !renderer) return;
+    const scale = retroPixelSize();
+    const width = Math.max(1, Math.floor(window.innerWidth / scale));
+    const height = Math.max(1, Math.floor(window.innerHeight / scale));
+    if (retroPipeline.width === width && retroPipeline.height === height) return;
+    retroPipeline.target.setSize(width, height);
+    retroPipeline.material.uniforms.uResolution.value.set(width, height);
+    retroPipeline.width = width;
+    retroPipeline.height = height;
+}
+
+function renderGameView(viewScene, viewCamera) {
+    if (!saveState.retroShader) {
+        renderer.setRenderTarget(null);
+        renderer.render(viewScene, viewCamera);
+        if (typeof GamePerformance !== 'undefined') GamePerformance.captureRender(renderer.info);
+        if (window.punchScreens) { try { window.punchScreens(); } catch (e) { } }
+        return;
+    }
+
+    const pipeline = ensureRetroPipeline();
+    resizeRetroPipeline();
+    renderer.setRenderTarget(pipeline.target);
+    try {
+        renderer.render(viewScene, viewCamera);
+        // Count the world draw, not the single full-screen copy that follows.
+        if (typeof GamePerformance !== 'undefined') GamePerformance.captureRender(renderer.info);
+        // Punch the video quads while the scene depth buffer is still attached
+        // to this render target, then upscale the finished pixels to the canvas.
+        if (window.punchScreens) { try { window.punchScreens(); } catch (e) { } }
+        renderer.setRenderTarget(null);
+        pipeline.material.uniforms.uTime.value = performance.now() * 0.001;
+        renderer.render(pipeline.quadScene, pipeline.quadCamera);
+    } finally {
+        renderer.setRenderTarget(null);
+    }
 }
 
 // --- THREE.JS SCENE SETUP ---
@@ -4750,12 +5456,17 @@ function setupThreeJS() {
     // KEEP antialias: false for pixel art style
     renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
 
+    // Filmic response keeps bright skies and warm lights from clipping while
+    // retaining detail in shaded grass, wood and characters.
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
+
     // --- SHADOW MAP ENABLED ---
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
 
     // --- PIXEL RATIO FIX ---
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setPixelRatio(saveState.renderScale===0?(window.devicePixelRatio||1):(saveState.renderScale===undefined?(window.devicePixelRatio||1):saveState.renderScale));
     // -----------------------
 
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -4781,12 +5492,14 @@ function setupThreeJS() {
     // CSS3D overlay for the YouTube Screen prop (defined in props.js).
     if (window.initCssScene) window.initCssScene();
 
-    const hemi = new THREE.HemisphereLight(0xFFEEB1, 0x080820, 0.25); // Darker ambient
-    hemi.name = 'hemiLight';
-    scene.add(hemi);
+    // Warm sky bounce, cool ground bounce. Stronger than the old flat ambient
+    // term so shaded parts keep their shape instead of turning muddy.
+    hemiLight = new THREE.HemisphereLight(0xFFF0CF, 0x2A3138, 0.44);
+    hemiLight.name = 'hemiLight';
+    scene.add(hemiLight);
 
     // The Sun Light (Shadow caster)
-    sunLight = new THREE.DirectionalLight(0xffffff, 1.1); // Reduced from 1.8 for less harsh brightness
+    sunLight = new THREE.DirectionalLight(0xFFF2D8, 1.05);
     sunLight.position.set(50, 100, 50);
     sunLight.castShadow = true;
 
@@ -4801,7 +5514,16 @@ function setupThreeJS() {
     sunLight.shadow.camera.near = 0.5;
     sunLight.shadow.camera.far = 500;
     sunLight.shadow.bias = -0.0005; // Reduce artifacts
+    sunLight.shadow.normalBias = 0.02;
     scene.add(sunLight);
+
+    // Cool counter-light from the opposite side. It has no shadow map, so it
+    // adds shape to shaded sides and characters for very little cost.
+    fillLight = new THREE.DirectionalLight(0xB7DCFF, 0.23);
+    fillLight.name = 'fillLight';
+    fillLight.position.set(-60, 45, -40);
+    fillLight.castShadow = false;
+    scene.add(fillLight);
 
     // Sun Sprite (Billboard - always faces camera)
     const sunCanvas = document.createElement('canvas');
@@ -4899,6 +5621,7 @@ function setupThreeJS() {
         window.darkPondCollider = null;
         window.dockCollider = null;
         window.customWorld = WorldGen.buildCustomWorld(scene, window.CUSTOM_LEVEL);
+        window.Ocean?.extendWater(window.customWorld.water);
         // Build the authored props / flowers first; generateWorld() resets the
         // shared tree + collider arrays, so the generated ocean islands (below)
         // must be added *after* it or their trees would be wiped.
@@ -4906,44 +5629,14 @@ function setupThreeJS() {
         // Generated islands in the ocean beyond the authored map, so sailing
         // off the edge of a custom level still leads somewhere.
         if (window.Ocean && typeof window.Ocean.layoutAround === 'function') {
-            const around = window.Ocean.layoutAround(window.CUSTOM_LEVEL.size, window.CUSTOM_LEVEL.seaLevel);
-            window.customOcean = around;
-            const g = new THREE.Group();
-            g.name = "customOceanIslands";
-            window.customOceanTrees = [];
-            around.islands.forEach(isl => {
-                const mesh = window.Ocean.buildIslandMesh(isl);
-                g.add(mesh);
-                const rand = (function () {
-                    let s = isl.seed >>> 0;
-                    return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
-                })();
-                if (window.WorldGen.createDetailedTree) {
-                    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6D4C41, roughness: 1.0 });
-                    const leafTex = WorldGen.createLeafTexture();
-                    const n = Math.round(isl.radius * 0.3);
-                    for (let i = 0; i < n; i++) {
-                        const a = rand() * Math.PI * 2;
-                        const d = rand() * isl.radius * 0.7;
-                        const x = isl.x + Math.cos(a) * d;
-                        const z = isl.z + Math.sin(a) * d;
-                        const h = window.Ocean.islandHeight(isl, x, z);
-                        if (h < (window.CUSTOM_LEVEL.seaLevel || 0) + 0.6) continue;
-                        const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, color: 0x88CC88, roughness: 0.8, flatShading: true });
-                        leafMat.color.setHSL(0.35 + (rand() - 0.5) * 0.2, 0.6, 0.4);
-                        const t = WorldGen.createDetailedTree(leafMat, trunkMat);
-                        const s = 0.7 + rand() * 0.4;
-                        t.position.set(x, h, z);
-                        t.rotation.y = rand() * Math.PI * 2;
-                        t.scale.set(s, s, s);
-                        g.add(t);
-                        window.customOceanTrees.push(t);
-                        treeColliders.push({ x: x, z: z, radius: 1.5 });
-                    }
-                }
-                if (typeof spawnOceanIslandFlowers === 'function') spawnOceanIslandFlowers(isl, rand);
-            });
-            scene.add(g);
+            const level=window.CUSTOM_LEVEL;
+            const around=window.Ocean.layoutAround(level.size,level.seaLevel,level.oceanFloor,level);
+            window.customOcean=around;
+            const flowerStart=pickableFlowers.length;
+            const built=window.Ocean.build(scene,{layout:around,name:'customOceanIslands',decorate:true});
+            window.customOceanTrees=built.trees;
+            window.oceanWorld={trees:built.trees,colliders:built.colliders,flowers:pickableFlowers.slice(flowerStart),custom:true};
+            treeMeshes.push(...built.trees);treeColliders.push(...built.colliders);
         }
         createNPCs();
         createLocalPlayer();
@@ -4951,7 +5644,7 @@ function setupThreeJS() {
     } else {
 
     // Create HIGH QUALITY Grass Texture (Warmer/Vibrant Green)
-    const grassTex = createNoiseTexture(256, 256, '#8FB38F', '#6B8E5F', 0.05, Math.random() * 100);
+    const grassTex = createNoiseTexture(256, 256, '#D0DCC8', '#B4C3AC', 0.05, Math.random() * 100);
     grassTex.wrapS = THREE.RepeatWrapping;
     grassTex.wrapT = THREE.RepeatWrapping;
     grassTex.repeat.set(8, 8);
@@ -4964,40 +5657,49 @@ function setupThreeJS() {
     const BEACH_WIDTH = 20; // Width of sandy beach area
     const EDGE_FALLOFF = 12; // Distance from edge where slope to water begins
 
-    // Create vertex colors for grass-to-sand blend
+    // Create vertex colors for a softer, more varied island palette.
     const colors = new Float32Array(posAttr.count * 3);
-    const grassColor = new THREE.Color('#6B8E5F');
-    const sandColor = new THREE.Color('#F0D060'); // Golden yellow sand
+    const grassDark = new THREE.Color('#4F7351');
+    const grassMid = new THREE.Color('#6E9568');
+    const grassLight = new THREE.Color('#8EAC72');
+    const meadow = new THREE.Color('#A9BB7A');
+    const rockColor = new THREE.Color('#7D8178');
+    const darkMoss = new THREE.Color('#3F5A4A');
+    const lightMoss = new THREE.Color('#8DBB85');
+    const shrineStone = new THREE.Color('#5E5B72');
+    const sandColor = new THREE.Color('#E8CD82');
 
     for (let i = 0; i < posAttr.count; i++) {
         const x = posAttr.getX(i);
         const z = posAttr.getZ(i);
         const distFromCenter = Math.sqrt(x * x + z * z);
+        const distLightPond = Math.sqrt((x + 60) ** 2 + (z + 30) ** 2);
+        const distDarkPond = Math.sqrt((x - 60) ** 2 + (z - 50) ** 2);
+        const distVoidShrine = Math.sqrt((x - 86) ** 2 + (z + 58) ** 2);
 
         // Use getTerrainHeight directly - it already has edge falloff built in
         const height = getTerrainHeight(x, z);
         posAttr.setY(i, height);
 
-        // Apply colors based on distance from center
+        let color = grassMid.clone();
+        const variation = Math.sin(x * 0.11 + z * 0.07) * Math.cos(z * 0.13 - x * 0.04);
+        color.lerp(variation > 0 ? grassLight : grassDark, Math.min(0.65, Math.abs(variation) * 0.55));
+        if (height < 0.7) color.lerp(meadow, 0.16);
+        if (height > 5) color.lerp(rockColor, Math.min(0.58, (height - 5) / 16));
+        if (z < -58 && Math.abs(x) < 46 && height > 2) color.lerp(rockColor, 0.24);
+        if (distLightPond < 24) color.lerp(lightMoss, (1 - distLightPond / 24) * 0.38);
+        if (distDarkPond < 34) color.lerp(darkMoss, (1 - distDarkPond / 34) * 0.48);
+        if (distVoidShrine < 20) color.lerp(shrineStone, (1 - distVoidShrine / 20) * 0.62);
+
         if (distFromCenter > ISLAND_RADIUS - EDGE_FALLOFF) {
-            // Slope zone and beyond - full sand color
-            colors[i * 3] = sandColor.r;
-            colors[i * 3 + 1] = sandColor.g;
-            colors[i * 3 + 2] = sandColor.b;
+            color.copy(sandColor);
         } else if (distFromCenter > ISLAND_RADIUS - BEACH_WIDTH) {
-            // Beach zone - grass-to-sand blend
             const beachProgress = (distFromCenter - (ISLAND_RADIUS - BEACH_WIDTH)) / (BEACH_WIDTH - EDGE_FALLOFF);
-            const blendFactor = Math.min(1, Math.max(0, beachProgress));
-            const blendColor = grassColor.clone().lerp(sandColor, blendFactor);
-            colors[i * 3] = blendColor.r;
-            colors[i * 3 + 1] = blendColor.g;
-            colors[i * 3 + 2] = blendColor.b;
-        } else {
-            // Interior - normal grass
-            colors[i * 3] = grassColor.r;
-            colors[i * 3 + 1] = grassColor.g;
-            colors[i * 3 + 2] = grassColor.b;
+            color.lerp(sandColor, Math.min(1, Math.max(0, beachProgress)));
         }
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
     }
 
     // Add vertex colors to geometry
@@ -5055,6 +5757,7 @@ function setupThreeJS() {
     ocean.rotation.x = -Math.PI / 2;
     ocean.position.y = (typeof OCEAN_LEVEL === 'number' ? OCEAN_LEVEL : -3); // Ocean surface
     scene.add(ocean);
+    window.Ocean?.extendWater(ocean);
 
     // --- SMALL POND (Near Cabin) ---
     const pondTex = createNoiseTexture(64, 64, '#3a9a9a', '#2a7a7a', 0.04, 77);
@@ -5150,10 +5853,14 @@ function setupThreeJS() {
 
     createNPCs(); createLocalPlayer();
     createWaterfallZone();
+    createDefaultIslandDecor();
     createRainSystem();
-    createLavaWorld();
 
     } // end procedural island / custom-level branch
+
+    // Both special worlds are available on procedural and editor-made maps.
+    createLavaWorld();
+    createVoidWorld();
 
     fishingLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0xffffff }));
     fishingLine.frustumCulled = false; fishingLine.visible = false; scene.add(fishingLine);
@@ -5167,6 +5874,7 @@ function setupThreeJS() {
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
+        resizeRetroPipeline();
         // Keep the CSS3D overlay (YouTube Screen prop) in step with the canvas
         // so the video stays pinned to its housing after a window resize.
         if (typeof cssRenderer !== 'undefined' && cssRenderer && typeof cssRenderer.setSize === 'function') {
@@ -5193,183 +5901,55 @@ function createSpeakerTexture() {
 }
 
 function createCabin() {
-    const grp = new THREE.Group();
-
-    const cx = -40;
-    const cz = 10;
-    grp.position.set(cx, 0, cz);
-
-    // --- MATERIALS ---
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5D4037, roughness: 0.9 });
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x3E2723, roughness: 0.8 });
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x8D6E63 });
-
-    // --- HELPER: Create Log ---
-    function createLog(length, x, y, z, rotY = 0) {
-        const geo = new THREE.CylinderGeometry(0.35, 0.35, length, 8);
-        const mesh = new THREE.Mesh(geo, woodMat);
-        mesh.rotation.z = Math.PI / 2;
-        mesh.rotation.y = rotY;
-        mesh.position.set(x, y, z);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        grp.add(mesh);
-    }
-
-    // --- 0. BASE FILLERS (Fixes the bottom gap!) ---
-    // These fit BETWEEN the side walls at the lowest level
-    // Back Wall Base
-    createLog(8.2, 0, 0.35, -4.5, 0);
-    // Front Wall Base (Left & Right of door)
-    createLog(3.5, -3.5, 0.35, 4.5, 0);
-    createLog(3.5, 3.5, 0.35, 4.5, 0);
-
-    // --- 1. WALLS (Interlocking) ---
-    let y = 0.35;
-    const wallHeight = 4.0;
-
-    while (y < wallHeight) {
-
-        // --- LAYER A: SIDE WALLS (Z-Axis) ---
-        // These define the corners for this layer
-        const isWindow = (y > 1.2 && y < 2.8);
-
-        if (isWindow) {
-            createLog(3.5, -4.5, y, -3.5, Math.PI / 2); // Left Back
-            createLog(3.5, -4.5, y, 3.5, Math.PI / 2);  // Left Front
-            createLog(3.5, 4.5, y, -3.5, Math.PI / 2);  // Right Back
-            createLog(3.5, 4.5, y, 3.5, Math.PI / 2);   // Right Front
-        } else {
-            createLog(11, -4.5, y, 0, Math.PI / 2); // Left Full
-            createLog(11, 4.5, y, 0, Math.PI / 2);  // Right Full
-        }
-
-        // --- LAYER B: FRONT/BACK WALLS (X-Axis) ---
-        // Sits on top of Layer A
-        const y2 = y + 0.35;
-
-        // Back Wall
-        createLog(11, 0, y2, -4.5, 0);
-
-        // Front Wall (Door logic)
-        const isDoor = (y2 < 2.6);
-        if (isDoor) {
-            createLog(4, -3.5, y2, 4.5, 0);
-            createLog(4, 3.5, y2, 4.5, 0);
-        } else {
-            createLog(11, 0, y2, 4.5, 0); // Header
-        }
-
-        // Increment for next Layer A
-        y += 0.7;
-    }
-
-    // --- 2. ROOF GABLES (The Triangles) ---
-    // Tighter spacing (0.4) to prevent holes
-    let gableY = 4.0;
-    const ridgeHeight = 6.8; // Go slightly into the roof beam
-    const maxGableWidth = 10;
-
-    while (gableY < ridgeHeight) {
-        gableY += 0.4;
-
-        // Calculate width based on height progress
-        const progress = (gableY - 4.0) / (ridgeHeight - 4.0);
-        const currentWidth = maxGableWidth * (1.0 - progress);
-
-        // Stop if too small, but ensure we get close to top
-        if (currentWidth > 0.2) {
-            createLog(currentWidth, 0, gableY, -4.5, 0); // Back
-            createLog(currentWidth, 0, gableY, 4.5, 0);  // Front
-        }
-    }
-
-    // --- 3. FLOOR & ROOF MESHES ---
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(9.5, 0.4, 9.5), floorMat);
-    floor.position.y = 0.2;
-    floor.receiveShadow = true;
-    grp.add(floor);
-
-    const roofGroup = new THREE.Group();
-
-    // Left Slope
-    const slopeGeo = new THREE.BoxGeometry(7.5, 0.4, 12);
-    const slope1 = new THREE.Mesh(slopeGeo, roofMat);
-    slope1.position.set(-2.8, 5.5, 0);
-    slope1.rotation.z = Math.PI / 5;
-    slope1.castShadow = true;
-
-    // Right Slope
-    const slope2 = new THREE.Mesh(slopeGeo, roofMat);
-    slope2.position.set(2.8, 5.5, 0);
-    slope2.rotation.z = -Math.PI / 5;
-    slope2.castShadow = true;
-
-    // Ridge Log
-    const ridge = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 12, 8), woodMat);
-    ridge.rotation.x = Math.PI / 2;
-    ridge.position.set(0, 6.7, 0);
-
-    roofGroup.add(slope1, slope2, ridge);
-    // Ensure roof parts receive shadows
-    slope1.receiveShadow = true;
-    slope2.receiveShadow = true;
-    ridge.receiveShadow = true;
-    grp.add(roofGroup);
-
-    scene.add(grp);
-
-    // --- 4. PHYSICS COLLIDERS ---
-    staticColliders.push({ minX: cx - 5, maxX: cx + 5, minZ: cz - 5, maxZ: cz - 4 }); // Back
-    staticColliders.push({ minX: cx - 5, maxX: cx - 4, minZ: cz - 5, maxZ: cz + 5 }); // Left
-    staticColliders.push({ minX: cx + 4, maxX: cx + 5, minZ: cz - 5, maxZ: cz + 5 }); // Right
-    staticColliders.push({ minX: cx - 5, maxX: cx - 1.5, minZ: cz + 4, maxZ: cz + 5 }); // Front L
-    staticColliders.push({ minX: cx + 1.5, maxX: cx + 5, minZ: cz + 4, maxZ: cz + 5 }); // Front R
+    const house=WorldGen.makeBuilding({type:'house',scale:1.35,rot:0});
+    house.position.set(-40,0,10);house.name='playerHouseExterior';scene.add(house);
+    staticColliders.push({minX:-44.5,maxX:-35.5,minZ:6.2,maxZ:13.8});
+    if(window.Housing)Housing.registerExterior(house);
 }
 
-
 function createNPCs() {
+    const defaultSpawns = getDefaultNpcSpawns();
     // --- MAIN WORLD NPCs ---
 
     // 1. Merchant (East)
     npcMerchant = createPlayerMesh('#E65100', "Merchant", 'tophat', '#000000', 'fox');
-    npcMerchant.position.set(LAKE_RADIUS + 3, 0, 0);
+    npcMerchant.position.set(defaultSpawns.merchant.x, 0, defaultSpawns.merchant.z);
     npcMerchant.lookAt(0, 0, 0);
     scene.add(npcMerchant);
 
     // 2. Stylist (West)
     npcStylist = createPlayerMesh('#FF69B4', "Shop", 'bow', '#000000', 'bunny');
-    npcStylist.position.set(-(LAKE_RADIUS + 3), 0, 0);
+    npcStylist.position.set(defaultSpawns.stylist.x, 0, defaultSpawns.stylist.z);
     npcStylist.lookAt(0, 0, 0);
     scene.add(npcStylist);
 
     // 3. Bait Shop (South)
     npcBait = createPlayerMesh('#32CD32', "Bait Shop", 'straw', '#000000', 'frog');
-    npcBait.position.set(0, 0, LAKE_RADIUS + 3);
+    npcBait.position.set(defaultSpawns.bait.x, 0, defaultSpawns.bait.z);
     npcBait.lookAt(0, 0, 0);
     scene.add(npcBait);
 
     // 4. Tutorial NPC (North - opposite of Bait Shop)
     npcTutorial = createPlayerMesh('#9370DB', "Tutorial", 'bow', '#000000', 'bunny');
-    npcTutorial.position.set(0, 0, -(LAKE_RADIUS + 3));
+    npcTutorial.position.set(defaultSpawns.tutorial.x, 0, defaultSpawns.tutorial.z);
     npcTutorial.lookAt(0, 0, 0);
     scene.add(npcTutorial);
 
     // 5. Inferno Guard (Main World - Waterfall Entrance)
     npcLavaKeeper = createPlayerMesh('#8B0000', "Inferno Guard", 'viking', '#FFD700', 'dragon');
-    npcLavaKeeper.position.set(16, 0, 16);
+    npcLavaKeeper.position.set(defaultSpawns.lava.x, 0, defaultSpawns.lava.z);
     npcLavaKeeper.lookAt(0, 0, 0);
     scene.add(npcLavaKeeper);
 
     // 6. Old Fisher (Main World - on the lake shore, southwest of the Merchant)
     npcFisher = createPlayerMesh('#8D6E63', "Old Fisher", 'straw', '#000000', 'bear');
-    npcFisher.position.set(-(LAKE_RADIUS + 3), 0, -(LAKE_RADIUS + 3));
+    npcFisher.position.set(defaultSpawns.fisher.x, 0, defaultSpawns.fisher.z);
     npcFisher.lookAt(0, 0, 0);
     scene.add(npcFisher);
 
     // 7. Scratch Dealer (Main World - east shore, just north of the Merchant)
     npcScratch = createPlayerMesh('#F2B01E', "Lucky Lou", 'tophat', '#000000', 'fox');
-    npcScratch.position.set(LAKE_RADIUS + 3, 0, -9);
+    npcScratch.position.set(defaultSpawns.scratch.x, 0, defaultSpawns.scratch.z);
     npcScratch.lookAt(0, 0, 0);
     scene.add(npcScratch);
 
@@ -5409,6 +5989,9 @@ function createNPCs() {
     addIcon(npcLavaStylist, '👕');
     addIcon(npcLavaBait, '🪱');
 
+    window.Halloween?.spawn(scene);
+    window.Boats?.setup(scene);
+
     // --- CUSTOM LEVEL OVERRIDES ---
     // Move the NPCs to wherever the level editor placed them.
     if (window.CUSTOM_LEVEL && window.Level) {
@@ -5418,10 +6001,18 @@ function createNPCs() {
             const mesh = byType[n.type];
             if (!mesh) return;
             mesh.position.set(n.x, window.Level.sampleHeight(lv, n.x, n.z), n.z);
-            // Face the way the editor rotated them (same convention as the
-            // editor preview: rotation.y 0 = facing world +Z).
-            mesh.rotation.y = Number(n.rot) || 0;
+            // Reset all axes: lookAt can leave X/Z at PI, which reverses a
+            // subsequent yaw-only assignment. Editor yaw 0 faces world +Z.
+            mesh.rotation.set(0, Number(n.rot) || 0, 0);
         });
+        if (npcLavaKeeper && !lv.npcs.some(n => n.type === 'lava')) {
+            const spot = findCustomLavaKeeperSpot(lv);
+            if (spot) {
+                npcLavaKeeper.position.set(spot.x, spot.y, spot.z);
+                const spawn = findCustomSpawn(lv);
+                if (spawn) npcLavaKeeper.rotation.set(0, Math.atan2(spawn.x - spot.x, spawn.z - spot.z), 0);
+            }
+        }
     }
 }
 
@@ -5429,7 +6020,7 @@ function addIcon(parent, text) {
     const c = document.createElement('canvas'); c.width = 64; c.height = 64;
     const ctx = c.getContext('2d'); ctx.fillStyle = '#FFD700'; ctx.font = '50px Arial'; ctx.textAlign = 'center'; ctx.fillText(text, 32, 50);
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c) }));
-    s.position.y = 3.6; parent.add(s);
+    s.position.y = 3.6; s.name='npcIcon'; s.visible=typeof hudVisible==='undefined'||hudVisible; parent.add(s);
 }
 
 // --- DYNAMIC TEXTURE DRAWING FUNCTIONS ---
@@ -5959,6 +6550,9 @@ function drawHat(ctx, hatId, isBack) {
         ctx.strokeStyle = 'rgba(139, 69, 19, 0.35)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(15, 9); ctx.quadraticCurveTo(32, -7, 49, 4); ctx.stroke();
     }
+    if(!isBack&&hatId==='ht_cap'){ctx.fillStyle='#38233d';ctx.fillRect(28,7,2,2);ctx.fillRect(34,7,2,2);ctx.fillRect(30,11,4,1);}
+    if(hatId==='ht_witch'){ctx.fillStyle='#ec9b41';ctx.fillRect(24,-4,16,3);}
+
 }
 
 
@@ -6373,13 +6967,12 @@ function drawEars(ctx, earId, col, bellyCol, back) {
         }
     }
     else if (earId === 'protogen') {
-        // Robotic angular ears
-        ctx.fillStyle = earGrad;
-        ctx.beginPath(); ctx.moveTo(14, 10); ctx.lineTo(8, -6); ctx.lineTo(24, 10); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(50, 10); ctx.lineTo(56, -6); ctx.lineTo(40, 10); ctx.closePath(); ctx.fill();
-        // Glow Accent
-        ctx.fillStyle = '#00ffff';
-        ctx.fillRect(10, 0, 2, 8); ctx.fillRect(52, 0, 2, 8);
+        for(const side of [-1,1]){
+            ctx.save();ctx.translate(side<0?17:47,10);ctx.scale(side,1);
+            ctx.fillStyle=earGrad;ctx.beginPath();ctx.moveTo(-7,0);ctx.lineTo(5,0);ctx.lineTo(11,-13);ctx.lineTo(10,-28);ctx.lineTo(-2,-18);ctx.closePath();ctx.fill();
+            if(!back){ctx.fillStyle=bellyCol;ctx.beginPath();ctx.moveTo(-3,-2);ctx.lineTo(3,-3);ctx.lineTo(7,-13);ctx.lineTo(7,-21);ctx.lineTo(0,-15);ctx.closePath();ctx.fill();}
+            ctx.restore();
+        }
     }
     // New types maintained with simple improvements
     else if (earId === 'wolf') {
@@ -6463,7 +7056,11 @@ function drawEyes(ctx, eyeId, eyeCol) {
     };
     const shade = shadeColor(eyeCol, -0.3);
 
-    if (eyeId === 'standard') {
+    if(eyeId==='blink'){
+        ctx.strokeStyle='#39313e';ctx.lineWidth=1.5;ctx.lineCap='round';
+        for(const x of [24,40]){ctx.beginPath();ctx.moveTo(x-4,24);ctx.quadraticCurveTo(x,26,x+4,24);ctx.stroke();}
+    }
+    else if (eyeId === 'standard') {
         // Sclera
         ctx.fillStyle = '#fff';
         ctx.fillRect(20, 18, 8, 10); ctx.fillRect(36, 18, 8, 10);
@@ -7008,7 +7605,7 @@ function drawNose(ctx, noseId, bellyCol, noseCol) {
 // Accent / "misc" sprites share the body canvas: head x14-50 y8-36,
 // torso x20-44 y28-68, face centre x32. Each piece is top-lit; the rim
 // comes from the outline pass that runs in createSpeciesTexture().
-function drawMisc(ctx, miscId, col, bellyCol, back) {
+function drawMisc(ctx, miscId, col, bellyCol, back, eyeCol = '#000000', protogenLogo = '') {
     if (!miscId || miscId === 'none') return;
 
     const dark  = shadeColor(col, -0.30);
@@ -7260,7 +7857,7 @@ function drawMisc(ctx, miscId, col, bellyCol, back) {
     }
 
     // ------------------------------------------------------------------
-    // FUR PATTERNS - drawn on both views
+    // Species body markings - drawn on both views
     // ------------------------------------------------------------------
     else if (miscId === 'tiger_stripes') {
         const stripe = (x, y, len, w, lean) => {
@@ -7408,28 +8005,14 @@ function drawMisc(ctx, miscId, col, bellyCol, back) {
         }
     }
     else if (miscId === 'protogen_visor') {
-        if (back) {
-            ctx.fillStyle = 'rgba(20,20,26,0.9)';
-            ctx.beginPath(); ctx.roundRect(15, 10, 34, 22, 6); ctx.fill();
-            ctx.fillStyle = 'rgba(255,255,255,0.35)';
-            ctx.fillRect(30, 12, 4, 2);
-            ctx.fillRect(27, 29, 10, 2);
-        } else {
-            ctx.fillStyle = 'rgba(20,20,26,0.95)';
-            ctx.beginPath(); ctx.roundRect(14, 10, 36, 24, 6); ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.roundRect(14, 10, 36, 24, 6); ctx.stroke();
-            ctx.fillStyle = col;
-            blob(23, 20, 2.4, 2.4);
-            blob(41, 20, 2.4, 2.4);
-            ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(26, 27);
-            ctx.quadraticCurveTo(32, 31, 38, 27);
-            ctx.stroke();
-            ctx.fillStyle = 'rgba(255,255,255,0.25)';
-            ctx.fillRect(15, 14, 2.5, 6);
-            ctx.fillRect(46.5, 14, 2.5, 6);
+        // Side housings and fins, never a second visor over the face.
+        for(const side of [-1,1]){
+            const x=side<0?12:52;
+            ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(x,17);ctx.lineTo(x+side*10,14);ctx.lineTo(x+side*6,24);ctx.closePath();ctx.fill();
+            ctx.beginPath();ctx.ellipse(x,21,5,6,0,0,Math.PI*2);ctx.fill();
+            ctx.fillStyle='#172633';ctx.beginPath();ctx.ellipse(x,21,4,5,0,0,Math.PI*2);ctx.fill();
+            ctx.fillStyle=eyeCol;ctx.beginPath();ctx.ellipse(x,21,3,4,0,0,Math.PI*2);ctx.fill();
+            if(typeof window!=='undefined')window.ProtogenLogo?.draw(ctx,protogenLogo,eyeCol,x,21,3,4);
         }
     }
     else if (miscId === 'freckles') {
@@ -7879,28 +8462,40 @@ function drawTail(ctx, tailId, col, bellyCol, back) {
 // as the rest of the character. It sits just under the nose and over the top
 // edge of the shirt, so it stays readable on every species. Only the front
 // texture gets it; back views never talk.
-function drawTalkingMouth(ctx) {
-    const cx = 32, cy = 33;
-    ctx.save();
-    ctx.fillStyle = '#2a0d13';
-    ctx.strokeStyle = 'rgba(16,3,7,0.9)';
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 3.6, 2.2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    // Little tongue so the mouth reads even on dark fur.
-    ctx.fillStyle = '#ff8fa1';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 1.1, 2.2, 1.05, 0, 0, Math.PI);
-    ctx.fill();
-    ctx.restore();
+function drawTalkingMouth(ctx,shape='ah') {
+    const profile=TALK_MOUTH_SHAPES.find(v=>v.name===shape)||TALK_MOUTH_SHAPES[0],cx=32,cy=33;
+    ctx.save();ctx.fillStyle='#2a0d13';ctx.strokeStyle='rgba(16,3,7,.9)';ctx.lineWidth=.8;
+    ctx.beginPath();ctx.ellipse(cx,cy,profile.rx,profile.ry,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.clip();
+    if(profile.teeth){ctx.fillStyle='#fff0d8';ctx.fillRect(cx-profile.rx,cy-profile.ry,profile.rx*2,profile.ry*.75);}
+    ctx.fillStyle='#ff8fa1';ctx.beginPath();ctx.ellipse(cx,cy+profile.ry*.65,profile.rx*.65,profile.ry*.4,0,0,Math.PI*2);ctx.fill();ctx.restore();
 }
 
 // Main drawing function - accepts either species string (legacy) or parts object
 // partColors is optional: { earsColor, noseColor, miscColor, tailColor }
-function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColors) {
-    ctx.clearRect(0, -30, 64, 105); // Clear full area including big ears/hats
+function drawProtogenFace(ctx, eyeCol, closed=false, mouthOpen=false, mouth=true, fullScreen=false) {
+    ctx.save();
+    // Solid visor geometry needs dark ink across its entire face UV, including corners.
+    if(fullScreen){ctx.fillStyle='#101923';ctx.fillRect(16,8,32,26);}
+    // One dark screen covers the normal eyes and muzzle.
+    ctx.fillStyle='#101923';ctx.strokeStyle='#43566c';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(20,11);ctx.quadraticCurveTo(32,6,44,11);
+    ctx.quadraticCurveTo(50,19,48,29);ctx.quadraticCurveTo(45,35,32,36);
+    ctx.quadraticCurveTo(19,35,16,29);ctx.quadraticCurveTo(14,19,20,11);ctx.fill();ctx.stroke();
+    ctx.strokeStyle=eyeCol;ctx.fillStyle=eyeCol;ctx.lineWidth=2;ctx.lineCap='round';
+    for(const x of [23,41]){
+        ctx.beginPath();ctx.moveTo(x-4,closed?22:23);
+        ctx.lineTo(x,closed?22:18);ctx.lineTo(x+4,closed?22:23);ctx.stroke();
+    }
+    if(mouth){
+        ctx.beginPath();
+        if(mouthOpen)ctx.ellipse(32,30,6,3,0,0,Math.PI*2);
+        else {ctx.moveTo(23,29);ctx.lineTo(27,31);ctx.lineTo(32,29);ctx.lineTo(37,31);ctx.lineTo(41,29);}
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColors, eyesClosed=false, earsOnly=false, skinOnly=false) {
+    if(!earsOnly)ctx.clearRect(0, -30, 64, 105); // Clear full area including big ears/hats
 
     // Determine if we're using legacy species or new parts system
     let parts;
@@ -7937,11 +8532,16 @@ function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColor
     const miscCol = pc.miscColor || col;
     const tailCol = pc.tailColor || col;
 
+    if(earsOnly){drawEars(ctx,parts.ears,earsCol,bellyCol,back);return;}
     // Draw in correct order for proper layering
     drawBody(ctx, col, bellyCol, back);
-    drawTail(ctx, parts.tail, tailCol, bellyCol, back);
-    drawMisc(ctx, parts.misc, miscCol, bellyCol, back);
-    drawEars(ctx, parts.ears, earsCol, bellyCol, back);
+    if(!skinOnly){
+        drawTail(ctx, parts.tail, tailCol, bellyCol, back);
+        drawMisc(ctx, parts.misc, miscCol, bellyCol, back, eyeCol,pc.protogenLogo);
+        drawEars(ctx, parts.ears, earsCol, bellyCol, back);
+    }else if(['tiger_stripes','leopard_spots','zebra_stripes','deer_spots','snake_scales','skunk_stripe','raccoon_mask','panda_patches','freckles','blush','scars','bandage','penguin_belly','otter_belly'].includes(parts.misc)){
+        drawMisc(ctx,parts.misc,miscCol,bellyCol,back,eyeCol,pc.protogenLogo);
+    }
 
     // Unified head lighting. The ears are drawn on top of the head, so without
     // this they miss the head's highlight/side-shade and leave a seam at the
@@ -7952,8 +8552,9 @@ function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColor
     if (!back) applyHeadLighting(ctx);
 
     if (!back) {
-        drawEyes(ctx, parts.eyes, eyeCol);
-        drawNose(ctx, parts.nose, bellyCol, noseCol);
+        if(parts.nose==='protogen')drawProtogenFace(ctx,eyeCol,eyesClosed,false,!skinOnly,skinOnly);
+        else drawEyes(ctx, eyesClosed?'blink':parts.eyes, eyeCol);
+        if(!skinOnly&&parts.nose!=='protogen')drawNose(ctx, parts.nose, bellyCol, noseCol);
     }
 }
 
@@ -7961,6 +8562,60 @@ function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColor
 function drawStandardFace(ctx, eyeCol) {
     ctx.fillStyle = 'white'; ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
     ctx.fillStyle = eyeCol; ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
+}
+
+function restorePants(saved){
+    const valid=new Set(PANTS_TYPES.map(item=>item.id));
+    saveState.unlockedPants=[...new Set(['none',...(Array.isArray(saved.unlockedPants)?saved.unlockedPants:[]).filter(id=>valid.has(id))])];
+    saveState.currentPants=saveState.unlockedPants.includes(saved.currentPants)?saved.currentPants:'none';
+}
+function selectPants(id){
+    const item=PANTS_TYPES.find(p=>p.id===id);if(!item)return false;
+    if(!saveState.unlockedPants.includes(id)){
+        if(item.event||!Number.isFinite(item.price)||item.price<0)return false;
+        if(saveState.money<item.price){showToast('Not enough money!');return false;}
+        saveState.money-=item.price;saveState.unlockedPants.push(id);Sound.sell();
+    }
+    saveState.currentPants=id;saveGame();updateLocalVisuals();renderShop();return true;
+}
+function paintPants(ctx,item){
+    const color=item.color||'#53677d',accent=item.secondary||'#d6d3ba';
+    ctx.fillStyle=color;ctx.fillRect(0,0,64,64);
+    ctx.fillStyle=shadeColor(color,-.25);ctx.fillRect(0,0,64,6);ctx.fillRect(0,59,64,5);
+    ctx.fillStyle=shadeColor(color,.2);for(const x of [1,31,62])ctx.fillRect(x,6,1,53);
+    if(['jeans','ripped','chinos','linen','cargo'].includes(item.type)){
+        ctx.strokeStyle=accent;ctx.lineWidth=1;for(const x of [4,36])ctx.strokeRect(x,10,17,12);
+    }
+    if(item.type==='cargo'){ctx.fillStyle=shadeColor(color,-.16);for(const x of [9,41]){ctx.fillRect(x,24,14,18);ctx.fillStyle=accent;ctx.fillRect(x,24,14,2);ctx.fillStyle=shadeColor(color,-.16);}}
+    if(item.type==='ripped'){ctx.fillStyle='#cfbfa5';for(const x of [5,37]){ctx.fillRect(x,31,15,3);ctx.fillRect(x+4,39,10,2);}}
+    if(['joggers','stars','harvest'].includes(item.type)){ctx.fillStyle=accent;for(const x of [14,46])ctx.fillRect(x,6,2,53);ctx.fillRect(0,56,64,2);}
+    if(item.type==='stripes'){ctx.fillStyle=accent;for(let y=8;y<56;y+=12)ctx.fillRect(0,y,64,5);}
+    if(item.type==='linen'){ctx.fillStyle=shadeColor(color,.12);for(let x=6;x<64;x+=8)ctx.fillRect(x,6,1,51);}
+    if(item.type==='stars'){ctx.fillStyle=accent;for(let i=0;i<18;i++){const x=(i*23+7)%62,y=9+(i*13)%45;ctx.fillRect(x,y,2,2);if(i%4===0){ctx.fillRect(x-1,y+1,4,1);ctx.fillRect(x+1,y-1,1,4);}}}
+    if(item.type==='ghost')for(const x of [-12,20,52]){ctx.fillStyle=accent;ctx.fillRect(x+4,25,16,15);ctx.fillRect(x+7,22,10,3);ctx.fillRect(x+4,39,4,4);ctx.fillRect(x+10,39,4,3);ctx.fillRect(x+16,39,4,4);ctx.fillStyle=color;ctx.fillRect(x+7,28,3,4);ctx.fillRect(x+14,28,3,4);}
+    if(item.type==='pumpkin')for(const x of [-10,22,54]){ctx.fillStyle=accent;ctx.fillRect(x,26,20,15);ctx.fillRect(x+3,23,14,3);ctx.fillStyle='#8baf69';ctx.fillRect(x+9,19,3,5);ctx.fillStyle='#241c2e';ctx.fillRect(x+4,29,4,4);ctx.fillRect(x+13,29,4,4);ctx.fillRect(x+6,36,9,2);}
+    if(item.type==='harvest'){ctx.fillStyle=accent;for(const x of [4,36]){ctx.fillRect(x,29,8,2);ctx.fillRect(x+3,26,2,8);}}
+}
+function createPantsTexture(item){
+    const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;
+    paintPants(canvas.getContext('2d'),item);const texture=new THREE.CanvasTexture(canvas);
+    texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;return texture;
+}
+function drawPantsIcon(ctx,item,width=96,height=112){
+    ctx.save();ctx.scale(width/96,height/112);
+    if(item.id==='none'){ctx.strokeStyle='#9aa3c0';ctx.lineWidth=3;ctx.strokeRect(25,30,46,45);ctx.beginPath();ctx.moveTo(25,75);ctx.lineTo(71,30);ctx.stroke();}
+    else{const texture=createPantsTexture(item);ctx.imageSmoothingEnabled=false;
+        ctx.fillStyle=item.color;ctx.fillRect(18,13,60,16);
+        ctx.drawImage(texture.image,0,0,64,64,18,27,26,69);ctx.drawImage(texture.image,0,0,64,64,52,27,26,69);
+        ctx.fillStyle=item.secondary||'#c4baa0';ctx.fillRect(45,16,6,6);texture.dispose();}
+    ctx.restore();
+}
+function drawPants(ctx,id,isBack){
+    const item=PANTS_TYPES.find(p=>p.id===id);if(!item||id==='none')return;
+    const texture=createPantsTexture(item);ctx.save();ctx.imageSmoothingEnabled=false;
+    ctx.fillStyle=item.color;ctx.fillRect(22,54,20,4);
+    for(const x of [22,34])ctx.drawImage(texture.image,isBack?32:0,0,32,64,x,56,8,8);
+    ctx.restore();texture.dispose();
 }
 
 function drawShirt(ctx, shirtId, isBack, bodyColor) {
@@ -8224,6 +8879,12 @@ function drawShirt(ctx, shirtId, isBack, bodyColor) {
             ctx.fillStyle = '#ffffff'; ctx.fillRect(31.5, 40.5, 1, 3);
         }
     }
+    if(!isBack&&shirtId==='ht_hoodie'){
+        ctx.fillStyle='#4d3a62';ctx.beginPath();ctx.arc(32,45,5,Math.PI,0);ctx.lineTo(37,52);ctx.lineTo(34,50);ctx.lineTo(32,52);ctx.lineTo(30,50);ctx.lineTo(27,52);ctx.closePath();ctx.fill();
+        ctx.fillStyle='#b9e7bb';ctx.fillRect(29,44,2,2);ctx.fillRect(33,44,2,2);
+    }
+    if(shirtId==='ht_coat'){ctx.fillStyle='#eaa04c';ctx.fillRect(30.5,36,3,20);ctx.fillRect(20,55,24,2);}
+
 }
 
 function drawCollar(ctx, collarId, isBack) {
@@ -8337,129 +8998,22 @@ function drawCollar(ctx, collarId, isBack) {
     }
 }
 
-// Draws fur patterns on the body and head (not covered by shirts)
-function drawPattern(ctx, patternId, col, back) {
-    if (!patternId || patternId === 'none') return;
-
-    const pattern = typeof PATTERN_TYPES !== 'undefined' ? PATTERN_TYPES.find(p => p.id === patternId) : null;
-    if (!pattern) return;
-
-    const patternColor = pattern.color || '#000000';
-    ctx.fillStyle = patternColor;
-
-    // Only draw on HEAD area (14, 10, 36, 24) to avoid overlapping with shirts on body
-    // Head coordinates: x=14, y=10, w=36, h=24
-
-    if (patternId === 'spots') {
-        // Spots on body (primary) and head (secondary)
-        const bodySpots = [[26, 38], [38, 42], [30, 50], [22, 46], [36, 54]];
-        const headSpots = [[20, 18], [44, 20]];
-        [...bodySpots, ...headSpots].forEach(([x, y]) => {
-            ctx.beginPath();
-            ctx.arc(x, y, 3, 0, Math.PI * 2);
-            ctx.fill();
-        });
-    }
-    else if (patternId === 'stripes') {
-        // Tiger stripes on body and head
-        ctx.fillRect(22, 35, 20, 3);
-        ctx.fillRect(22, 42, 20, 3);
-        ctx.fillRect(22, 49, 20, 3);
-        ctx.fillRect(18, 14, 3, 8);
-        ctx.fillRect(43, 14, 3, 8);
-    }
-    else if (patternId === 'calico') {
-        // Calico patches on body (orange and black)
-        ctx.fillStyle = '#ff8c00';
-        ctx.fillRect(22, 34, 8, 10);
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(34, 40, 8, 12);
-        ctx.fillStyle = '#ff8c00';
-        ctx.fillRect(26, 50, 10, 8);
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(38, 14, 8, 8);
-    }
-    else if (patternId === 'tuxedo') {
-        // White chest (front only)
-        if (!back) {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(26, 36, 12, 18);
-            ctx.fillRect(28, 28, 8, 6);
+// Painted torso pixels are indexed into the shared BodyPaint palette.
+function drawBodyPaint(ctx, paint, back, customColor = '#ffffff', originX = 20, originY = 35, cellW = 1, cellH = 1) {
+    const bp = typeof window !== 'undefined' ? window.BodyPaint : null;
+    if (!bp || !paint) return;
+    const normalized = bp.normalize(paint);
+    if (!normalized) return;
+    const custom = bp.normalizeColor(customColor);
+    for (let y = 0; y < bp.height; y++) {
+        for (let x = 0; x < bp.width; x++) {
+            const ch = normalized[y * bp.width + x];
+            if (ch === '.') continue;
+            const color = ch === 'x' ? custom : bp.palette[parseInt(ch, 16)];
+            if (!color) continue;
+            ctx.fillStyle = color;
+            ctx.fillRect(originX + x * cellW, originY + y * cellH, cellW, cellH);
         }
-    }
-    else if (patternId === 'tabby') {
-        // Tabby stripes on body + M forehead
-        ctx.save();
-        ctx.translate(32, 45);
-        ctx.rotate(0.3);
-        ctx.fillRect(-10, -8, 3, 16);
-        ctx.fillRect(-4, -10, 3, 20);
-        ctx.fillRect(2, -8, 3, 16);
-        ctx.fillRect(8, -6, 3, 12);
-        ctx.restore();
-        ctx.beginPath();
-        ctx.moveTo(20, 18);
-        ctx.lineTo(26, 10);
-        ctx.lineTo(32, 16);
-        ctx.lineTo(38, 10);
-        ctx.lineTo(44, 18);
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = patternColor;
-        ctx.stroke();
-    }
-    else if (patternId === 'dalmatian') {
-        // Black spots on body and head
-        const spots = [[26, 36, 4], [38, 40, 3], [30, 48, 5], [24, 54, 3], [40, 52, 4], [20, 16, 3], [42, 18, 4]];
-        spots.forEach(([x, y, r]) => {
-            ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.fill();
-        });
-    }
-    else if (patternId === 'cow') {
-        // Irregular black patches on body and head
-        ctx.beginPath();
-        ctx.ellipse(28, 40, 7, 5, 0.3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(38, 52, 6, 8, -0.2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(40, 18, 5, 4, 0.4, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    else if (patternId === 'hearts') {
-        // Hearts on body and head
-        const drawHeart = (x, y, size) => {
-            ctx.beginPath();
-            ctx.moveTo(x, y + size / 4);
-            ctx.bezierCurveTo(x, y, x - size / 2, y, x - size / 2, y + size / 4);
-            ctx.bezierCurveTo(x - size / 2, y + size / 2, x, y + size * 0.7, x, y + size);
-            ctx.bezierCurveTo(x, y + size * 0.7, x + size / 2, y + size / 2, x + size / 2, y + size / 4);
-            ctx.bezierCurveTo(x + size / 2, y, x, y, x, y + size / 4);
-            ctx.fill();
-        };
-        drawHeart(28, 38, 8);
-        drawHeart(38, 48, 6);
-        drawHeart(32, 16, 5);
-    }
-    else if (patternId === 'stars') {
-        // Stars on body and head
-        const drawStar = (cx, cy, size) => {
-            ctx.beginPath();
-            for (let i = 0; i < 5; i++) {
-                const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
-                const x = cx + Math.cos(angle) * size;
-                const y = cy + Math.sin(angle) * size;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-            ctx.closePath();
-            ctx.fill();
-        };
-        drawStar(28, 40, 5);
-        drawStar(38, 50, 4);
-        drawStar(32, 18, 4);
     }
 }
 
@@ -9726,16 +10280,16 @@ function addSpriteOutline(ctx, canvas, colorHex = '#111219', thickness = 2) {
 
 // Main texture compositing function. Combines species, colors, and all cosmetics into one texture.
 // partColors is optional: { earsColor, noseColor, miscColor, tailColor }
-function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', patternId = 'none', partColors = null, hairId = 'none', hairColor = null, mouthOpen = false) {
+function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shirtId = 'none', collarId = 'none', eyeHex = '#000000', partColors = null, hairId = 'none', hairColor = null, mouthOpen = false, eyesClosed=false, pantsId='none', skinOnly=false, bodyPaint='', bodyPaintColor='#ffffff') {
     // VISUAL UPGRADE: HD Canvas - sized to fit tallest content:
     // logical y range is -22 (witch hat tip) to 67.5 (feet) = 89.5 units.
-    // Canvas is 94 logical units tall (188px) with a +24 offset => 2u margins.
-    const c = document.createElement('canvas'); c.width = 128; c.height = 188;
+    // Canvas is 94 logical units tall (282px) with a +24 offset => 2u margins.
+    const c = document.createElement('canvas'); c.width = 192; c.height = 282;
     const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
 
-    // Scale Context by 2x so all existing 64px coordinates work, 
+    // Scale Context by 3x so all existing 64px coordinates work, 
     // but we can draw sub-pixel (0.5) details for extra resolution.
-    ctx.scale(2, 2);
+    ctx.scale(3, 3);
     // Offset down to make room for tall ears and hats
     ctx.translate(0, 24);
 
@@ -9744,22 +10298,28 @@ function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shir
     const bellyCol = '#' + new THREE.Color(bellyHex).getHexString();
     const eyeCol = '#' + new THREE.Color(eyeHex).getHexString();
 
-    drawSpecies(ctx, species, col, bellyCol, eyeCol, back, partColors);
+    drawSpecies(ctx, species, col, bellyCol, eyeCol, back, partColors, eyesClosed,false,skinOnly);
 
-    // Draw fur pattern AFTER species but BEFORE shirt (so it doesn't cover clothes)
-    drawPattern(ctx, patternId, col, back);
+    // Body painting is a 3D-only cosmetic. Sprite textures stay untouched.
+    if (skinOnly) drawBodyPaint(ctx, bodyPaint, back, bodyPaintColor);
 
     // UPDATE: Pass 'col' (body color) to drawShirt so it can fix necklines
+    if(!skinOnly)drawPants(ctx,pantsId,back);
     drawShirt(ctx, shirtId, back, col);
 
-    drawCollar(ctx, collarId, back);
+    if(!skinOnly)drawCollar(ctx, collarId, back);
 
     // HAIR (Under Hat)
-    drawHair(ctx, hairId, hairColor, back);
+    if(!skinOnly)drawHair(ctx, hairId, hairColor, back);
+    // Retained sprite mode also lets ears emerge through the hairstyle, outside the face.
+    if(!skinOnly&&!['none','buzzed','undercut','slicked','mohawk'].includes(hairId)){
+        ctx.save();ctx.beginPath();ctx.rect(0,-24,64,32);ctx.rect(0,8,16,26);ctx.rect(48,8,16,26);ctx.clip();
+        drawSpecies(ctx,species,col,bellyCol,eyeCol,back,partColors,eyesClosed,true);ctx.restore();
+    }
 
     // Chat "talking" frame: only on the front texture, and only when the
     // caller asked for it (the normal sprite keeps the original face).
-    if (!back && mouthOpen) drawTalkingMouth(ctx);
+    if (!skinOnly && !back && mouthOpen) drawTalkingMouth(ctx,typeof mouthOpen==='string'?mouthOpen:'ah');
 
     // EYES OVERLAY (To appear on top of hair/bangs)
     if (!back) {
@@ -9788,13 +10348,14 @@ function createSpeciesTexture(species, hex, bellyHex, back, hatId = 'none', shir
         } else {
             parts = species;
         }
-        drawEyes(ctx, parts.eyes, eyeCol);
+        if(parts.nose==='protogen')drawProtogenFace(ctx,eyeCol,eyesClosed,mouthOpen,!skinOnly,skinOnly);
+        else drawEyes(ctx, eyesClosed?'blink':parts.eyes, eyeCol);
     }
 
-    drawHat(ctx, hatId, back);
+    if(!skinOnly)drawHat(ctx, hatId, back);
 
     // One continuous outline around the finished figure (matches the fish art).
-    addSpriteOutline(ctx, c);
+    if(!skinOnly)addSpriteOutline(ctx, c);
 
     const t = new THREE.CanvasTexture(c);
     t.magFilter = THREE.NearestFilter;
@@ -9816,7 +10377,9 @@ function createFishTexture(fishName, colorHex) {
     }
     const rarity = fishData ? fishData.rarity : "Common";
     const name = fishName.toLowerCase();
-    const shape = fishData && fishData.shape ? fishData.shape : '';
+    let shape = fishData && fishData.shape ? fishData.shape : '';
+    const species=String(fishData?.species||fishName).replace(/^Golden /i,'').toLowerCase();
+    shape=({'koi':'carp','ozark cavefish':'tetra','southern cavefish':'tetra','northern cavefish':'tetra','gourami':'bass','wahoo':'mackerel','cobia':'mackerel','yellowtail':'trevally','amberjack':'trevally'})[species]||shape;
     const isShape = (...list) => shape ? list.includes(shape) : false;
 
     // --- 1. Palette ---
@@ -9833,7 +10396,7 @@ function createFishTexture(fishName, colorHex) {
     };
 
     // Name-driven recolours (legendary / event variants)
-    if (name.includes('golden') || name.includes('gold')) {
+    if (name.includes('golden')) {
         baseCol = '#e8b923';
         fillStyle = linGrad([[0, '#fff3b0'], [0.45, '#f5c518'], [1, '#9c6b0a']]);
     } else if (name.includes('rainbow') && !isShape('trout')) {
@@ -10476,7 +11039,7 @@ function createFishTexture(fishName, colorHex) {
         eye = { x: 49, y: 27, r: 2.6 };
     }
     // TYPE: ROUND (koi, goldfish, sunfish, discus, betta, flounder...)
-    else if (isShape('goldfish', 'discus', 'sunfish', 'clownfish', 'tang') || name.includes('sunfish') || name.includes('discus') || name.includes('koi') || name.includes('goldfish') || name.includes('betta') || name.includes('pleco') || name.includes('flounder') || name.includes('bluegill')) {
+    else if (isShape('goldfish', 'discus', 'sunfish', 'clownfish', 'tang') || name.includes('sunfish') || name.includes('discus') || name.includes('goldfish') || name.includes('betta') || name.includes('pleco') || name.includes('flounder') || name.includes('bluegill')) {
         p.ellipse(30, 32, 16, 18, 0, 0, Math.PI * 2);
         behind = (g) => {
             g.lineJoin = 'round';
@@ -10511,6 +11074,7 @@ function createFishTexture(fishName, colorHex) {
         eye = { x: 47, y: 28, r: 3 };
     }
 
+    if(/cavefish|blindcat/.test(species)||species==='mexican tetra')eye=null;
     // --- 3. Draw ---
     ctx.lineJoin = 'round';
 
@@ -10599,6 +11163,13 @@ function createFishTexture(fishName, colorHex) {
         ctx.globalAlpha = 1;
     }
 
+    if(fishData?.event==='hollowtide2026'){
+        ctx.fillStyle='#ffe5a1';
+        if(fishData.detail==='bones'){ctx.fillRect(18,29,29,2);for(let x=20;x<46;x+=6)ctx.fillRect(x,23,2,14);}
+        else if(fishData.detail==='candy'){ctx.fillStyle='#fff6d6';ctx.fillRect(0,5,20,54);ctx.fillStyle='#ed892b';ctx.fillRect(23,0,20,64);}
+        else if(fishData.detail==='jack'){ctx.beginPath();ctx.moveTo(24,24);ctx.lineTo(28,31);ctx.lineTo(20,31);ctx.fill();ctx.fillRect(31,32,10,3);}
+        else{for(let x=18;x<50;x+=8){ctx.beginPath();ctx.arc(x,27+(x%3)*3,2,0,Math.PI*2);ctx.fill();}}
+    }
     // Sheen for uncommon / epic
     if (sheen) {
         ctx.fillStyle = 'rgba(255,255,255,0.14)';
@@ -10645,13 +11216,14 @@ function createFishTexture(fishName, colorHex) {
 }
 
 function createNameTagTexture(n) {
-    const c = document.createElement('canvas'); c.width = 256; c.height = 64;
-    const x = c.getContext('2d'); x.font = 'bold 32px Arial'; x.textAlign = 'center';
-    x.fillStyle = 'black'; x.fillText(n, 128, 44); x.fillStyle = 'white'; x.fillText(n, 126, 42);
-    const t = new THREE.CanvasTexture(c);
-    // PIXEL FIX
-    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
-    return t;
+    const text=String(n||'Fisher'),c=document.createElement('canvas'),x=c.getContext('2d');
+    x.font='bold 32px Arial';
+    c.width=Math.max(256,Math.ceil(x.measureText(text).width)+24);c.height=64;
+    // Resizing a canvas resets its font and alignment.
+    x.font='bold 32px Arial';x.textAlign='center';
+    x.fillStyle='black';x.fillText(text,c.width/2+1,44);
+    x.fillStyle='white';x.fillText(text,c.width/2-1,42);
+    const t=new THREE.CanvasTexture(c);t.magFilter=THREE.NearestFilter;t.minFilter=THREE.NearestFilter;return t;
 }
 
 function createTitleTexture(titleId) {
@@ -10818,10 +11390,9 @@ function createRodTexture(rodId) {
     return t;
 }
 
-// --- CHARACTER BODY (2D billboard) ---------------------------------------
-// The body is always named "playerSprite" so every existing lookup keeps
-// working.  It is a cosmetic-textured plane; userData.cfg stores the cosmetic
-// config so the body can be rebuilt (e.g. when cosmetics change).
+// --- CHARACTER BODY (sprite or procedural 3D model) ------------------------
+// Keep the playerSprite name and cosmetic config in both modes so movement,
+// equipment changes, networking and NPC interactions share the same lifecycle.
 // Normalise a saved cosmetic config into the values createSpeciesTexture()
 // needs. Shared by the normal body and the lazy "talking" front texture so the
 // open mouth is drawn on exactly the same character.
@@ -10834,72 +11405,124 @@ function characterLookFromCfg(cfg) {
         ? { ears: cfg.ears || 'none', eyes: cfg.eyes || 'standard', nose: cfg.nose || 'cat', misc: cfg.misc || 'none', tail: cfg.tail || 'none' }
         : (cfg.species || 'cat');
     const pc = {
+        protogenLogo:globalThis.window?.ProtogenLogo?.normalize(cfg.protogenLogo)||'',
         earsColor: cfg.earsColor || '', noseColor: cfg.noseColor || '',
-        miscColor: cfg.miscColor || '', tailColor: cfg.tailColor || ''
+        miscColor: cfg.miscColor || '', tailColor: cfg.tailColor || '',
+        handColor: cfg.handColor || '', footColor: cfg.footColor || '', tailAccentColor: cfg.tailAccentColor || ''
     };
     return { base, belly, parts, pc };
 }
 
-function makeCharacterBody(cfg) {
+function createBodySideTexture(baseColor, paint, customColor) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 24; canvas.height = 23;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#' + new THREE.Color(baseColor).getHexString();
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawBodyPaint(ctx, paint, false, customColor, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = THREE.NearestFilter; texture.minFilter = THREE.NearestFilter;
+    return texture;
+}
+
+function makeCharacterBody(cfg, kind = 'npc') {
     cfg = cfg || {};
     const look = characterLookFromCfg(cfg);
     const base = look.base, belly = look.belly, parts = look.parts, pc = look.pc;
-    const tf = createSpeciesTexture(parts, base, belly, false, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
-    const tb = createSpeciesTexture(parts, base, belly, true, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', cfg.pattern || 'none', pc, cfg.hair || 'none', cfg.hairColor || '');
+    const solid = kind==='studio-thumbnail'||!!saveState.model3D;
+    if (solid && window.Character3D && Character3D.buildCharacter) {
+        // Crop painted surface details onto separately modeled head and torso.
+        // Skin-only textures omit sprite parts already supplied by 3D geometry.
+        const front=createSpeciesTexture(parts,base,belly,false,'none',cfg.shirt||'none','none',cfg.eye||'#000000',pc,'none','',false,false,'none',true,cfg.bodyPaint||'',cfg.bodyPaintColor||'#ffffff');
+        const blink=createSpeciesTexture(parts,base,belly,false,'none',cfg.shirt||'none','none',cfg.eye||'#000000',pc,'none','',false,true,'none',true,cfg.bodyPaint||'',cfg.bodyPaintColor||'#ffffff');
+        const back=createSpeciesTexture(parts,base,belly,true,'none',cfg.shirt||'none','none',cfg.eye||'#000000',pc,'none','',false,false,'none',true,cfg.bodyPaintBack||'',cfg.bodyPaintColor||'#ffffff');
+        function crop(texture,x,y,w,h,paint='') {
+            const canvas=document.createElement('canvas');canvas.width=w*3;canvas.height=h*3;
+            const ctx=canvas.getContext('2d');ctx.fillStyle='#'+new THREE.Color(base).getHexString();ctx.fillRect(0,0,canvas.width,canvas.height);
+            const sourceScale=texture.image.width/64;
+            ctx.drawImage(texture.image,x*sourceScale,(y+24)*sourceScale,w*sourceScale,h*sourceScale,0,0,canvas.width,canvas.height);
+            const bp=window.BodyPaint;
+            if(paint&&bp)drawBodyPaint(ctx,paint,false,cfg.bodyPaintColor||'#ffffff',0,0,canvas.width/bp.width,canvas.height/bp.height);
+            const tex=new THREE.CanvasTexture(canvas);tex.magFilter=THREE.NearestFilter;tex.minFilter=THREE.NearestFilter;return tex;
+        }
+        const assets={headBlink:crop(blink,16,8,32,26,cfg.bodyPaintHeadFront||''),headFront:crop(front,16,8,32,26,cfg.bodyPaintHeadFront||''),headBack:crop(back,16,8,32,26,cfg.bodyPaintHeadBack||''),torsoFront:crop(front,20,35,24,23),torsoBack:crop(back,20,35,24,23),
+            hat:HAT_TYPES.find(v=>v.id===cfg.hat),shirt:SHIRT_TYPES.find(v=>v.id===cfg.shirt&&v.id!=='none'),pants:PANTS_TYPES.find(v=>v.id===cfg.pants&&v.id!=='none'),collar:COLLAR_TYPES.find(v=>v.id===cfg.collar)};
+        const sideBase=assets.shirt?assets.shirt.color:base;
+        assets.torsoLeft=createBodySideTexture(sideBase,assets.shirt?'':cfg.bodyPaintLeft||'',cfg.bodyPaintColor||'#ffffff');
+        assets.torsoRight=createBodySideTexture(sideBase,assets.shirt?'':cfg.bodyPaintRight||'',cfg.bodyPaintColor||'#ffffff');
+        if(cfg.bodyPaintHeadLeft)assets.headLeft=createBodySideTexture(base,cfg.bodyPaintHeadLeft,cfg.bodyPaintColor||'#ffffff');
+        if(cfg.bodyPaintHeadRight)assets.headRight=createBodySideTexture(base,cfg.bodyPaintHeadRight,cfg.bodyPaintColor||'#ffffff');
+        if(cfg.bodyPaintHeadTop)assets.headTop=createBodySideTexture(base,cfg.bodyPaintHeadTop,cfg.bodyPaintColor||'#ffffff');
+        if(cfg.bodyPaintHeadBottom)assets.headBottom=createBodySideTexture(base,cfg.bodyPaintHeadBottom,cfg.bodyPaintColor||'#ffffff');
+        if(!assets.shirt){
+            if(cfg.bodyPaintArmLeft)assets.armLeft=createBodySideTexture(base,cfg.bodyPaintArmLeft,cfg.bodyPaintColor||'#ffffff');
+            if(cfg.bodyPaintArmRight)assets.armRight=createBodySideTexture(base,cfg.bodyPaintArmRight,cfg.bodyPaintColor||'#ffffff');
+        }
+        if(!assets.pants){
+            if(cfg.bodyPaintLegLeft)assets.legLeft=createBodySideTexture(base,cfg.bodyPaintLegLeft,cfg.bodyPaintColor||'#ffffff');
+            if(cfg.bodyPaintLegRight)assets.legRight=createBodySideTexture(base,cfg.bodyPaintLegRight,cfg.bodyPaintColor||'#ffffff');
+        }
+        if(assets.pants)assets.pantsTexture=createPantsTexture(assets.pants);
+        const body=Character3D.buildCharacter(cfg,look,assets);
+        front.dispose();back.dispose();blink.dispose();assets.headBlink.dispose();assets.torsoLeft.dispose();assets.torsoRight.dispose();
+        assets.headLeft?.dispose();assets.headRight?.dispose();assets.headTop?.dispose();assets.headBottom?.dispose();assets.armLeft?.dispose();assets.armRight?.dispose();assets.legLeft?.dispose();assets.legRight?.dispose();
+        body.position.y=1.46875;body.userData.kind=kind;body.userData.baseColor=base;
+        return body;
+    }
+    const tf = createSpeciesTexture(parts, base, belly, false, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', pc, cfg.hair || 'none', cfg.hairColor || '',false,false,cfg.pants||'none',false,cfg.bodyPaint||'',cfg.bodyPaintColor||'#ffffff');
+    const tb = createSpeciesTexture(parts, base, belly, true, cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none', cfg.eye || '#000000', pc, cfg.hair || 'none', cfg.hairColor || '',false,false,cfg.pants||'none',false,cfg.bodyPaintBack||'',cfg.bodyPaintColor||'#ffffff');
     const m1 = new THREE.MeshBasicMaterial({ map: tf, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
     const m2 = new THREE.MeshBasicMaterial({ map: tb, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.9375), m1);
     mesh.name = 'playerSprite';
     mesh.position.y = 1.46875;
-    mesh.userData = { matFront: m1, matBack: m2, is3D: false, baseColor: base, cfg: cfg };
+    mesh.userData = { matFront: m1, matBack: m2, is3D: false, baseColor: base, cfg: cfg, kind: kind };
     return mesh;
 }
 
 // Build (once, on first chat) a front texture with the mouth open. Swapping to
 // it for a few frames is much cheaper than re-rendering the whole sprite every
 // time somebody speaks.
-function ensureOpenMouthMaterial(sprite) {
+function ensureOpenMouthMaterial(sprite,shape=0) {
     const u = sprite && sprite.userData;
     if (!u) return null;
-    if (u.matFrontOpen) return u.matFrontOpen;
+    shape=Math.max(0,Math.min(4,Math.floor(shape)||0));
+    if(!u.matFrontOpenFrames)u.matFrontOpenFrames=[];
+    if(u.matFrontOpenFrames[shape])return u.matFrontOpenFrames[shape];
     const cfg = u.cfg || {};
     const look = characterLookFromCfg(cfg);
     const tex = createSpeciesTexture(look.parts, look.base, look.belly, false,
         cfg.hat || 'none', cfg.shirt || 'none', cfg.collar || 'none',
-        cfg.eye || '#000000', cfg.pattern || 'none', look.pc,
-        cfg.hair || 'none', cfg.hairColor || '', true);
-    u.matFrontOpen = new THREE.MeshBasicMaterial({
+        cfg.eye || '#000000', look.pc,
+        cfg.hair || 'none', cfg.hairColor || '', TALK_MOUTH_SHAPES[shape].name,false,cfg.pants||'none',false,cfg.bodyPaint||'',cfg.bodyPaintColor||'#ffffff');
+    u.matFrontOpenFrames[shape] = new THREE.MeshBasicMaterial({
         map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5
     });
-    return u.matFrontOpen;
+    return u.matFrontOpenFrames[shape];
 }
 
 // Tear down a body mesh/group and release its GPU resources.
 function disposeCharacterBody(body) {
-    if (!body) return;
-    if (body.userData) {
-        if (body.userData.matFront && body.userData.matFront.map) disposeTexture(body.userData.matFront.map);
-        if (body.userData.matBack && body.userData.matBack.map) disposeTexture(body.userData.matBack.map);
-        if (body.userData.matFrontOpen) {
-            if (body.userData.matFrontOpen.map) disposeTexture(body.userData.matFrontOpen.map);
-            body.userData.matFrontOpen.dispose();
-        }
-    }
-    body.traverse((o) => {
-        if (o.geometry) o.geometry.dispose();
-        if (o.material) {
-            const mats = Array.isArray(o.material) ? o.material : [o.material];
-            mats.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
-        }
-    });
+    if(!body)return;
+    const materials=new Set(),textures=new Set();
+    const add=m=>{if(m){materials.add(m);if(m.map)textures.add(m.map);}};
+    if(body.userData) {for(const material of Object.values(body.userData.blinkMaterials||{}))add(material);add(body.userData.matFront);add(body.userData.matBack);add(body.userData.matFrontOpen);for(const material of body.userData.matFrontOpenFrames||[])add(material);}
+    const collect=o=>{if(o.geometry)o.geometry.dispose();if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(add);};
+    body.traverse(collect);
+    if(body.userData&&body.userData.modelSources)body.userData.modelSources.traverse(collect);
+    textures.forEach(t=>t.dispose());materials.forEach(m=>m.dispose());
 }
 
 // Replace a character's body using the current model mode.
 function replaceCharacterBody(group, cfg) {
     if (!group) return null;
     const old = group.getObjectByName('playerSprite');
+    const solid=!!saveState.model3D;
+    if(old?.userData.cfg){for(const flag of ['holdingRod','holdingFish','holdingTool','sitting','bellySliding'])if(cfg[flag]===undefined&&old.userData.cfg[flag]!==undefined)cfg={...cfg,[flag]:old.userData.cfg[flag]};}
+    // Equipment/label updates often call this with identical body cosmetics.
+    if(old&&old.userData.is3D===solid&&JSON.stringify(old.userData.cfg)===JSON.stringify(cfg))return old;
     if (old) { disposeCharacterBody(old); group.remove(old); }
-    const body = makeCharacterBody(cfg);
+    const body = makeCharacterBody(cfg, group.userData.characterKind || 'npc');
     body.position.y = 1.46875;
     if (old) body.renderOrder = old.renderOrder;
     group.add(body);
@@ -10912,12 +11535,16 @@ const ROD_IDLE_2D = -0.2, ROD_CAST_2D = 0.8;
 
 // Resting/casting angle for the rod billboard.
 function rodAngleFor(rod, casting) {
-    return casting ? ROD_CAST_2D : ROD_IDLE_2D;
+    return rod?.userData?.is3D ? (casting?1.05:.3) : (casting ? ROD_CAST_2D : ROD_IDLE_2D);
 }
 
 // A billboard fishing rod named "rod".
 function makeRod(rodId) {
     rodId = rodId || 'bamboo';
+    if(saveState.model3D&&window.Character3D?.buildRod){
+        const r=Character3D.buildRod(ROD_TYPES.find(v=>v.id===rodId)||ROD_TYPES[0]);
+        r.position.set(.56,.84875,.43);r.rotation.x=rodAngleFor(r,false);return r;
+    }
     const rodTex = createRodTexture(rodId);
     const rodMat = new THREE.MeshBasicMaterial({ map: rodTex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
     const rodGeo = new THREE.PlaneGeometry(3.0, 3.0);
@@ -10925,7 +11552,7 @@ function makeRod(rodId) {
     const r = new THREE.Mesh(rodGeo, rodMat);
     r.position.set(0.6, 0.96, 0.1);
     r.rotation.set(-0.2, -Math.PI / 2, 0);
-    r.name = 'rod';
+    r.name = 'rod';r.userData={rodId,is3D:false};
     return r;
 }
 
@@ -10935,27 +11562,51 @@ function makeRod(rodId) {
 // two apart.
 function makeHeldFish(fishName, color, size) {
     const s = size || 1.0;
+    if(saveState.model3D&&window.Character3D?.buildFish){
+        const held=new THREE.Group(),fish=Character3D.buildFish(fishName,color);
+        const bounds=new THREE.Box3().setFromObject(fish),width=bounds.max.x-bounds.min.x;
+        const scale=1.4*THREE.MathUtils.clamp(s,.6,1.6)/Math.max(width,.01);
+        fish.scale.setScalar(scale);fish.position.set(-(bounds.min.x+bounds.max.x)*.5*scale,-bounds.min.y*scale+.025,-(bounds.min.z+bounds.max.z)*.5*scale);
+        held.add(fish);held.name='heldFishSprite';held.userData={fishName,color,size:s,is3D:true};held.position.set(.56,1.01875,.5);return held;
+    }
     const fTex = createFishTexture(fishName, color);
     const fMat = new THREE.SpriteMaterial({ map: fTex, transparent: true, alphaTest: 0.5 });
     const sp = new THREE.Sprite(fMat);
     sp.name = 'heldFishSprite';
-    sp.userData = { fishName: fishName, is3D: false };
+    sp.userData = { fishName: fishName, color, size:s, is3D: false };
     sp.position.set(0.6, 1.5, 0.5);
     sp.scale.set(1.5 * s, 1.5 * s, 1);
     return sp;
 }
 
 // Cosmetic config for the local player, straight from saveState.
-function characterCfgFromSave() {
+function characterCfgFromSave(state = saveState) {
     return {
-        color: saveState.catColor, belly: saveState.bellyColor, eye: saveState.eyeColor,
-        species: saveState.species,
-        ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose,
-        misc: saveState.currentMisc, tail: saveState.currentTail,
-        earsColor: saveState.earsColor || '', noseColor: saveState.noseColor || '',
-        miscColor: saveState.miscColor || '', tailColor: saveState.tailColor || '',
-        hat: saveState.currentHat, shirt: saveState.currentShirt, collar: saveState.currentCollar,
-        pattern: saveState.currentPattern, hair: saveState.currentHair, hairColor: saveState.hairColor || ''
+        color: state.catColor, belly: state.bellyColor, eye: state.eyeColor,
+        species: state.species,
+        protogenLogo:globalThis.window?.ProtogenLogo?.normalize(state.protogenLogo)||'',
+        ears: state.currentEars, eyes: state.currentEyes, nose: state.currentNose,
+        misc: state.currentMisc, tail: state.currentTail,
+        earsColor: state.earsColor || '', noseColor: state.noseColor || '',
+        miscColor: state.miscColor || '', tailColor: state.tailColor || '',
+        handColor: state.handColor || '', footColor: state.footColor || '', tailAccentColor: state.tailAccentColor || '',
+        hat: state.currentHat, shirt: state.currentShirt, pants: state.currentPants, collar: state.currentCollar,
+        bodyPaint: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaint) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaint) : '')),
+        bodyPaintBack: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintBack) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintBack) : '')),
+        bodyPaintLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintLeft) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintLeft) : '')),
+        bodyPaintRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintRight) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintRight) : '')),
+        bodyPaintHeadFront: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintHeadFront) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintHeadFront) : '')),
+        bodyPaintHeadBack: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintHeadBack) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintHeadBack) : '')),
+        bodyPaintHeadLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintHeadLeft) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintHeadLeft) : '')),
+        bodyPaintHeadRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintHeadRight) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintHeadRight) : '')),
+        bodyPaintHeadTop: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintHeadTop) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintHeadTop) : '')),
+        bodyPaintHeadBottom: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintHeadBottom) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintHeadBottom) : '')),
+        bodyPaintArmLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintArmLeft) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintArmLeft) : '')),
+        bodyPaintArmRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintArmRight) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintArmRight) : '')),
+        bodyPaintLegLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintLegLeft) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintLegLeft) : '')),
+        bodyPaintLegRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(state.bodyPaintLegRight) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(state.bodyPaintLegRight) : '')),
+        bodyPaintColor: (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(state.bodyPaintColor) : (typeof window !== 'undefined' && window.BodyPaint?.normalizeColor ? window.BodyPaint.normalizeColor(state.bodyPaintColor) : '#ffffff')),
+        hair: state.currentHair, hairColor: state.hairColor || ''
     };
 }
 
@@ -10967,11 +11618,28 @@ function characterCfgFromData(data) {
         belly: data.belly,
         eye: data.eye || '#000000',
         species: data.species || 'cat',
+        protogenLogo:globalThis.window?.ProtogenLogo?.normalize(data.protogenLogo)||'',
         ears: data.ears, eyes: data.eyes, nose: data.nose, misc: data.misc, tail: data.tail,
         earsColor: data.earsColor || '', noseColor: data.noseColor || '',
         miscColor: data.miscColor || '', tailColor: data.tailColor || '',
-        hat: data.hat || 'none', shirt: data.shirt || 'none', collar: data.collar || 'none',
-        pattern: data.pattern || 'none', hair: data.hair || 'none', hairColor: data.hairColor || ''
+        handColor: data.handColor || '', footColor: data.footColor || '', tailAccentColor: data.tailAccentColor || '',
+        hat: data.hat || 'none', shirt: data.shirt || 'none', pants: data.pants || 'none', collar: data.collar || 'none',
+        bodyPaint: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaint) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaint) : '')),
+        bodyPaintBack: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintBack) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintBack) : '')),
+        bodyPaintLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintLeft) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintLeft) : '')),
+        bodyPaintRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintRight) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintRight) : '')),
+        bodyPaintHeadFront: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintHeadFront) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintHeadFront) : '')),
+        bodyPaintHeadBack: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintHeadBack) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintHeadBack) : '')),
+        bodyPaintHeadLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintHeadLeft) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintHeadLeft) : '')),
+        bodyPaintHeadRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintHeadRight) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintHeadRight) : '')),
+        bodyPaintHeadTop: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintHeadTop) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintHeadTop) : '')),
+        bodyPaintHeadBottom: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintHeadBottom) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintHeadBottom) : '')),
+        bodyPaintArmLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintArmLeft) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintArmLeft) : '')),
+        bodyPaintArmRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintArmRight) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintArmRight) : '')),
+        bodyPaintLegLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintLegLeft) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintLegLeft) : '')),
+        bodyPaintLegRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(data.bodyPaintLegRight) : (typeof window !== 'undefined' && window.BodyPaint?.normalize ? window.BodyPaint.normalize(data.bodyPaintLegRight) : '')),
+        bodyPaintColor: (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(data.bodyPaintColor) : (typeof window !== 'undefined' && window.BodyPaint?.normalizeColor ? window.BodyPaint.normalizeColor(data.bodyPaintColor) : '#ffffff')),
+        hair: data.hair || 'none', hairColor: data.hairColor || ''
     };
 }
 
@@ -10981,7 +11649,7 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
     // Body (2D cosmetic billboard)
     const cfg = {
         color: col, belly: '#ffffff', eye: eyeHex, species: species,
-        hat: hatId, shirt: 'none', collar: 'none', pattern: 'none',
+        hat: hatId, shirt: 'none', collar: 'none', bodyPaint: '',
         hair: hairId, hairColor: hairColor || ''
     };
     g.add(makeCharacterBody(cfg));
@@ -10989,8 +11657,8 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
     // Name & Title
     const ntMat = new THREE.SpriteMaterial({ map: createNameTagTexture(name), depthWrite: false, depthTest: false });
     const nt = new THREE.Sprite(ntMat);
-    nt.position.y = 3.05; nt.scale.set(3, 0.75, 1); nt.name = "nameTag";
-    nt.renderOrder = 100;
+    nt.position.y = 3.05; nt.scale.set(3*ntMat.map.image.width/256, 0.75, 1); nt.name = "nameTag";
+    nt.renderOrder = 100;nt.visible=typeof hudVisible==='undefined'||hudVisible;
     g.add(nt);
 
     const tTex = createTitleTexture(titleId);
@@ -11019,6 +11687,7 @@ function createPlayerMesh(col, name, hatId = 'none', eyeHex = '#000000', species
 
 function createLocalPlayer() {
     player = createPlayerMesh(saveState.catColor, saveState.displayName, saveState.currentHat, saveState.eyeColor, saveState.species, saveState.currentTitle, saveState.currentRod, saveState.currentHair, saveState.hairColor);
+    player.userData.characterKind = 'player';
 
     // Give local player's UI elements higher renderOrder so they overlap other players
     const nameTag = player.getObjectByName('nameTag');
@@ -11081,6 +11750,7 @@ function createBoatTexture() {
 }
 
 function makeSailBoatMesh() {
+    if(window.Rowboat3D)return Rowboat3D.build();
     const tex = createBoatTexture();
     const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });
     const sp = new THREE.Mesh(new THREE.PlaneGeometry(2, 3), mat);
@@ -11109,6 +11779,38 @@ function findCustomSpawn(lv) {
         }
     }
     return { x: 0, z: 0 };
+}
+
+// The stock map puts the Inferno Guard at (16, 16), which can be underwater or
+// buried on an authored map. If the editor did not place a lava NPC, put the
+// keeper on a dry, clear cell within a few steps of the custom spawn instead.
+function findCustomLavaKeeperSpot(lv) {
+    if (!lv || !window.Level) return null;
+    const spawn = findCustomSpawn(lv);
+    if (!spawn) return null;
+    const base = Level.worldToCell(lv, spawn.x, spawn.z);
+    const sea = lv.seaLevel;
+    const blocked = (x, y, z) =>
+        treeColliders.some(c => Math.hypot(x - c.x, z - c.z) < (c.radius || 0) + 1.1) ||
+        lv.npcs.some(n => Math.hypot(x - n.x, z - n.z) < 2.5) ||
+        staticColliders.some(c => staticColliderHits(c, { x, y: y + .2, z }, .8, 2.4));
+    for (let ring = 1; ring <= 5; ring++) {
+        for (let dz = -ring; dz <= ring; dz++) {
+            for (let dx = -ring; dx <= ring; dx++) {
+                if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+                const gx = base.gx + dx, gz = base.gz + dz;
+                if (gx < 0 || gz < 0 || gx >= lv.grid || gz >= lv.grid) continue;
+                const p = Level.cellCenter(lv, gx, gz);
+                const y = Level.sampleHeight(lv, p.x, p.z);
+                if (y <= sea + .35 || blocked(p.x, y, p.z)) continue;
+                return { x: p.x, y, z: p.z };
+            }
+        }
+    }
+    // A one-cell island can leave no free ring cell; the spawn itself is still
+    // dry and the keeper remains reachable there.
+    const y = Level.sampleHeight(lv, spawn.x, spawn.z);
+    return y > sea + .35 ? { x: spawn.x, y, z: spawn.z } : null;
 }
 
 function renderKeybinds() {
@@ -11219,7 +11921,7 @@ function resetKeybinds() {
 // --- CHAT VOICE (Animal Crossing-style) ----------------------------------
 // Chat messages make the speaker's mouth flap and emit a short pitched blip
 // per character. The blips go through Sound.playSpatial(), so they use the same
-// HRTF panner and 50-unit distance falloff as footsteps and meows: stand next
+// HRTF panner as other world sounds, with a 50-unit voice range: stand next
 // to someone to hear them, walk away and they fade out.
 function hashString(str) {
     let h = 2166136261;
@@ -11230,6 +11932,13 @@ function hashString(str) {
     return h >>> 0;
 }
 
+const TALK_MOUTH_SHAPES=[
+    {name:'ah',rx:3.2,ry:3.1,width:.08,height:.11,tilt:0},
+    {name:'ee',rx:4.5,ry:1.35,width:.12,height:.045,teeth:true,tilt:0},
+    {name:'oh',rx:2.7,ry:3.5,width:.065,height:.115,tilt:0},
+    {name:'oo',rx:1.8,ry:2.1,width:.043,height:.075,tilt:0},
+    {name:'smile',rx:4,ry:1.7,width:.11,height:.055,teeth:true,tilt:-.08}
+];
 function startPlayerTalking(mesh, text, speakerId) {
     if (!mesh || !mesh.userData) return;
     const clean = String(text || '').slice(0, 256);
@@ -11260,44 +11969,295 @@ function updateTalkingPlayers(now) {
     for (let i = 0; i < meshes.length; i++) {
         const mesh = meshes[i];
         const u = mesh.userData;
-        if (!u || (!u.talking && !u.talkUntil)) continue;
-
-        if (now >= u.talkUntil || !u.talkText || u.talkIndex >= u.talkText.length) {
-            u.talking = false;
-            u.talkUntil = 0;
-            u.talkMouthOpen = false;
-            continue;
-        }
-
-        if (now >= (u.talkNext || 0)) {
-            // Skip spaces so the voice follows the spoken characters, not the
-            // layout. Punctuation still gets a blip of its own.
-            let ch = '';
-            while (u.talkIndex < u.talkText.length) {
-                ch = u.talkText[u.talkIndex++];
-                if (ch.trim() !== '') break;
-                ch = '';
+        if(!u)continue;
+        const voice=!!u.voiceEnabled&&now-(u.voiceSampleAt||0)<200&&((u.voiceLevel||0)>.015||now<(u.voiceHoldUntil||0));
+        const chat=now<(u.talkUntil||0)&&u.talkText&&u.talkIndex<u.talkText.length;
+        u.talking=false;u.talkMouthOpen=false;u.mouthAmount=0;
+        if(chat){
+            if(now>=(u.talkNext||0)){
+                let ch='';while(u.talkIndex<u.talkText.length){ch=u.talkText[u.talkIndex++];if(ch.trim())break;ch='';}
+                if(ch){
+                    const offset=(ch.charCodeAt(0)%5)-2,variant=((u.talkPitch+offset)%12+12)%12;
+                    if(!voice)try{Sound.playSpatial('talk',mesh.position,variant);}catch(error){}
+                    const vowels={a:0,e:1,i:1,o:2,u:3};u.mouthShape=vowels[ch.toLowerCase()]??(ch.charCodeAt(0)%5);
+                    u.talkLastBlip=now;u.talkNext=now+72+Math.random()*46;
+                }else u.talkNext=now+80;
             }
-            if (ch) {
-                const offset = (ch.charCodeAt(0) % 5) - 2;
-                const variant = ((u.talkPitch + offset) % 12 + 12) % 12;
-                try { Sound.playSpatial('talk', mesh.position, variant); } catch (e) { }
-                u.talkLastBlip = now;
-                u.talkNext = now + 72 + Math.random() * 46;
-            } else {
-                u.talkNext = now + 80;
-            }
+            u.talking=true;u.talkMouthOpen=now-(u.talkLastBlip||0)<55;u.mouthAmount=u.talkMouthOpen?.75:0;
+        }else u.talkUntil=0;
+        if(voice){
+            u.talking=true;u.talkMouthOpen=Math.sin(now*.04)>-.2;
+            u.mouthShape=(Math.floor(now/110)+Math.floor((u.voiceLevel||0)*4)+(u.talkPitch||0))%5;
+            u.mouthAmount=u.talkMouthOpen?Math.min(1,.2+(u.voiceLevel||0)*.8):0;
         }
+    }
+}
 
-        // Open for ~55ms after each syllable, then snap shut: a crisp flap
-        // rather than a mouth that stays open between blips.
-        u.talkMouthOpen = (now - (u.talkLastBlip || 0)) < 55;
+function setSitting(value){
+    if(!player)return false;
+    if(value){
+        const ground=getTerrainHeight(player.position.x,player.position.z);
+        const stand=typeof standableTopAt==='function'?standableTopAt(player.position.x,player.position.z,player.position.y):-Infinity;
+        if(isDiving||isProne||isSailing||playerVelocity.y!==0||player.position.y>Math.max(ground,stand)+.2||fishingState!=='idle'||isGuitarActive||isGloveActive)return false;
+    }
+    isSitting=!!value;controls.jump=false;lastJumpTime=0;playerVelocity.x=0;playerVelocity.z=0;
+    if(typeof sendUpdate==='function')sendUpdate();return true;
+}
+function applySittingPose(owner,active,dt){
+    let body=owner.getObjectByName('playerSprite');if(!body)return;
+    const wasSitting=!!body.userData.sitting;
+    if(body.userData.is3D&&body.userData.cfg&&!!body.userData.cfg.sitting!==active){
+        const pos=body.position.clone(),rot=body.rotation.clone(),scale=body.scale.clone();
+        body=replaceCharacterBody(owner,{...body.userData.cfg,sitting:active});body.position.copy(pos);body.rotation.copy(rot);body.scale.copy(scale);
+    }
+    body.userData.sitting=active;
+    if(active){
+        const idle=owner.userData.seatedIdle||(owner.userData.seatedIdle={time:Math.random()*10});
+        idle.time+=Math.min(Math.max(dt||0,0),.1);
+        if(body.userData.is3D){if(typeof window!=='undefined'){
+            window.Character3D?.animateStanding(body,idle.time,1,0);
+            const reel=owner.userData.reelAnimation;
+            if(owner.userData.sharedBoat&&reel?.weight>0)window.Character3D?.animateReel(body,reel.phase,reel.weight);
+        }}
+        else{
+            if(body.userData.seatedScaleY===undefined)body.userData.seatedScaleY=body.scale.y;
+            body.scale.y=body.userData.seatedScaleY*(1+Math.sin(idle.time*1.7)*.004);
+        }
+    }else if(wasSitting&&!body.userData.is3D){body.scale.y=body.userData.seatedScaleY??body.scale.y;delete body.userData.seatedScaleY;}
+    if(active||wasSitting){
+        const blend=1-Math.exp(-14*dt);
+        body.position.y=THREE.MathUtils.lerp(body.position.y,active?1.16-(body.userData.upperLift||0):1.46875,blend);
+        body.rotation.x=THREE.MathUtils.lerp(body.rotation.x,active&&!body.userData.is3D?-.12:0,blend);
+        body.rotation.z=THREE.MathUtils.lerp(body.rotation.z,0,blend);
+    }
+}
+
+function bellySlideDirection(view,input,lastMove,facing) {
+    const forward=new THREE.Vector3();view.getWorldDirection(forward);forward.y=0;
+    if(forward.lengthSq()<.000001)forward.set(0,0,1);forward.normalize();
+    const right=new THREE.Vector3().crossVectors(forward,new THREE.Vector3(0,1,0));
+    const direction=new THREE.Vector3().addScaledVector(forward,(input.forward?1:0)-(input.backward?1:0)).addScaledVector(right,(input.right?1:0)-(input.left?1:0));
+    if(direction.lengthSq()<.000001&&lastMove)direction.set(lastMove.x,0,lastMove.z);
+    if(direction.lengthSq()<.000001)direction.set(Math.sin(facing),0,Math.cos(facing));
+    return direction.normalize();
+}
+function applyBellySlidePose(owner,active,dt) {
+    let body=owner.getObjectByName('playerSprite');if(!body)return;
+    if(body.userData.is3D&&body.userData.cfg&&!!body.userData.cfg.bellySliding!==active){
+        const pos=body.position.clone(),rot=body.rotation.clone(),scale=body.scale.clone();
+        body=replaceCharacterBody(owner,{...body.userData.cfg,bellySliding:active});
+        body.position.copy(pos);body.rotation.copy(rot);body.scale.copy(scale);
+    }
+    if(active){
+        const blend=1-Math.exp(-16*dt);
+        body.rotation.x=THREE.MathUtils.lerp(body.rotation.x,Math.PI/2,blend);
+        body.rotation.z=THREE.MathUtils.lerp(body.rotation.z,0,blend);
+        body.position.y=THREE.MathUtils.lerp(body.position.y,body.userData.is3D?.86:.6,blend);
+    }
+}
+
+function characterBlinkClosed(owner,now){
+    const u=owner.userData;
+    if(!Number.isFinite(u.nextBlink))u.nextBlink=now+2200+Math.random()*2200;
+    if(now>=u.nextBlink){u.blinkUntil=now+140;u.nextBlink=now+2400+Math.random()*2400;}
+    return now<(u.blinkUntil||0);
+}
+function ensureBlinkMaterial(sprite,mouth){
+    const u=sprite.userData,key=mouth===false?'rest':String(mouth);
+    if(!u.blinkMaterials)u.blinkMaterials={};if(u.blinkMaterials[key])return u.blinkMaterials[key];
+    const cfg=u.cfg||{},look=characterLookFromCfg(cfg);
+    const tex=createSpeciesTexture(look.parts,look.base,look.belly,false,cfg.hat||'none',cfg.shirt||'none',cfg.collar||'none',cfg.eye||'#000000',look.pc,cfg.hair||'none',cfg.hairColor||'',mouth===false?false:TALK_MOUTH_SHAPES[mouth].name,true,cfg.pants||'none',false,cfg.bodyPaint||'',cfg.bodyPaintColor||'#ffffff');
+    return u.blinkMaterials[key]=new THREE.MeshBasicMaterial({map:tex,transparent:true,side:THREE.DoubleSide,alphaTest:.5});
+}
+
+function sync3DRodGrip(obj) {
+    if (!obj) return;
+    // Keep this on the function rather than in a module-level binding: the game
+    // UI tests evaluate the function in isolation, and this still allocates the
+    // list only once per page.
+    const toolNames = sync3DRodGrip._toolNames || (sync3DRodGrip._toolNames = [['axe', 'axe'], ['pickaxe', 'pickaxe'], ['axeMesh', 'axe'], ['pickaxeMesh', 'pickaxe'], ['guitarMesh', 'guitar'], ['gloveMesh', 'glove']]);
+    const u = obj.userData || (obj.userData = {});
+    const childCount = () => obj.children ? obj.children.length : 0;
+    let cache = u.heldCache;
+    const refresh = () => {
+        cache = { mode: saveState.model3D, childCount: childCount() };
+        for (const [name] of toolNames) cache[name] = obj.getObjectByName(name);
+        cache.rod = obj.getObjectByName('rod');
+        cache.fish = obj.getObjectByName('heldFishSprite');
+        cache.body = obj.getObjectByName('playerSprite');
+        u.heldCache = cache;
+    };
+    let stale = !cache || cache.mode !== saveState.model3D || cache.childCount !== childCount();
+    if (!stale) {
+        if (cache.body && cache.body.parent !== obj) stale = true;
+        if (!stale) for (const [name] of toolNames) { const item = cache[name]; if (item && item.parent !== obj) { stale = true; break; } }
+        if (!stale && cache.rod && cache.rod.parent !== obj) stale = true;
+        if (!stale && cache.fish && cache.fish.parent !== obj) stale = true;
+    }
+    if (stale) refresh();
+
+    const model3D = !!saveState.model3D;
+    for (const [name, type] of toolNames) {
+        const old = cache[name];
+        if (old && !!old.userData.is3D !== model3D) {
+            const tool = makeHeldTool(type, name);
+            tool.visible = old.visible;
+            old.parent.remove(old);
+            disposeCharacterBody(old);
+            obj.add(tool);
+            cache[name] = tool;
+        }
+    }
+    let rod = cache.rod;
+    if (rod && !!rod.userData.is3D !== model3D) {
+        const old = rod, casting = old.rotation.x > .6, visible = old.visible;
+        rod = makeRod(old.userData.rodId || 'bamboo');
+        rod.visible = visible;
+        rod.rotation.x = rodAngleFor(rod, casting);
+        old.parent.remove(old);
+        disposeCharacterBody(old);
+        obj.add(rod);
+        cache.rod = rod;
+    }
+    let fish = cache.fish;
+    if (fish && !!fish.userData.is3D !== model3D) {
+        const old = fish;
+        fish = makeHeldFish(old.userData.fishName, old.userData.color, old.userData.size);
+        fish.visible = old.visible;
+        old.parent.remove(old);
+        disposeCharacterBody(old);
+        obj.add(fish);
+        cache.fish = fish;
+    }
+    let body = cache.body;
+    if (!body || !body.userData.is3D || !body.userData.cfg) return;
+    let heldTool = null;
+    for (const [name] of toolNames) {
+        const item = cache[name];
+        if (item && item.visible) { heldTool = item; break; }
+    }
+    const suppressed = !!obj.userData.emoting;
+    const holdingFish = !!fish?.visible && !suppressed, holding = !!rod?.visible && !holdingFish && !heldTool && !suppressed, holdingTool = !!heldTool && !suppressed;
+    if (!!body.userData.cfg.holdingRod !== holding || !!body.userData.cfg.holdingFish !== holdingFish || !!body.userData.cfg.holdingTool !== holdingTool) {
+        const pos = body.position.clone(), rot = body.rotation.clone(), scale = body.scale.clone();
+        body = replaceCharacterBody(obj, { ...body.userData.cfg, holdingRod: holding, holdingFish, holdingTool });
+        body.position.copy(pos); body.rotation.copy(rot); body.scale.copy(scale);
+        cache.body = body;
+    }
+    const lift = body.userData.upperLift || 0;
+    if (holding) { body.updateMatrix(); rod.position.set(.56, -.62 + lift, .43); if (body.userData.standingTransform) rod.position.applyMatrix4(body.userData.standingTransform); rod.position.applyMatrix4(body.matrix); rod.rotation.z = body.rotation.z + (body.userData.standingAngle || 0); rod.rotation.y = body.rotation.y; }
+    if (holdingTool && heldTool.userData.is3D) { body.updateMatrix(); const guitar = heldTool.userData.toolType === 'guitar'; heldTool.position.set(guitar ? .3 : .56, (guitar ? -.42 : -.62) + lift, guitar ? .5 : .43 + (heldTool.userData.punchOffset || 0)); if (body.userData.standingTransform) heldTool.position.applyMatrix4(body.userData.standingTransform); heldTool.position.applyMatrix4(body.matrix); }
+    if (holdingFish) {
+        body.updateMatrix(); fish.position.set(.56, -.45 + lift, .5); if (body.userData.standingTransform) fish.position.applyMatrix4(body.userData.standingTransform); fish.position.applyMatrix4(body.matrix);
+        fish.rotation.copy(body.rotation); fish.rotation.z += (body.userData.standingAngle || 0) + Math.sin(Date.now() * .0025) * .035;
+    }
+    cache.childCount = childCount();
+}
+
+function chatTypingActive(){
+    const input=document.getElementById('chat-input');
+    return !!input&&document.activeElement===input&&document.hasFocus?.()!==false;
+}
+function updateStandingAnimation(owner,still,typing,dt,suppressed=false){
+    const body=owner.getObjectByName('playerSprite');if(!body)return;
+    if(body.userData.cfg?.sitting)return; // The shared sitting pose owns seated idle motion.
+    const state=owner.userData.standingAnimation||(owner.userData.standingAnimation={time:0,idle:0,thinking:0,applied:false});
+    dt=Math.min(Math.max(dt||0,0),.1);state.time+=dt;
+    const blocked=suppressed||owner.userData.emoting||body.userData.cfg?.sitting||body.userData.cfg?.bellySliding;
+    const active=!!still&&!blocked;
+    owner.userData.standingIdle=active;
+    state.idle=blocked?0:THREE.MathUtils.clamp(state.idle+(active?1:-1)*dt*6,0,1);
+    state.thinking=blocked?0:THREE.MathUtils.clamp(state.thinking+(active&&typing?1:-1)*dt*8,0,1);
+    if(state.idle===0&&state.thinking===0&&!state.applied)return;
+    if(body.userData.is3D){window.Character3D?.animateStanding(body,state.time,state.idle,state.thinking);}
+    else if(!blocked){body.rotation.z=Math.sin(state.time*.8)*.012*state.idle+.06*state.thinking;}
+    state.applied=state.idle>0||state.thinking>0;
+    if(typeof sync3DRodGrip==='function')sync3DRodGrip(owner);
+}
+
+function updateReelingAnimation(owner,active,dt) {
+    const body=owner.getObjectByName('playerSprite'),rod=owner.getObjectByName('rod');
+    const blocked=owner.userData.emoting||(body?.userData.cfg?.sitting&&!owner.userData.sharedBoat)||body?.userData.cfg?.bellySliding;
+    active=!!active&&!!rod?.visible&&!blocked&&(!body?.userData.is3D||!!body.userData.cfg?.holdingRod);
+    const state=owner.userData.reelAnimation||(owner.userData.reelAnimation={phase:0,weight:0});
+    if(!active&&state.weight===0)return;
+    state.weight=THREE.MathUtils.clamp(state.weight+(active?1:-1)*Math.min(Math.max(dt||0,0),.1)*8,0,1);
+    if(active)state.phase+=Math.min(dt||0,.1)*12;
+    if(body?.userData.is3D&&!blocked)window.Character3D?.animateReel(body,state.phase,state.weight);
+    if(rod){
+        if(!state.basePosition)state.basePosition=rod.position.clone();
+        if(state.baseAngle===undefined)state.baseAngle=rod.rotation.x;
+        if(rod.userData.is3D){
+            if(body){body.updateMatrix();rod.position.set(.56,-.62+(body.userData.upperLift||0),.43).applyMatrix4(body.matrix);}
+            rod.position.y+=Math.sin(state.phase*.5)*.025*state.weight;
+            rod.rotation.x=rodAngleFor(rod,active)+Math.sin(state.phase*.5)*.035*state.weight;
+            const crank=rod.getObjectByName('reelCrankPivot');if(crank)crank.rotation.x=state.phase*state.weight;
+        }else{
+            rod.position.y=state.basePosition.y+Math.sin(state.phase)*.04*state.weight;
+            rod.rotation.x=rodAngleFor(rod,active)+Math.sin(state.phase)*.07*state.weight;
+        }
+    }
+    if(state.weight===0){if(rod&&!rod.userData.is3D)rod.position.copy(state.basePosition);state.phase=0;delete state.basePosition;delete state.baseAngle;}
+}
+
+function updateJumpAnimation(owner,airborne,velocity,dt,suppressed=false){
+    const body=owner.getObjectByName('playerSprite');if(!body)return;
+    const blocked=suppressed||owner.userData.emoting||body.userData.cfg?.sitting||body.userData.cfg?.bellySliding;
+    if(body.userData.is3D){
+        const compression=window.Character3D?.animateJump(body,!!airborne&&!blocked,velocity,dt,!(owner.userData.reelAnimation?.weight>0)&&!blocked,!!blocked);
+        if(compression!==null&&compression!==undefined&&!blocked){body.position.y=1.46875-compression;if(typeof sync3DRodGrip==='function')sync3DRodGrip(owner);}
+    }else{
+        const state=owner.userData.jumpSprite||(owner.userData.jumpSprite={airborne:false,landing:0});
+        if(blocked){state.airborne=false;state.landing=0;return;}
+        if(state.airborne&&!airborne)state.landing=.2;
+        if(airborne)body.rotation.z=velocity>0?-.08:.06;
+        else if(state.airborne||state.landing>0){body.rotation.z=0;body.position.y=1.46875-Math.sin((1-state.landing/.2)*Math.PI)*.08;}
+        const finishing=state.landing>0;state.airborne=!!airborne;state.landing=Math.max(0,state.landing-dt);
+        if(finishing&&state.landing===0){body.position.y=1.46875;body.rotation.z=0;}
+    }
+}
+
+function syncHudLabel(label){
+    if(!['nameTag','titleSprite','talkingIcon','chatBubble','npcIcon'].includes(label.name))return;
+    if(typeof hudVisible!=='undefined'&&!hudVisible){
+        if(label.userData.hudVisibleBeforeHide===undefined)label.userData.hudVisibleBeforeHide=label.visible;
+        label.visible=false;
+    }else{
+        if(label.name==='nameTag'||label.name==='npcIcon')label.visible=true;
+        else if(label.name==='titleSprite')label.visible=!!saveState.showTitles;
+        else if(label.userData.hudVisibleBeforeHide!==undefined)label.visible=label.userData.hudVisibleBeforeHide;
+        delete label.userData.hudVisibleBeforeHide;
+    }
+}
+function syncCharacterOverhead(owner){
+    const lift=owner.getObjectByName('playerSprite')?.userData.upperLift||0;
+    for(const label of owner.children||[]){
+        if(!['nameTag','titleSprite','talkingIcon','chatBubble','npcIcon'].includes(label.name))continue;
+        syncHudLabel(label);
+        if(label.userData.baseHeight===undefined)label.userData.baseHeight=label.position.y;
+        label.position.y=label.userData.baseHeight+lift;
     }
 }
 
 function updateSpriteDirection(obj, targetCamPos) {
+    syncCharacterOverhead(obj);
+    if(typeof sync3DRodGrip==='function')sync3DRodGrip(obj);
     const sprite = obj.getObjectByName("playerSprite");
-    if (!sprite || !sprite.userData.matFront) return;
+    if (!sprite) return;
+    const blinkClosed=typeof characterBlinkClosed==='function'?characterBlinkClosed(obj,performance.now()):false;
+    if (sprite.userData.is3D) {
+        window.Character3D?.setBlink?.(sprite,blinkClosed);
+        const mouth=sprite.userData.mouth;
+        if(mouth){
+            const open=obj.userData?.talking&&obj.userData?.talkMouthOpen,shape=TALK_MOUTH_SHAPES[obj.userData?.mouthShape||0]||TALK_MOUTH_SHAPES[0];
+            const profile=mouth.userData?.profile||{width:.08,height:.1};
+            mouth.scale.x=open?profile.width*(shape.width/.08):profile.width;
+            mouth.scale.y=open?.025+(profile.height*(shape.height/.1)-.025)*(obj.userData.mouthAmount??.75):.025;
+            if(mouth.rotation)mouth.rotation.z=open?shape.tilt:0;
+        }
+        return;
+    }
+    if (!sprite.userData.matFront) return;
 
     // OPTIMIZATION: Use reused vectors
     const toCam = _optVec1.copy(targetCamPos).sub(obj.position);
@@ -11310,11 +12270,12 @@ function updateSpriteDirection(obj, targetCamPos) {
     facing.normalize();
 
     if (toCam.dot(facing) > 0) {
+        if(blinkClosed){sprite.material=ensureBlinkMaterial(sprite,obj.userData?.talking&&obj.userData?.talkMouthOpen?(obj.userData.mouthShape||0):false);return;}
         // Chats swap to a cached open-mouth texture for a few frames. The
         // texture is built the first time this character speaks, so ordinary
         // NPCs and players never pay for it.
         if (obj.userData && obj.userData.talking && obj.userData.talkMouthOpen) {
-            sprite.material = ensureOpenMouthMaterial(sprite) || sprite.userData.matFront;
+            sprite.material = ensureOpenMouthMaterial(sprite,obj.userData.mouthShape||0) || sprite.userData.matFront;
         } else {
             sprite.material = sprite.userData.matFront;
         }
@@ -11326,6 +12287,7 @@ function updateSpriteDirection(obj, targetCamPos) {
 function setupInputs() {
     const ci = document.getElementById('chat-input');
     setupGifPicker();
+    window.addEventListener('blur',()=>{if(document.activeElement===ci)ci.blur();});
 
     // Chat Fade Logic
     ci.addEventListener('focus', () => {
@@ -11338,6 +12300,9 @@ function setupInputs() {
     });
 
     document.onkeydown = e => {
+        if(e.code === 'Escape' && closeTopOverlay()){e.preventDefault();return;}
+        if(document.getElementById('protogen-logo-editor')?.open||document.getElementById('character-studio')?.open)return;
+        if(e.target?.closest?.('#guided-tour'))return;
         const k = saveState.keybinds;
 
         // Chat Focus Logic
@@ -11346,7 +12311,7 @@ function setupInputs() {
                 sendChatMessage(ci.value);
                 ci.value = '';
                 ci.blur();
-                if (isMobile) document.getElementById('chat-ui').style.display = 'none';
+                if (isMobile) window.MobileUI?.hideChat();
             }
             else if (e.code === 'Escape') {
                 ci.blur();
@@ -11357,16 +12322,30 @@ function setupInputs() {
         }
 
         if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
+        if(document.getElementById('halloween-overlay')?.hidden===false){if(e.code==='Escape'||e.code===k.menu){e.preventDefault();window.Halloween?.close();}return;}
+        const emoteOverlay=document.getElementById('emote-overlay');
+        if(!emoteOverlay?.hidden){
+            if(e.code==='Escape'||e.code===(k.emote||'KeyC')){e.preventDefault();Emotes.close();return;}
+            if(/^Digit[1-5]$/.test(e.code)){e.preventDefault();Emotes.select(Number(e.code.slice(-1))-1);return;}
+            if(['ArrowRight','ArrowDown','ArrowLeft','ArrowUp'].includes(e.code)){e.preventDefault();Emotes.moveSelection(e.code==='ArrowRight'||e.code==='ArrowDown'?1:-1);}
+            return;
+        }
+        if(e.code===(k.emote||'KeyC')&&!e.repeat){e.preventDefault();window.Emotes?.toggle();return;}
+        if(document.getElementById('boat-dock-menu')?.hidden===false){if(e.code==='Escape'||e.code===k.menu)window.Boats?.close();return;}
         if (e.code === k.menu) { toggleOptions(); return; }
         if (e.code === 'KeyI') { document.exitPointerLock(); togglePropsUI(); return; }
         if (e.code === 'KeyO') { undoProp(); return; }
 
+        if(e.code===(k.sit||'KeyX')){e.preventDefault();if(!e.repeat)setSitting(!isSitting);return;}
+        if(isSitting&&(e.code==='Space'||e.code===k.jump)){e.preventDefault();if(!e.repeat)setSitting(false);return;}
+        if(window.Boats?.isAboard()&&(e.code===k.jump||e.code===(k.sit||'KeyX'))){e.preventDefault();return;}
         // Movement
         if (e.code === k.forward) controls.forward = true;
         if (e.code === k.backward) controls.backward = true;
         if (e.code === k.left) controls.left = true;
         if (e.code === k.right) controls.right = true;
         if (e.code === k.jump) {
+            if(e.repeat)return;
             const now = Date.now();
             if (isProne) {
                 isProne = false; isDiving = false;
@@ -11376,16 +12355,15 @@ function setupInputs() {
                 return;
             }
             if (isDiving) { controls.jump = false; return; }
-            const onGround = player && player.position.y <= (getTerrainHeight ? getTerrainHeight(player.position.x, player.position.z) : 0) + 0.15;
-            // Double-tap while airborne (or just jumped) -> dive
-            if (!onGround && lastJumpTime > 0 && (now - lastJumpTime) < 450) {
+            const ground = getTerrainHeight ? getTerrainHeight(player.position.x, player.position.z) : 0;
+            const stand = (typeof standableTopAt === 'function') ? standableTopAt(player.position.x, player.position.z, player.position.y) : -Infinity;
+            const onGround = player && player.position.y <= Math.max(ground, stand) + 0.15;
+            // Double-tap while airborne (or just jumped) -> dive. Diving is
+            // disabled inside houses because the dive sweep only knows about
+            // outdoor colliders; furniture collisions handle the walk cycle.
+            if (!onGround && lastJumpTime > 0 && (now - lastJumpTime) < 450 && !(window.Housing && Housing.inside)) {
                 isDiving = true; diveTimer = 0.45;
-                const camForward = new THREE.Vector3();
-                camera.getWorldDirection(camForward);
-                camForward.y = 0;
-                if (camForward.length() < 0.001) camForward.set(0,0,1);
-                camForward.normalize();
-                diveDir.copy(camForward);
+                diveDir.copy(bellySlideDirection(camera,controls,player.userData.lastMoveDirection,player.rotation.y));
                 player.rotation.y = Math.atan2(diveDir.x, diveDir.z);
                 lastJumpTime = 0;
                 controls.jump = false;
@@ -11401,8 +12379,13 @@ function setupInputs() {
 
         // Interaction (Desktop)
         if (e.code === k.interact) {
+            if(interactTarget==='exploration'){window.Exploration?.interact();return;}
+            if(window.Housing && (interactTarget==='house'||interactTarget==='house-exit'||interactTarget==='house-tv'||interactTarget==='house-display')) { Housing.interact(); return; }
             if (canSell) toggleMerchant();
             else if (interactTarget === 'stylist') toggleShop();
+            else if (interactTarget === 'halloween') window.Halloween?.open();
+            else if(interactTarget==='boatmaster')window.Boats?.open();
+            else if(interactTarget==='shared-boat')window.Boats?.interact();
             else if (interactTarget === 'merchant') toggleMerchant();
             else if (interactTarget === 'bait') toggleBaitShop();
             else if (interactTarget === 'tutorial') toggleTutorial();
@@ -11491,7 +12474,7 @@ function setupInputs() {
 
     document.onmousedown = e => {
         if (isMobile) return;
-        if (e.target === ci || e.target.closest('.btn') || e.target.closest('.overlay-screen') || e.target.closest('.stat-row') || e.target.closest('#bait-ui')) return;
+        if (e.target.closest('#character-studio') || e.target.closest('#protogen-logo-editor') || e.target.closest('#guided-tour') || e.target === ci || e.target.closest('.btn') || e.target.closest('.overlay-screen') || e.target.closest('.stat-row') || e.target.closest('#bait-ui')) return;
         if (audioCtx.state === 'suspended') audioCtx.resume();
         if (e.button === 0 && window.twitchScreenAt) {
             const tw = window.twitchScreenAt(e.clientX, e.clientY);
@@ -11532,46 +12515,16 @@ function setupInputs() {
         }
     };
 
-    // --- MOBILE JOYSTICK ---
-    const jz = document.getElementById('joystick-zone'); const jk = document.getElementById('joystick-knob');
-    let jid = null, jc = { x: 0, y: 0 };
-
-    jz.ontouchstart = e => {
-        e.preventDefault(); e.stopPropagation();
-        const t = e.changedTouches[0];
-        jid = t.identifier;
-        const r = jz.getBoundingClientRect();
-        jc = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-        updateJoy(t.clientX, t.clientY);
-    };
-
-    jz.ontouchmove = e => {
-        e.preventDefault(); e.stopPropagation();
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            if (e.changedTouches[i].identifier === jid) updateJoy(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
-        }
-    };
-
-    jz.ontouchend = e => {
-        e.preventDefault(); e.stopPropagation();
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            if (e.changedTouches[i].identifier === jid) {
-                jk.style.transform = 'translate(0,0)';
-                controls = { forward: false, backward: false, left: false, right: false, jump: false };
-                jid = null;
-            }
-        }
-    };
-
-    function updateJoy(x, y) {
-        let dx = x - jc.x, dy = y - jc.y; const d = Math.sqrt(dx * dx + dy * dy);
-        if (d > 40) { dx = (dx / d) * 40; dy = (dy / d) * 40; }
-        jk.style.transform = `translate(${dx}px,${dy}px)`;
-        controls.forward = dy < -10;
-        controls.backward = dy > 10;
-        controls.left = dx < -10;
-        controls.right = dx > 10;
-    }
+    // Thumbstick uses pointer capture so movement and action fingers remain independent.
+    const jz=document.getElementById('joystick-zone'),jk=document.getElementById('joystick-knob');
+    let jid=null,jc={x:0,y:0},joyRadius=40;
+    function resetJoy(){jk.style.transform='translate(0,0)';for(const key of ['forward','backward','left','right'])controls[key]=false;jid=null;}
+    jz.onpointerdown=e=>{if(jid!==null)return;e.preventDefault();e.stopPropagation();jid=e.pointerId;jz.setPointerCapture(jid);const r=jz.getBoundingClientRect();jc={x:r.left+r.width/2,y:r.top+r.height/2};joyRadius=r.width*.3;updateJoy(e.clientX,e.clientY);};
+    jz.onpointermove=e=>{if(e.pointerId!==jid)return;e.preventDefault();e.stopPropagation();updateJoy(e.clientX,e.clientY);};
+    jz.onpointerup=e=>{if(e.pointerId===jid)resetJoy();};jz.onpointercancel=jz.onpointerup;jz.onlostpointercapture=e=>{if(e.pointerId===jid)resetJoy();};
+    function updateJoy(x,y){let dx=x-jc.x,dy=y-jc.y;const d=Math.hypot(dx,dy);if(d>joyRadius){dx*=joyRadius/d;dy*=joyRadius/d;}jk.style.transform='translate('+dx+'px,'+dy+'px)';const dead=joyRadius*.22;controls.forward=dy<-dead;controls.backward=dy>dead;controls.left=dx<-dead;controls.right=dx>dead;}
+    window.addEventListener('blur',resetJoy);window.addEventListener('resize',resetJoy);
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)resetJoy();});
 
     // --- MOBILE CAMERA ---
     let cid = null, lcx = 0, lcy = 0;
@@ -11579,7 +12532,7 @@ function setupInputs() {
     let pinchStartZoom = 0;
 
     function isUI(t) {
-        return t.target.closest('.touch-zone') || t.target.closest('#room-info-ui') || t.target.closest('.btn') || t.target.tagName === 'INPUT';
+        return !!t.target.closest('.touch-zone, button, input, select, textarea, a, [role=dialog], .overlay-screen, #chat-ui, #room-info-ui, #mobile-sheet, #mobile-topbar, #hotbar-container, #lobby-screen, #guided-tour, #character-studio, #protogen-logo-editor, #panel-tabbar, #options-container, #cooking-minigame-ui');
     }
 
     document.body.ontouchstart = e => {
@@ -11624,7 +12577,7 @@ function setupInputs() {
     };
 
     document.body.ontouchmove = e => {
-        if (e.target.closest('.touch-zone')) return;
+        if (isUI({target:e.target})) return;
         if (e.cancelable) e.preventDefault();
 
         // 1. PINCH LOGIC
@@ -11699,8 +12652,13 @@ function setupInputs() {
     // --- UPDATED MOBILE ACTION HANDLER ---
     btnAct.ontouchstart = e => {
         stopCam(e);
+        if(window.Housing && (interactTarget==='house'||interactTarget==='house-exit'||interactTarget==='house-tv'||interactTarget==='house-display')) { Housing.interact(); return; }
+        if(interactTarget==='exploration'){window.Exploration?.interact();return;}
         if (canSell) toggleMerchant();
         else if (interactTarget === 'stylist') toggleShop();
+        else if (interactTarget === 'halloween') window.Halloween?.open();
+        else if(interactTarget==='boatmaster')window.Boats?.open();
+        else if(interactTarget==='shared-boat')window.Boats?.interact();
         else if (interactTarget === 'bait') toggleBaitShop();
         else if (interactTarget === 'tutorial') toggleTutorial();
         else if (interactTarget === 'fisher') talkToFisher();
@@ -11797,11 +12755,30 @@ function setupInputs() {
     if (btnFull) {
         btnFull.ontouchstart = (e) => { stopCam(e); toggleFullScreen(); };
     }
+    if(isMobile)window.MobileUI?.bind();
 }
 
 
 let chopInterval = null;
+function dismissHeldFishForCast(){
+    if(!localHeldFish)return true;
+    const active=saveState.hotbar?.[saveState.activeHotbarIndex];
+    const rodIndex=active?.type==='tool'&&active.id==='rod'?saveState.activeHotbarIndex:(saveState.hotbar?.findIndex(entry=>entry?.type==='tool'&&entry.id==='rod')??-1);
+    if(rodIndex<0){showToast('Equip your fishing rod to cast.');return false;}
+    // A caught fish temporarily replaces the rod mesh. Clear the timer as well
+    // as the fish, then rebuild and apply the rod grip before showing the cast marker.
+    if(saveState.activeHotbarIndex!==rodIndex)selectHotbarSlot(rodIndex);
+    localHeldFish=null;
+    if(fishHoldTimer)clearTimeout(fishHoldTimer);
+    fishHoldTimer=null;
+    isHandsHidden=false;
+    updateLocalVisuals();
+    if(player)sync3DRodGrip(player);
+    return true;
+}
 function handleAction(down) {
+    if(document.getElementById('boat-dock-menu')?.hidden===false)return;
+    if(window.Housing && (Housing.inside || Housing.modalOpen))return;
 
     // Determine active tool id from hotbar
     const activeEntry = saveState.hotbar ? saveState.hotbar[saveState.activeHotbarIndex] : null;
@@ -11821,7 +12798,7 @@ function handleAction(down) {
 
             // Reset Axe Rotation
             const axe = player.getObjectByName("axe");
-            if (axe) axe.rotation.set(-0.2, -Math.PI / 2, 0);
+            if (axe) axe.rotation.set(axe.userData.is3D?.3:-.2,axe.userData.is3D?0:-Math.PI/2,0);
         }
         return;
     }
@@ -11840,7 +12817,7 @@ function handleAction(down) {
 
             // Reset Pickaxe Rotation
             const pick = player.getObjectByName("pickaxe");
-            if (pick) pick.rotation.set(-0.2, -Math.PI / 2, 0);
+            if (pick) pick.rotation.set(pick.userData.is3D?.3:-.2,pick.userData.is3D?0:-Math.PI/2,0);
         }
         return;
     }
@@ -11851,10 +12828,6 @@ function handleAction(down) {
         return;
     }
     // ---------------------------
-
-    // --- AUTO-EQUIP ROD IF HANDS EMPTY ---
-    // Disabled: clicking should not switch the held tool/fish back to the rod.
-    // Use hotkey 1 (or the hotbar) to equip the rod.
 
     if (isGuitarActive) {
         if (down) showToast("Can't fish while playing guitar!");
@@ -11867,13 +12840,10 @@ function handleAction(down) {
     }
 
     if (down) {
-        // Don't clear held fish on click; keep it until another slot is selected.
-        // (Previously clicking cleared the shown fish.)
-
-        // Only fish when the rod is the held tool.
+        // Showing a fish can transition back to the rod when starting a cast.
         const activeEntry = saveState.hotbar ? saveState.hotbar[saveState.activeHotbarIndex] : null;
         const isRodHeld = !!(activeEntry && activeEntry.type === 'tool' && activeEntry.id === 'rod');
-        if (!isRodHeld) return;
+        if (!isRodHeld && !(fishingState==='idle'&&localHeldFish)) return;
 
         if (fishingState === 'idle') {
             // Block fishing if inventory is full
@@ -11881,9 +12851,13 @@ function handleAction(down) {
                 showToast("Inventory full! Sell or drop items first.");
                 return;
             }
+            const wasShowingFish=!!localHeldFish;
+            if(wasShowingFish&&!dismissHeldFishForCast())return;
             fishingState = 'charging';
+            window.GuidedTutorial?.event('charge');
             chargeStart = Date.now();
             castMarker.visible = true;
+            if(wasShowingFish)sendUpdate();
         }
 
         else if (fishingState === 'reeling') {
@@ -11903,6 +12877,7 @@ function handleAction(down) {
 }
 
 function releaseCast() {
+    if(window.Housing && (Housing.inside || Housing.modalOpen))return;
     const targetPos = castMarker.position;
     const dist = Math.sqrt(targetPos.x * targetPos.x + targetPos.z * targetPos.z);
     const distToSecret = Math.sqrt(targetPos.x * targetPos.x + (targetPos.z - -95) * (targetPos.z - -95));
@@ -11932,7 +12907,7 @@ function releaseCast() {
     }
     else if (window.CUSTOM_LEVEL && window.Level) {
         // Custom levels: the zone painted in the editor decides the fish pool.
-        if (!window.Level.isWater(window.CUSTOM_LEVEL, targetPos.x, targetPos.z)) {
+        if (waterSurfaceAt(targetPos.x,targetPos.z)===null) {
             stopFishing(false, "Cast into the water!");
             return;
         }
@@ -12045,7 +13020,9 @@ function releaseCast() {
     }
 
     broadcastSound('cast');
-    fishingState = 'casting'; castMarker.visible = false;
+    fishingState = 'casting';
+    window.GuidedTutorial?.event('cast'); castMarker.visible = false;
+    if (window.Tournaments) Tournaments.cast();
     lastCastPos.copy(targetPos);
     createBobber(targetPos);
 
@@ -12062,6 +13039,7 @@ function releaseCast() {
 // --- ONE LINE BOBBER HELPER ---
 function createBobberMesh(typeId) {
     const type = BOBBER_TYPES.find(t => t.id === typeId) || BOBBER_TYPES[0];
+    if(saveState.model3D&&window.Bobbers3D)return Bobbers3D.build(type);
 
     // Create Texture using the Shop Icon drawer
     const canvas = document.createElement('canvas');
@@ -12097,7 +13075,7 @@ function createBobberMesh(typeId) {
 }
 
 function createBobber(targetPos) {
-    if (bobber) scene.remove(bobber);
+    if (bobber) {scene.remove(bobber);disposeCharacterBody(bobber);}
 
     // Use selected skin
     bobber = createBobberMesh(saveState.currentBobber);
@@ -12145,6 +13123,7 @@ function createBobber(targetPos) {
 // In index.html
 
 function performPunch() {
+    if(window.Housing && Housing.inside)return;
     // RATE LIMIT (Unified)
     if (Date.now() - lastAnimTime < ANIM_COOLDOWN) return;
     lastAnimTime = Date.now();
@@ -12193,6 +13172,7 @@ function performPunch() {
 }
 
 function handleHit(data) {
+    if(window.Housing && Housing.inside)return;
     // Check for ID mismatch
     const isMePeer = data.targetId === myPeerId;
 
@@ -12232,15 +13212,15 @@ function animatePunch(mesh) {
     function loop() {
         let p = (Date.now() - startTime) / 100;
         if (p > 2) {
-            glove.position.z = originalZ;
+            glove.userData.punchOffset=0;
+            if(!glove.userData.is3D)glove.position.z = originalZ;
             punchAnimFrameId = null; // Clear ID
             return;
         }
 
-        if (p < 1) glove.position.z = originalZ + (punchZ - originalZ) * p;
-        else glove.position.z = punchZ - (punchZ - originalZ) * (p - 1);
-
-        glove.position.y = 1.25 + Math.random() * 0.1;
+        const offset=(p<1?p:2-p)*(punchZ-originalZ);
+        if(glove.userData.is3D)glove.userData.punchOffset=offset;
+        else{glove.position.z=originalZ+offset;glove.position.y=1.25+Math.random()*.1;}
 
         // Track ID
         punchAnimFrameId = requestAnimationFrame(loop);
@@ -12252,6 +13232,7 @@ function scheduleBite() {
     biteTimer = setTimeout(() => {
         if (fishingState === 'waiting') {
             fishingState = 'biting';
+        window.GuidedTutorial?.event('bite');
 
             // Visual Cue: Dip Bobber (Use bobberInitialY to support Void/Lava worlds)
             if (bobber) {
@@ -12272,6 +13253,7 @@ function scheduleBite() {
 // --- MINIGAME REWORK (Tension / Tracking) ---
 function startMinigame() {
     fishingState = 'reeling';
+    if(typeof window!=='undefined')window.GuidedTutorial?.event('reel');
     minigame.active = true;
     minigame.targetFish = selectFish();
 
@@ -12286,15 +13268,11 @@ function startMinigame() {
     minigame.progress = 25; // Start with some progress buffer
 
     // 2. Calculate Stats based on Upgrades
-    // BAR SIZE (formerly Click Power): Base 15% + 1.5% per level
-    const powerLvl = saveState.clickPowerLevel || 1;
-    let barSize = 15 + (powerLvl * 1.5);
-
-    // FISHING SKILL BONUS: +0.15% bar size per fishing level (up to +14.85% at level 99)
+    // Smaller starter zone; upgrade and skill gains share the shop's sizing formula.
     if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 } };
     const fishingXP = saveState.skills.fishing?.xp || 0;
     const fishingLevel = getLevelFromXP(fishingXP);
-    barSize += fishingLevel * 0.15;
+    let barSize = fishingBarSize(saveState.clickPowerLevel,fishingLevel);
 
     // STABILITY (formerly Auto Reel): Reduces drain rate
     const stabLvl = saveState.autoReelLevel || 0;
@@ -12357,8 +13335,9 @@ function startMinigame() {
 }
 
 function stopFishing(success, msg) {
+    window.ReelAudio?.stopLocal();
     fishingState = 'idle'; castMarker.visible = false; minigame.active = false; document.getElementById('minigame-ui').style.display = 'none';
-    if (bobber) { scene.remove(bobber); bobber = null; }
+    if (bobber) { scene.remove(bobber); disposeCharacterBody(bobber);bobber = null; }
     if (fishingLine) fishingLine.visible = false;
     clearTimeout(biteTimer);
 
@@ -12377,12 +13356,15 @@ function stopFishing(success, msg) {
     if (success) {
         if (minigame.targetFish) {
             broadcastSound('catch');
+            if(minigame.targetFish.name!=='Old Boot')window.GuidedTutorial?.event('catch');
             // Record where this fish came from so progression can see it.
             const caughtZone = resolveCatchZone();
             lastCatchZone = caughtZone;
             minigame.targetFish.zone = caughtZone;
             const wasNewSpecies = !saveState.journal[minigame.targetFish.name];
             saveState.inventory.push(minigame.targetFish);
+            window.Halloween?.caught(minigame.targetFish);
+            if (window.Tournaments) Tournaments.caught(minigame.targetFish);
             updateJournal(minigame.targetFish, minigame.targetFish.tierId);
 
             // Award Fishing XP based on rarity
@@ -12411,7 +13393,7 @@ function stopFishing(success, msg) {
             addSkillXP('fishing', fishingXPGain);
 
             // Sailing XP: rewards fishing from open water on the boat.
-            if (isSailing) {
+            if (isSailing||window.Boats?.isAboard()) {
                 addSkillXP('sailing', caughtZone === 'ocean' ? 12 : 6);
             }
 
@@ -12460,6 +13442,7 @@ function stopFishing(success, msg) {
             }, 6000);
 
             updateLocalVisuals();
+            if(window.Halloween?.active())saveGame();
 
         } else {
             showToast("Error: Fish data lost.");
@@ -12593,8 +13576,13 @@ function showToast(t, kind) {
     const d = document.createElement('div');
     d.className = 'toast' + (kind ? ' toast-' + kind : '');
     d.innerText = t;
-    const area = document.getElementById('notification-area');
-    if (!area) return;
+    let area = document.getElementById('notification-area');
+    if (!area) {
+        area=document.createElement('div');area.id='notification-area';
+        area.setAttribute('role','status');area.setAttribute('aria-live','polite');area.setAttribute('aria-atomic','false');
+        if(typeof hudVisible!=='undefined'&&!hudVisible)area.style.display='none';
+        document.body.appendChild(area);
+    }
     area.appendChild(d);
     // Achievement cards linger a beat longer and hold at most 3 at once so a
     // lucky multi-unlock doesn't bury the screen.
@@ -12612,7 +13600,7 @@ function spawnGhostMesh(x, z) {
     ghostMesh = createPlayerMesh('#000000', ' ', 'none', '#FFFFFF', 'cat');
     replaceCharacterBody(ghostMesh, {
         color: '#000000', belly: '#000000', eye: '#FFFFFF', species: 'cat',
-        hat: 'none', shirt: 'none', collar: 'none', pattern: 'none',
+        hat: 'none', shirt: 'none', collar: 'none', bodyPaint: '',
         hair: 'none', hairColor: ''
     });
 
@@ -12784,7 +13772,24 @@ function triggerHaunt(targetId) {
     showToast(`Summoned Void Cat on ${target.lastData.name}`);
 }
 
+function cleanupPeerConnection(conn){
+    if(clientConns[conn.peer]!==conn)return;
+    delete clientConns[conn.peer];removePlayer(conn.peer);
+    window.NetworkGuard?.forget(conn.peer);delete rateLimits[conn.peer];
+    broadcastPlayerList();updateHostPanel();publishLobby();
+}
+window.disconnectAbusivePeer=function(id,reason){
+    const conn=clientConns[id];if(!conn)return;
+    try{conn.send({type:'error',message:'Disconnected for abusive network traffic: '+String(reason).slice(0,80)});}catch(e){}
+    try{cleanupPeerConnection(conn);}finally{try{conn.close();}catch(e){}}
+    showToast('Removed a player for abusive network traffic.');
+};
 function removePlayer(pid) {
+    removePropsOwnedBy(pid);
+    window.Boats?.depart(pid);
+    window.ReelAudio?.remove(pid);
+    window.Tournaments?.onPlayerLeft(pid);
+    if(window.Housing)Housing.onPlayerLeft(pid);
     const p = otherPlayers[pid];
     if (p) {
         // Trigger Leave Message (Must get name before deleting data).
@@ -12798,7 +13803,7 @@ function removePlayer(pid) {
         }
 
         // Cleanup Visuals.
-        if (p.mesh) scene.remove(p.mesh);
+        if (p.mesh) { if(p.mesh.parent)p.mesh.parent.remove(p.mesh); disposeCharacterBody(p.mesh.getObjectByName('playerSprite')); }
         if (p.bobberMesh) scene.remove(p.bobberMesh);
         if (p.lineMesh) scene.remove(p.lineMesh);
 
@@ -12807,6 +13812,7 @@ function removePlayer(pid) {
         if (audioEl) audioEl.remove();
 
         // Cleanup Data Structures.
+        try{voiceConnections[pid]?.close();}catch(e){}
         delete voiceConnections[pid];
         delete voiceAnalysers[pid];
         delete clientConns[pid];
@@ -12822,27 +13828,30 @@ function removePlayer(pid) {
     }
 }
 
-// --- MOBILE FPS LIMITER ---
-const MOBILE_FPS_INTERVAL = 1000 / 60; // 60 FPS = ~16.67ms per frame
+// Original mobile pacing; desktop runs at the browser refresh rate.
+const MOBILE_FPS_INTERVAL = 1000 / 60;
 let lastFrameTime = 0;
 
 // Highest furniture surface (currently chair seats) the player can stand on at
 // (x, z). `feetY` gates the test: a chair only becomes a floor once the feet are
 // at/above its plank, so walking past or standing beside one does not pop the
 // player up onto it - jumping does.
-function standableTopAt(x, z, feetY) {
-    if (typeof props === 'undefined' || !props) return -Infinity;
-    let top = -Infinity;
+function standableTopAt(x, z, feetY, previousFeetY=feetY) {
+    let top = Math.max(cavePlatformTopAt(x,z,feetY,previousFeetY),caveRockTopAt(x,z,feetY,previousFeetY),window.Boats?.dockTopAt(x,z,feetY)??-Infinity);
+    if (window.Housing && Housing.inside) {
+        const houseTop = Housing.standableTopAt(x, z, feetY);
+        if (houseTop > top) top = houseTop;
+    }
+    if (typeof props === 'undefined' || !props) return top;
     for (const id in props) {
         const m = props[id];
         if (!m || !m.userData || m.userData.standTop === undefined) continue;
-        // standTop/standHalf are LOCAL values; the chair group is scaled down
-        // after it is built, so the real seat is scale-multiplied.
+        // Seat bounds are local to the placed prop and follow its scale.
         const sx = m.scale ? m.scale.x : 1;
         const sy = m.scale ? m.scale.y : 1;
         const sz = m.scale ? m.scale.z : 1;
-        const halfX = (m.userData.standHalf || 0.7) * sx;
-        const halfZ = (m.userData.standHalf || 0.7) * sz;
+        const halfX = (m.userData.standHalfX || m.userData.standHalf || 0.7) * sx;
+        const halfZ = (m.userData.standHalfZ || m.userData.standHalf || 0.7) * sz;
         const dx = x - m.position.x, dz = z - m.position.z;
         // Into the prop's local frame (props only rotate around Y).
         const c = Math.cos(m.rotation.y), s = Math.sin(m.rotation.y);
@@ -12867,8 +13876,13 @@ function animate() {
 
     const dt = clock.getDelta();
 
+    GamePerformance.beginFrame(performance.now());
+
     // --- TIME & VISUALS ---
     updateDayNightCycle(dt);
+    window.tickPropAnimations?.();
+    window.Exploration?.tick();
+    window.GuidedTutorial?.tick();
 
     // --- UPDATE NPC SPRITES (Face Camera) ---
     if (npcMerchant) updateSpriteDirection(npcMerchant, camera.position);
@@ -12890,12 +13904,14 @@ function animate() {
 
     // --- PANEL TAB BAR ---
     updatePanelTabBar();
-    if (voidPortalMesh) {
+    if (voidPortalMesh && !(window.Housing && Housing.inside)) {
         voidPortalMesh.rotation.z -= 2.0 * dt;
         // Only allow entering portal if in Main World (not Void or Lava)
         if (!isInVoid && !isInLavaWorld && player) {
             const dist = player.position.distanceTo(voidPortalMesh.position);
-            if (dist < 2.0 && Date.now() > portalCooldown) {
+            if (dist > 4.0) voidPortalArmed = true;
+            if (dist < 2.0 && voidPortalArmed && Date.now() > portalCooldown) {
+                voidPortalArmed = false;
                 enterVoid();
             }
         }
@@ -12904,23 +13920,27 @@ function animate() {
             voidPortalMesh = null;
         }
     }
+    if(isInVoid && voidExitPortalMesh && player && Date.now() > portalCooldown){
+        if(Math.hypot(player.position.x-voidExitPortalMesh.position.x,player.position.z-voidExitPortalMesh.position.z)<2.7){
+            portalCooldown=Date.now()+3000;
+            window.exitVoid?.();
+        }
+    }
+    if(isInLavaWorld && lavaExitPortalMesh && player && Date.now() > portalCooldown){
+        if(Math.hypot(player.position.x-lavaExitPortalMesh.position.x,player.position.z-lavaExitPortalMesh.position.z)<2.7){
+            portalCooldown=Date.now()+3000;
+            exitLavaWorld();
+        }
+    }
+    if(!window.CUSTOM_LEVEL && !voidPortalMesh && !(window.Housing && Housing.inside))spawnPortal(86,-58,false,true);
 
     // Random void portal spawns on custom levels (host only), on the main island.
-    if (window.CUSTOM_LEVEL && window.Level && isHost && !isInVoid && !isInLavaWorld && !voidPortalMesh) {
+    if (window.CUSTOM_LEVEL && window.Level && isHost && !isInVoid && !isInLavaWorld && !voidPortalMesh && !(window.Housing && Housing.inside)) {
         if (!portalSpawnTimer) portalSpawnTimer = Date.now() + 120000 + Math.random() * 120000;
         if (Date.now() > portalSpawnTimer) {
             portalSpawnTimer = Date.now() + 240000 + Math.random() * 240000;
-            const lvl = window.CUSTOM_LEVEL;
-            const half = lvl.size / 2;
-            let sx = 0, sz = 0, found = false;
-            for (let i = 0; i < 50; i++) {
-                const cx = Math.random() * lvl.size - half;
-                const cz = Math.random() * lvl.size - half;
-                if (!window.Level.inBounds(lvl, cx, cz)) continue;
-                if (window.Level.isWater(lvl, cx, cz)) continue;
-                sx = cx; sz = cz; found = true; break;
-            }
-            if (found) spawnPortal(sx, sz);
+            const spot=findCustomPortalLocation(window.CUSTOM_LEVEL);
+            if(spot)spawnPortal(spot.x,spot.z);
         }
     }
 
@@ -12931,13 +13951,30 @@ function animate() {
     // Chat mouths and animalese blips (must run before updateSpriteDirection).
     updateTalkingPlayers(performance.now());
 
-    // --- RAIN PARTICLES ---
+    // --- RAIN STREAKS ---
     if (rainSystem && rainSystem.visible) {
+        const data = rainSystem.geometry.userData;
         const positions = rainSystem.geometry.attributes.position.array;
-        const vels = rainSystem.geometry.userData.velocities;
-        for (let i = 0; i < positions.length; i += 3) {
-            positions[i + 1] -= vels[i / 3];
-            if (positions[i + 1] < 0) positions[i + 1] = 40;
+        const drops = data.drops;
+        const rainDt = Math.min(dt || 0, 0.1);
+        const anchorX = player ? player.position.x : 0;
+        const anchorY = player ? player.position.y : 0;
+        const anchorZ = player ? player.position.z : 0;
+        // Keep the local rain box around the player instead of around world origin.
+        rainSystem.position.set(anchorX, anchorY, anchorZ);
+        for (let i = 0; i < drops.length; i++) {
+            const drop = drops[i];
+            drop.y -= drop.speed * rainDt;
+            drop.x += 1.4 * rainDt;
+            drop.z += 0.35 * rainDt;
+            if (drop.y < -5 || drop.x > 48 || drop.x < -48 || drop.z > 48 || drop.z < -48) {
+                drop.x = (Math.random() - 0.5) * 94;
+                drop.y = 36 + Math.random() * 14;
+                drop.z = (Math.random() - 0.5) * 94;
+                drop.length = 0.8 + Math.random() * 1.5;
+                drop.speed = 18 + Math.random() * 17;
+            }
+            data.writeDrop(i, drop);
         }
         rainSystem.geometry.attributes.position.needsUpdate = true;
     }
@@ -12956,13 +13993,18 @@ function animate() {
         updateMinigameUI(dt);
     }
 
+    window.Boats?.tick(dt);
     // --- PHYSICS & MOVEMENT ---
     if (player) {
         player.updateMatrixWorld(true);
 
+        let floorY;
+        let sprite=player.getObjectByName("playerSprite");
+        const sharedBoating=!!window.Boats?.isAboard();
+        if(!sharedBoating){
         // 1. DETERMINE FLOOR HEIGHT
         // Main World & Lava World both use Y=0 as the ground level
-        let floorY = getTerrainHeight(player.position.x, player.position.z);
+        floorY = getTerrainHeight(player.position.x, player.position.z);
         if (isInVoid) floorY = 2000;
         // Water surface: a boat always rides the top, and an on-foot player in
         // deep water treads water at the surface (slow swim) rather than sinking
@@ -12981,14 +14023,14 @@ function animate() {
             }
             // Placed furniture: a chair's seat is solid ground once you are over
             // it and have jumped up to plank height.
-            const seatY = standableTopAt(player.position.x, player.position.z, player.position.y);
+            const seatY = standableTopAt(player.position.x, player.position.z, player.position.y,player.userData.previousPhysicsFeetY??player.position.y);
             if (seatY > floorY) floorY = seatY;
         }
 
         // --- DIVE / PRONE STATE ---
         if (isDiving) {
             diveTimer -= dt;
-            const diveSpeed = 9;
+            const diveSpeed = 3+7*Math.max(0,diveTimer/.45);
             const dx = diveDir.x * diveSpeed * dt;
             const dz = diveDir.z * diveSpeed * dt;
             const np = _optVec1.copy(player.position);
@@ -13001,8 +14043,7 @@ function animate() {
                     if (tdx * tdx + tdz * tdz < rr * rr) col = true;
                 }
                 for (let b of staticColliders) {
-                    if (np.x > b.minX - 0.5 && np.x < b.maxX + 0.5 &&
-                        np.z > b.minZ - 0.5 && np.z < b.maxZ + 0.5) col = true;
+                    if (staticColliderHits(b,np)) col = true;
                 }
             }
             if (!col) {
@@ -13015,12 +14056,6 @@ function animate() {
                 diveTimer = 0;
             }
             player.position.y = floorY;
-            const sprite = player.getObjectByName("playerSprite");
-            if (sprite) {
-                sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, Math.PI / 3, 12 * dt);
-                sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 12 * dt);
-                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 0.6, 12 * dt);
-            }
             if (diveTimer <= 0 && isDiving) {
                 isDiving = false;
                 isProne = true;
@@ -13047,8 +14082,7 @@ function animate() {
                     if (tdx * tdx + tdz * tdz < rr * rr) hitWall = true;
                 }
                 for (let b of staticColliders) {
-                    if (testPos.x > b.minX - 0.5 && testPos.x < b.maxX + 0.5 &&
-                        testPos.z > b.minZ - 0.5 && testPos.z < b.maxZ + 0.5) hitWall = true;
+                    if (staticColliderHits(b,testPos)) hitWall = true;
                 }
                 // Custom levels have no on-foot water barrier: every body of water
                 // is swimmable, matching the open-ocean rule at home. See the
@@ -13091,14 +14125,14 @@ function animate() {
 
         // 3. INPUT MOVEMENT
         const v = _optVec2.set(0, 0, 0);
-        if ((isDiving || isProne)) {
+        if ((isDiving || isProne || isSitting)) {
             // No WASD movement while diving/prone. Prone can rotate in place.
             if (isProne && document.activeElement !== document.getElementById('chat-input')) {
                 const rotSpeed = 6 * dt;
                 if (controls.left) player.rotation.y += rotSpeed;
                 if (controls.right) player.rotation.y -= rotSpeed;
             }
-        } else if (document.activeElement !== document.getElementById('chat-input')) {
+        } else if (document.activeElement !== document.getElementById('chat-input') && !(window.Housing && Housing.modalOpen)) {
             const camForward = _optVec3;
             camera.getWorldDirection(camForward);
             camForward.y = 0; camForward.normalize();
@@ -13111,7 +14145,7 @@ function animate() {
             if (controls.left) v.sub(camRight);
         }
 
-        const sprite = player.getObjectByName("playerSprite");
+        sprite = player.getObjectByName("playerSprite");
         if (v.length() > 0) {
             // A rowboat glides faster than walking; deep water slows a swimmer.
             let speedMult = isSailing ? 1.35 : 1;
@@ -13122,13 +14156,15 @@ function animate() {
                     if (surf - bed > SHALLOW_DEPTH) speedMult *= SWIM_SPEED_MULT;
                 }
             }
-            v.normalize().multiplyScalar(PLAYER_SPEED * speedMult * dt);
+            v.normalize();player.userData.lastMoveDirection={x:v.x,z:v.z};
+            v.multiplyScalar(PLAYER_SPEED * speedMult * dt);
             // OPTIMIZATION: Reuse vector
             const np = _optVec1.copy(player.position).add(v);
             let col = false;
 
             // --- COLLISION CHECKS ---
-            if (isInLavaWorld) {
+            if(window.Housing && Housing.inside)col=!Housing.canStand(np);
+            else if (isInLavaWorld) {
                 // Check against Lava Rocks
                 if (typeof lavaColliders !== 'undefined') {
                     for (let r of lavaColliders) {
@@ -13154,8 +14190,7 @@ function animate() {
                     if (tdx * tdx + tdz * tdz < rr * rr) col = true;
                 }
                 for (let b of staticColliders) {
-                    if (np.x > b.minX - 0.5 && np.x < b.maxX + 0.5 &&
-                        np.z > b.minZ - 0.5 && np.z < b.maxZ + 0.5) col = true;
+                    if (staticColliderHits(b,np)) col = true;
                 }
                 // Water Collision (Lake, Pond, Dark Pond). A rowboat ignores all
                 // of it, and the open ocean is walkable (as a slow swim), so only
@@ -13184,6 +14219,7 @@ function animate() {
                 // River checks removed (River is gone)
             }
 
+            if(!col && window.Housing && !Housing.inside)col=Housing.collidesExterior(np);
             if (!col) {
                 player.position.add(v);
 
@@ -13207,17 +14243,11 @@ function animate() {
                     sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
                     sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, 0, 10 * dt);
                 }
-                // Rowing stroke heard by everyone nearby.
-                if (audioCtx.currentTime - lastOarTime > 1.1) {
-                    lastOarTime = audioCtx.currentTime;
-                    broadcastSound('sail');
-                }
-                SailAudio.setActive(true);
             } else {
                 const time = Date.now() * 0.012;
                 if (sprite) {
-                    sprite.position.y = 1.46875 + Math.abs(Math.sin(time)) * 0.3;
-                    sprite.rotation.z = Math.sin(time) * 0.15;
+                    sprite.position.y = 1.46875 + (sprite.userData.is3D?0:Math.abs(Math.sin(time)) * 0.3);
+                    sprite.rotation.z = sprite.userData.is3D?0:Math.sin(time) * 0.15;
                     sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, 0, 10 * dt);
                 }
                 if (audioCtx.currentTime - lastFootstepTime > 0.35) {
@@ -13233,7 +14263,7 @@ function animate() {
                 SailAudio.setActive(false);
             }
         } else {
-            if (sprite) {
+            if (sprite && !isDiving && !isProne && !isSitting) {
                 sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 1.46875, 10 * dt);
                 sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
                 sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, 0, 10 * dt);
@@ -13242,18 +14272,26 @@ function animate() {
             SailAudio.setActive(false);
         }
 
-        // Prone: stay tilted on belly
-        if (isProne) {
-            const sprite = player.getObjectByName("playerSprite");
-            if (sprite) {
-                sprite.rotation.x = THREE.MathUtils.lerp(sprite.rotation.x, Math.PI / 2, 10 * dt);
-                sprite.rotation.z = THREE.MathUtils.lerp(sprite.rotation.z, 0, 10 * dt);
-                sprite.position.y = THREE.MathUtils.lerp(sprite.position.y, 0.6, 10 * dt);
-            }
-            playerVelocity.x = 0; playerVelocity.z = 0;
+        const walkBody=player.getObjectByName('playerSprite');
+        const lastWalk=player.userData.lastWalkPosition;
+        const walked=!!lastWalk&&Math.hypot(player.position.x-lastWalk.x,player.position.z-lastWalk.z)>.0001;
+        player.userData.lastWalkPosition={x:player.position.x,z:player.position.z};
+        const personalBoat=player.getObjectByName('sailBoat');
+        if(personalBoat&&window.Rowboat3D){
+            const rowing=isSailing&&walked;
+            if(Rowboat3D.animate(personalBoat,rowing,dt))broadcastSound('sail');
+            SailAudio.setActive(rowing);
         }
+        updateStandingAnimation(player,!walked&&playerVelocity.y===0&&!controls.jump,chatTypingActive(),dt,isSailing||isProne||isDiving||isSitting||fishingState==='reeling'||fishingState==='charging'||playerVelocity.y!==0||controls.jump||player.position.y>floorY+.03||walkBody?.userData.jumpState?.landing>0||player.userData.reelAnimation?.weight>0);
+        if(walkBody?.userData.is3D)window.Character3D?.animateWalk(walkBody,walked&&!isSailing&&!isProne&&!isDiving&&!isSitting&&playerVelocity.y===0,dt);
+
+        updateReelingAnimation(player,fishingState==='reeling'&&!!minigame.active,dt);
+        applyBellySlidePose(player,isDiving||isProne,dt);
+        applySittingPose(player,isSitting,dt);
+        if(isProne){playerVelocity.x=0;playerVelocity.z=0;}
 
         // 4. GRAVITY
+        player.userData.previousPhysicsFeetY=player.position.y;
         if (player.position.y > floorY) playerVelocity.y -= GRAVITY * dt;
         if (player.position.y <= floorY) {
             if (player.position.y < floorY && playerVelocity.y < 0) {
@@ -13266,15 +14304,18 @@ function animate() {
                 broadcastSound(inDeepWater ? 'splash' : 'footstep');
             }
             player.position.y = floorY; playerVelocity.y = 0;
-            if (controls.jump && !isProne && !isDiving) {
+            if (controls.jump && !isProne && !isDiving && !isSitting) {
                 playerVelocity.y = JUMP_FORCE;
                 broadcastSound('jump');
             }
         }
         player.position.y += playerVelocity.y * dt;
+        player.userData.jumpAirborne=!isSailing&&!isProne&&!isDiving&&!isSitting&&(playerVelocity.y>0||player.position.y>floorY+.03);
+        updateJumpAnimation(player,player.userData.jumpAirborne,playerVelocity.y,dt,isSailing||isProne||isDiving||isSitting);
 
         // 5. BOUNDARIES
-        if (isInLavaWorld) {
+        if(window.Housing && Housing.inside)Housing.clampPlayer();
+        else if (isInLavaWorld) {
             // OPTIMIZATION: Reuse vector
             const lavaCenter = _optVec3.set(-20000, -2.5, 0);
 
@@ -13296,22 +14337,8 @@ function animate() {
             }
         }
         else if (!isInVoid) {
-            if (window.CUSTOM_LEVEL && window.Level) {
-                // Custom levels: the authored map is the "home island"; past its
-                // edge is ocean with generated islands, bounded by a wide apron.
-                const half = window.CUSTOM_LEVEL.size / 2;
-                const apron = (window.customOcean && window.customOcean.outer)
-                    ? window.customOcean.outer
-                    : half + 560;
-                const lim = Math.max(half - 1, apron - 2);
-                player.position.x = Math.max(-lim, Math.min(lim, player.position.x));
-                player.position.z = Math.max(-lim, Math.min(lim, player.position.z));
-            } else {
-                // Main Island + Open Ocean Boundaries
-                // Exception: Allow walking past edge if on the dock (Z > 85, X close to 0)
-                const onDock = (player.position.z > 85 && player.position.z < 170 && Math.abs(player.position.x) < 6);
-                const worldLimit = (typeof WORLD_RADIUS === 'number' ? WORLD_RADIUS : 1000) - 2;
-                if (!onDock && player.position.length() > worldLimit) player.position.setLength(worldLimit);
+            window.Ocean.clampPosition(player.position);
+            if (!(window.CUSTOM_LEVEL && window.Level)) {
                 // The boat may sit on any water. On foot the ocean is now open
                 // too (you swim); only the home island's lake still blocks entry.
                 if (isSailing) {
@@ -13343,17 +14370,18 @@ function animate() {
             sailDrySince = 0;
         }
 
+        }else{Boats.attachLocal(dt);sprite=player.getObjectByName("playerSprite");floorY=player.position.y;SailAudio.setActive(false);}
         if (isFirstPerson) {
             // First Person: Eye Level
             camera.position.copy(player.position);
-            camera.position.y += 1.5;
+            camera.position.y += 1.5+(player.getObjectByName('playerSprite')?.userData.upperLift||0);
             camera.rotation.set(cameraRotationX, cameraRotationY, 0, 'YXZ');
             player.visible = false; // Hide self locally
 
             // --- FIX: FORCE ROTATION LOCK ---
             // This ensures your sprite faces where you look, so other players see it correctly
             // Add PI offset because camera looks forward (-Z) but player rotation is based on +Z
-            player.rotation.y = cameraRotationY + Math.PI;
+            if(!isDiving&&!isProne)player.rotation.y = cameraRotationY + Math.PI;
             // -------------------------------
 
         } else {
@@ -13361,8 +14389,8 @@ function animate() {
             player.visible = true;
             camera.position.x = player.position.x + Math.sin(cameraRotationY) * cameraDistance * Math.cos(cameraRotationX);
             camera.position.z = player.position.z + Math.cos(cameraRotationY) * cameraDistance * Math.cos(cameraRotationX);
-            camera.position.y = player.position.y + Math.sin(cameraRotationX) * cameraDistance + 3.47;
-            camera.lookAt(player.position.x, player.position.y + 1.47, player.position.z);
+            camera.position.y = player.position.y + Math.sin(cameraRotationX) * cameraDistance + 3.47+(player.getObjectByName('playerSprite')?.userData.upperLift||0)/2;
+            camera.lookAt(player.position.x, player.position.y + 1.47+(player.getObjectByName('playerSprite')?.userData.upperLift||0)/2, player.position.z);
         }
 
 
@@ -13455,6 +14483,7 @@ function animate() {
         prompt.style.color = 'white'; // Reset color
         if (btn) btn.innerText = "FISH";
 
+        if(!(window.Housing && Housing.inside)){
         // --- MAIN WORLD INTERACTIONS ---
         if (!isInVoid && !isInLavaWorld) {
             const dMerchant = player.position.distanceTo(npcMerchant.position);
@@ -13533,6 +14562,10 @@ function animate() {
             }
         }
 
+        if(!isInVoid&&!isInLavaWorld&&!(window.Housing&&Housing.inside))window.Halloween?.prompt(player,prompt,btn);
+        window.Boats?.prompt(prompt,btn);
+        window.Exploration?.prompt(prompt,btn);
+
         // --- FLOWER PROMPT ---
         if (prompt.style.display === 'none' && !isInVoid && !isInLavaWorld) {
             for (let i = 0; i < pickableFlowers.length; i++) {
@@ -13579,7 +14612,10 @@ function animate() {
                 if (btn) btn.innerText = "QUEUE";
             }
         }
+        } // Outdoor interactions
     }
+
+    if(window.Housing)Housing.tick();
 
     // --- REMOTE PLAYERS ---
     Object.keys(otherPlayers).forEach(id => {
@@ -13590,22 +14626,25 @@ function animate() {
         p.mesh.rotation.y = THREE.MathUtils.lerp(p.mesh.rotation.y, p.targetRot, 6 * dt);
         const s = p.mesh.getObjectByName("playerSprite");
         const remoteSailing = p.lastData && p.lastData.sailing;
+        if(window.Rowboat3D)Rowboat3D.animate(p.mesh.getObjectByName('sailBoat'),!!remoteSailing&&isMoving,dt);
         const remoteDive = p.lastData && p.lastData.dive;
         const remoteProne = p.lastData && p.lastData.prone;
+        const remoteSitting = p.lastData && p.lastData.sitting===true;
         if (s) {
             updateSpriteDirection(p.mesh, camera.position);
-            if (remoteDive) {
-                s.rotation.x = THREE.MathUtils.lerp(s.rotation.x, Math.PI / 3, 10 * dt);
-                s.rotation.z = THREE.MathUtils.lerp(s.rotation.z, 0, 10 * dt);
-                s.position.y = THREE.MathUtils.lerp(s.position.y, 0.6, 10 * dt);
-            } else if (remoteProne) {
-                s.rotation.x = THREE.MathUtils.lerp(s.rotation.x, Math.PI / 2, 10 * dt);
-                s.rotation.z = THREE.MathUtils.lerp(s.rotation.z, 0, 10 * dt);
-                s.position.y = THREE.MathUtils.lerp(s.position.y, 0.6, 10 * dt);
+            if(!remoteSitting)applySittingPose(p.mesh,false,dt);
+            if(!remoteDive&&!remoteProne)applyBellySlidePose(p.mesh,false,dt);
+            updateStandingAnimation(p.mesh,p.lastData?.idle===true&&!isMoving,p.lastData?.typing===true&&Date.now()-p.lastSeen<3000,dt,remoteSailing||remoteDive||remoteProne||remoteSitting||p.lastData?.jumping===true||p.lastData?.reeling===true||s.userData.jumpState?.landing>0||p.mesh.userData.reelAnimation?.weight>0);
+            if(s.userData.is3D)window.Character3D?.animateWalk(s,isMoving&&!remoteSailing&&!remoteDive&&!remoteProne&&!remoteSitting,dt);
+            updateReelingAnimation(p.mesh,p.lastData?.reeling===true,dt);
+            if(remoteSitting){
+                applySittingPose(p.mesh,true,dt);
+            } else if (remoteDive||remoteProne) {
+                applyBellySlidePose(p.mesh,true,dt);
             } else if (isMoving && !remoteSailing) {
                 const time = Date.now() * 0.012;
-                s.position.y = 1.46875 + Math.abs(Math.sin(time)) * 0.3;
-                s.rotation.z = Math.sin(time) * 0.15;
+                s.position.y = 1.46875 + (s.userData.is3D?0:Math.abs(Math.sin(time)) * 0.3);
+                s.rotation.z = s.userData.is3D?0:Math.sin(time) * 0.15;
                 s.rotation.x = THREE.MathUtils.lerp(s.rotation.x, 0, 10 * dt);
             } else {
                 s.position.y = THREE.MathUtils.lerp(s.position.y, 1.46875, 10 * dt);
@@ -13613,6 +14652,7 @@ function animate() {
                 s.rotation.x = THREE.MathUtils.lerp(s.rotation.x, 0, 10 * dt);
             }
         }
+        if(s)updateJumpAnimation(p.mesh,p.lastData?.jumping===true&&!remoteSailing&&!remoteDive&&!remoteProne&&!remoteSitting,Number(p.lastData?.jumpVelocity)||0,dt,remoteSailing||remoteDive||remoteProne||remoteSitting);
         if (p.bobberMesh && p.lineMesh) {
             const rod = p.mesh.getObjectByName("rod");
             if (rod) {
@@ -13628,6 +14668,7 @@ function animate() {
         }
     });
 
+    window.Boats?.attachRemote(dt);
     // Bobber Gravity (when falling)
     if (bobber && window.bobberFalling) {
         window.bobberVelocityY -= 20 * dt; // Gravity
@@ -13669,18 +14710,27 @@ function animate() {
     // measured from the player, not from the world origin.
     if (window.updateAudioListener) { try { window.updateAudioListener(camera); } catch (e) { } }
 
-    // CSS3D overlay (YouTube Screen prop): keep DOM iframes glued to the scene
-    // and audio volume laced to proximity — runs before the WebGL draw.
+    // CSS3D overlays (YouTube/Twitch screens). The world overlay and the
+    // house-interior overlay are separate renderers so only the matching scene
+    // is projected onto the canvas.
+    const indoorCss = !!(window.Housing && Housing.inside);
     if (window.tickYtScreens) {
         try { window.tickYtScreens(); } catch (e) { }
-        if (cssRenderer) cssRenderer.render(cssScene, camera);
     }
+    if (cssRenderer) {
+        const display = indoorCss ? 'none' : '';
+        if (cssRenderer.domElement.style.display !== display) cssRenderer.domElement.style.display = display;
+        if (!indoorCss) cssRenderer.render(cssScene, camera);
+    }
+    if (window.setHouseCssVisible) { try { window.setHouseCssVisible(indoorCss); } catch (e) { } }
+    if (indoorCss && window.renderHouseCss) { try { window.renderHouseCss(camera); } catch (e) { } }
 
-    renderer.render(scene, camera);
-
-    // Punch the video quads out of the canvas alpha so world geometry in front
-    // of a screen stays visible (see punchScreens in props.js).
-    if (window.punchScreens) { try { window.punchScreens(); } catch (e) { } }
+    window.ReelAudio?.tick();
+    window.Emotes?.tick();
+    window.Halloween?.tick();
+    window.Ocean?.updateHorizon(camera,!isInVoid&&!isInLavaWorld&&!window.Housing?.inside);
+    renderGameView(window.Housing && Housing.renderScene || scene, camera);
+    GamePerformance.finishFrame(performance.now(),null,saveState.showFPS!==false);
 }
 clock = new THREE.Clock();
 
@@ -13800,7 +14850,7 @@ function checkLineOfSight(start, end) { // Used for PvP punching
 
     // 2. Check Walls (Cabin, Mountains, Waterfall Cliffs)
     for (let b of staticColliders) {
-        if (lineIntersectsBox(start, end, b)) {
+        if (b.planes?caveRockBlocksLine(start,end,b):lineIntersectsBox(start, end, b)) {
             return { blocked: true, type: "Wall" };
         }
     }
@@ -13814,44 +14864,15 @@ function checkLineOfSight(start, end) { // Used for PvP punching
     return { blocked: false };
 }
 
-// --- PATREON BANNER SYSTEM ---
-// Change this to your Patreon URL
-const PATREON_LINK = "https://www.patreon.com/c/HTMLFishing";
-
-function initPatreonBanner() {
-    const banner = document.getElementById('patreon-container');
-    if (banner) {
-        // Show immediately
-        banner.style.display = 'flex';
-        console.log("Patreon Banner: Active");
-    }
-}
-
-function closePatreon() {
-    const banner = document.getElementById('patreon-container');
-    if (banner) {
-        // If user closes it, hide it for this session
-        banner.style.display = 'none';
-        // Optional: Bring it back after 5 minutes if you want
-        // setTimeout(() => { banner.style.display = 'flex'; }, 5 * 60 * 1000);
-    }
-}
-
-function openPatreon() {
-    window.open(PATREON_LINK, '_blank');
-}
-
 // Run when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-        initPatreonBanner();
         setupHotbar();
         setTimeout(setupHotbarDrag, 100);
         setTimeout(setupPanelTabBar, 100);
     });
 } else {
     // DOM is already ready, run immediately
-    initPatreonBanner();
     setupHotbar(); // Initialize Hotbar
     setTimeout(setupHotbarDrag, 100);
     setTimeout(setupPanelTabBar, 100);
@@ -13952,12 +14973,7 @@ window.toggleCookingUI = function () {
     }
 };
 
-function cookableIndexes() {
-    const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
-    const out = [];
-    inv.forEach((f, i) => { if (isCookableFish(f)) out.push(i); });
-    return out;
-}
+function cookableIndexes(){return availableCookingFish().map(item=>item.idx);}
 
 function renderCookingUI() {
     const list = document.getElementById('cooking-list');
@@ -14106,10 +15122,14 @@ window.doCookingHit = function() {
         const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
         let rawXP = 0, count = 0, burnt = 0;
         cookingMini.items.forEach((item, k) => {
+            const liveIdx=inv.indexOf(item.f);
+            ensureInventorySlots();
+            const ownedSlot=saveState.invSlots.find(slot=>slot?.type==='fish'&&slot.name===item.f.name);
+            if(liveIdx<0||!ownedSlot)return;
             const good = cookingMini.results[k];
             const isBurnt = !good;
             if (isBurnt) burnt++;
-            inv[item.idx] = makeCookedFish(item.f, isBurnt);
+            inv[liveIdx] = makeCookedFish(item.f, isBurnt);
             rawXP += 6 + Math.round(Number(item.f.price || item.f.value || 10) / 12);
             count++;
             // Sync grid inventory: raw fish -> cooked/burnt fish
@@ -14164,26 +15184,9 @@ document.addEventListener('mousedown', (e) => {
 });
 
 // Cooks every raw fish of one species
-function cookFishByName(name) {
-    const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
-    const items = [];
-    inv.forEach((f, i) => {
-        if (isCookableFish(f) && f.name === name) items.push({idx: i, f: f});
-    });
-    if (items.length === 0) return 0;
-    startCookingMinigame(items);
-    return items.length;
-}
+function cookFishByName(name){const items=availableCookingFish().filter(item=>item.f.name===name);if(!items.length)return 0;startCookingMinigame(items);return items.length;}
 
-window.cookAllFish = function () {
-    const inv = Array.isArray(saveState.inventory) ? saveState.inventory : [];
-    const items = [];
-    inv.forEach((f, i) => {
-        if (isCookableFish(f)) items.push({idx: i, f: f});
-    });
-    if (items.length === 0) { showToast('No raw fish to cook!'); return; }
-    startCookingMinigame(items);
-};
+window.cookAllFish=function(){const items=availableCookingFish();if(!items.length){showToast('No raw fish to cook!');return;}startCookingMinigame(items);};
 
 
 
@@ -14457,29 +15460,7 @@ function createAxeTexture() {
     return makeToolTexture(rows, P);
 }
 
-function equipAxe() {
-    let axe = player.getObjectByName("axe");
-    if (!axe) {
-        // Create 2D Axe Plane (Like Rod)
-        const tex = createAxeTexture();
-        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-        const geo = new THREE.PlaneGeometry(2.5, 2.5);
-
-        // Pivot adjustment
-        geo.translate(0.5, 0.5, 0);
-
-        axe = new THREE.Mesh(geo, mat);
-        axe.name = "axe";
-
-        // Match Rod Position/Rotation
-        axe.position.set(0.6, 0.96, 0.1);
-        axe.rotation.set(-0.2, -Math.PI / 2, 0);
-        axe.scale.x = -1; // FLIP SPRITE
-
-        player.add(axe);
-    }
-    axe.visible = true;
-}
+function equipAxe(){let tool=player.getObjectByName('axe');if(!tool){tool=makeHeldTool('axe','axe');player.add(tool);}tool.visible=true;}
 
 function createPickaxeTexture() {
     const P = {
@@ -14509,25 +15490,7 @@ function createPickaxeTexture() {
     return makeToolTexture(rows, P);
 }
 
-function equipPickaxe() {
-    let pick = player.getObjectByName("pickaxe");
-    if (!pick) {
-        const tex = createPickaxeTexture();
-        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
-        const geo = new THREE.PlaneGeometry(2.5, 2.5);
-        geo.translate(0.5, 0.5, 0);
-
-        pick = new THREE.Mesh(geo, mat);
-        pick.name = "pickaxe";
-
-        pick.position.set(0.6, 0.96, 0.1);
-        pick.rotation.set(-0.2, -Math.PI / 2, 0);
-        pick.scale.x = -1; // Flip like axe
-
-        player.add(pick);
-    }
-    pick.visible = true;
-}
+function equipPickaxe(){let tool=player.getObjectByName('pickaxe');if(!tool){tool=makeHeldTool('pickaxe','pickaxe');player.add(tool);}tool.visible=true;}
 
 // --- HELPER: GUITAR TEXTURE ---
 function createGuitarTexture() {
@@ -14599,7 +15562,7 @@ function performChop() {
     const axe = player.getObjectByName("axe");
     if (axe) {
         // Swing Animation (Twitch Y rotation)
-        const startRot = -Math.PI / 2;
+        const startRot = axe.userData.is3D?0:-Math.PI / 2;
         axe.rotation.y = startRot - 0.5;
         setTimeout(() => { if (axe) axe.rotation.y = startRot; }, 100);
     }
@@ -14714,7 +15677,7 @@ function performMine() {
     // Animate Pickaxe
     const pick = player.getObjectByName("pickaxe");
     if (pick) {
-        const startRot = -Math.PI / 2;
+        const startRot = pick.userData.is3D?0:-Math.PI / 2;
         pick.rotation.y = startRot - 0.5;
         setTimeout(() => { if (pick) pick.rotation.y = startRot; }, 100);
     }
@@ -14864,6 +15827,8 @@ function loadSave() {
     if (s) {
         try {
             const d = JSON.parse(s);
+            window.Emotes?.restoreSave(d);
+            window.Halloween?.restore(d);
 
             // Initialize default unlocked tools checks immediately
             if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod'];
@@ -14889,6 +15854,8 @@ function loadSave() {
             if (d.hasGlove) { saveState.hasGlove = true; if (!saveState.unlockedTools.includes('glove')) saveState.unlockedTools.push('glove'); }
             // The Rowboat is bought once and stored as a flag. Pre-fix saves only
             // recorded it in unlockedTools, so derive the flag from there too.
+
+            if(Array.isArray(d.unlockedBoats))saveState.unlockedBoats=[...new Set(d.unlockedBoats.filter(id=>['skiff','runabout','launch','pontoon','ferry'].includes(id)))];
             if (d.hasBoat) saveState.hasBoat = true;
             else if (Array.isArray(saveState.unlockedTools) && saveState.unlockedTools.includes('boat')) saveState.hasBoat = true;
 
@@ -14902,6 +15869,9 @@ function loadSave() {
 
             // Basic stats
             if (d.money !== undefined) { const n = Number(d.money); saveState.money = Number.isFinite(n) ? n : 0; }
+            saveState.tournamentAwards=Array.isArray(d.tournamentAwards)?[...new Set(d.tournamentAwards.filter(id=>typeof id==='string'&&id.length<=200))].slice(-100):[];
+            saveState.explorationReceipts=Array.isArray(d.explorationReceipts)?[...new Set(d.explorationReceipts.filter(id=>typeof id==='string'&&id.length<=200))].slice(-500):[];
+            saveState.explorationStats={finds:Math.min(1e9,Math.max(0,Math.floor(Number(d.explorationStats?.finds)||0))),money:Math.min(1e9,Math.max(0,Math.floor(Number(d.explorationStats?.money)||0)))};
             if (d.scratchStats && typeof d.scratchStats === 'object') {
                 const ss = d.scratchStats;
                 saveState.scratchStats = {
@@ -14935,6 +15905,7 @@ function loadSave() {
             if (d.currentEyes) saveState.currentEyes = d.currentEyes;
             if (d.currentNose) saveState.currentNose = d.currentNose;
             if (d.currentMisc) saveState.currentMisc = d.currentMisc;
+            saveState.protogenLogo=globalThis.window?.ProtogenLogo?.normalize(d.protogenLogo)||'';
             if (d.currentTail) saveState.currentTail = d.currentTail;
 
             // Part-specific colors
@@ -14942,6 +15913,9 @@ function loadSave() {
             if (d.noseColor !== undefined) saveState.noseColor = d.noseColor;
             if (d.miscColor !== undefined) saveState.miscColor = d.miscColor;
             if (d.tailColor !== undefined) saveState.tailColor = d.tailColor;
+            saveState.handColor = d.handColor || '';
+            saveState.footColor = d.footColor || '';
+            saveState.tailAccentColor = d.tailAccentColor || '';
 
             // Hair
             if (d.unlockedHair) saveState.unlockedHair = d.unlockedHair;
@@ -14985,6 +15959,8 @@ function loadSave() {
             if (d.baitInventory) saveState.baitInventory = d.baitInventory;
             if (d.hasGlove !== undefined) saveState.hasGlove = d.hasGlove;
             if (d.hasGuitar !== undefined) saveState.hasGuitar = d.hasGuitar;
+            saveState.unlockedProps=normalizePropUnlocks(d.unlockedProps);
+            if(Array.isArray(d.unlockedBoats))saveState.unlockedBoats=[...new Set(d.unlockedBoats.filter(id=>['skiff','runabout','launch','pontoon','ferry'].includes(id)))];
             if (d.hasBoat !== undefined) saveState.hasBoat = !!d.hasBoat;
             if (d.autoReelLevel !== undefined) saveState.autoReelLevel = d.autoReelLevel;
             if (d.clickPowerLevel !== undefined) saveState.clickPowerLevel = d.clickPowerLevel;
@@ -14994,19 +15970,53 @@ function loadSave() {
             if (d.currentRod) saveState.currentRod = d.currentRod;
             if (d.unlockedShirts) saveState.unlockedShirts = d.unlockedShirts;
             if (d.currentShirt) saveState.currentShirt = d.currentShirt;
+            restorePants(d);
             if (d.unlockedCollars) saveState.unlockedCollars = d.unlockedCollars;
             if (d.currentCollar) saveState.currentCollar = d.currentCollar;
 
-            // Patterns (Fur Patterns)
-            if (d.unlockedPatterns) saveState.unlockedPatterns = d.unlockedPatterns;
-            if (d.currentPattern) saveState.currentPattern = d.currentPattern;
+            saveState.bodyPaint = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaint) : '');
+            saveState.bodyPaintBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintBack) : '');
+            saveState.bodyPaintLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintLeft) : '');
+            saveState.bodyPaintRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintRight) : '');
+            saveState.bodyPaintHeadFront = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintHeadFront) : '');
+            saveState.bodyPaintHeadBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintHeadBack) : '');
+            saveState.bodyPaintHeadLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintHeadLeft) : '');
+            saveState.bodyPaintHeadRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintHeadRight) : '');
+            saveState.bodyPaintHeadTop = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintHeadTop) : '');
+            saveState.bodyPaintHeadBottom = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintHeadBottom) : '');
+            saveState.bodyPaintArmLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintArmLeft) : '');
+            saveState.bodyPaintArmRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintArmRight) : '');
+            saveState.bodyPaintLegLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintLegLeft) : '');
+            saveState.bodyPaintLegRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(d.bodyPaintLegRight) : '');
+            saveState.bodyPaintColor = (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(d.bodyPaintColor) : '#ffffff');
+            delete saveState.unlockedPatterns;
+            delete saveState.currentPattern;
 
             // Titles
             if (d.unlockedTitles) saveState.unlockedTitles = d.unlockedTitles;
             if (d.currentTitle) saveState.currentTitle = d.currentTitle;
             if (d.showTitles !== undefined) saveState.showTitles = d.showTitles;
             // Model style (2D billboard vs 3D box)
-            if (d.model3D !== undefined) saveState.model3D = !!d.model3D;
+            const savedModelPreference=d.preferredModel3D??d.model3D??d.npcModel3D??true;
+            saveState.preferredModel3D=!!savedModelPreference;
+            saveState.model3D=(typeof TWO_D_MODE_AVAILABLE!=='undefined'&&!TWO_D_MODE_AVAILABLE)?true:!!savedModelPreference;
+            if(window.Housing)saveState.house=Housing.restoreSave(d.house);
+            else if(d.house && typeof d.house==='object')saveState.house=d.house;
+            if (d.showFPS !== undefined) saveState.showFPS = !!d.showFPS;
+            // Restore the original quality once; preserve subsequent resolution choices.
+            saveState.renderScale=d.characterQualityRevision===1&&[0,.75,1].includes(d.renderScale)?d.renderScale:0;
+            saveState.characterQualityRevision=1;
+            // New installs default to the retro look. Existing saves get it
+            // once as well; after this revision is saved, an explicit OFF
+            // choice is respected on later loads.
+            if (d.retroShader !== undefined && Number(d.retroShaderDefaultRevision) >= 1) {
+                saveState.retroShader = !!d.retroShader;
+            } else {
+                saveState.retroShader = true;
+            }
+            saveState.retroShaderDefaultRevision = 1;
+            const savedRetroPixelSize = Number(d.retroPixelSize);
+            if (RETRO_PIXEL_SIZES.includes(savedRetroPixelSize)) saveState.retroPixelSize = savedRetroPixelSize;
 
             // Audio
             if (d.micId) saveState.micId = d.micId;
@@ -15026,8 +16036,26 @@ function loadSave() {
 
             // --- WARDROBE FIX HERE ---
             // This tells the game to remember your outfits when you reload!
-            if (d.savedOutfits) saveState.savedOutfits = d.savedOutfits;
-            else saveState.savedOutfits = [];
+            saveState.savedOutfits = Array.isArray(d.savedOutfits) ? d.savedOutfits.filter(o => o && typeof o === 'object').map(o => {
+                const clean = { ...o };
+                delete clean.pattern;
+                clean.bodyPaint = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaint) : '');
+                clean.bodyPaintBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintBack) : '');
+                clean.bodyPaintLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintLeft) : '');
+                clean.bodyPaintRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintRight) : '');
+                clean.bodyPaintHeadFront = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintHeadFront) : '');
+                clean.bodyPaintHeadBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintHeadBack) : '');
+                clean.bodyPaintHeadLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintHeadLeft) : '');
+                clean.bodyPaintHeadRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintHeadRight) : '');
+                clean.bodyPaintHeadTop = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintHeadTop) : '');
+                clean.bodyPaintHeadBottom = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintHeadBottom) : '');
+                clean.bodyPaintArmLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintArmLeft) : '');
+                clean.bodyPaintArmRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintArmRight) : '');
+                clean.bodyPaintLegLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintLegLeft) : '');
+                clean.bodyPaintLegRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(o.bodyPaintLegRight) : '');
+                clean.bodyPaintColor = (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(o.bodyPaintColor) : '#ffffff');
+                return clean;
+            }).slice(0, 10) : [];
 
             // Keybinds
             if (d.keybinds) {
@@ -15041,6 +16069,7 @@ function loadSave() {
             if (typeof d.saveVersion === 'number') saveState.saveVersion = d.saveVersion;
             if (typeof d.propsPlaced === 'number') saveState.propsPlaced = d.propsPlaced;
             if (typeof d.tutorialDone === 'boolean') saveState.tutorialDone = d.tutorialDone;
+            if (d.tutorialProgress) saveState.tutorialProgress = window.GuidedTutorialRules?.normalize(d.tutorialProgress) || null;
 
             migrateSave(d.saveVersion);
         } catch (e) { console.error("Save Load Error", e); }
@@ -15090,14 +16119,16 @@ function loadSave() {
     myData.eye = saveState.eyeColor;
     myData.hat = saveState.currentHat;
     myData.shirt = saveState.currentShirt;
+    myData.pants = saveState.currentPants;
     myData.collar = saveState.currentCollar;
     myData.rod = saveState.currentRod;
-    myData.pattern = saveState.currentPattern;
+    myData.bodyPaint = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaint) : '');
     // Modular parts
     myData.ears = saveState.currentEars;
     myData.eyes = saveState.currentEyes;
     myData.nose = saveState.currentNose;
     myData.misc = saveState.currentMisc;
+    myData.protogenLogo=globalThis.window?.ProtogenLogo?.normalize(saveState.protogenLogo)||'';
     myData.tail = saveState.currentTail;
     myData.hair = saveState.currentHair;
     myData.hairColor = saveState.hairColor || '';
@@ -15109,6 +16140,21 @@ function loadSave() {
 }
 
 function saveGame() {
+    saveState.bodyPaint = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaint) : '');
+    saveState.bodyPaintBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintBack) : '');
+    saveState.bodyPaintLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLeft) : '');
+    saveState.bodyPaintRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintRight) : '');
+    saveState.bodyPaintHeadFront = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadFront) : '');
+    saveState.bodyPaintHeadBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadBack) : '');
+    saveState.bodyPaintHeadLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadLeft) : '');
+    saveState.bodyPaintHeadRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadRight) : '');
+    saveState.bodyPaintHeadTop = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadTop) : '');
+    saveState.bodyPaintHeadBottom = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadBottom) : '');
+    saveState.bodyPaintArmLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintArmLeft) : '');
+    saveState.bodyPaintArmRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintArmRight) : '');
+    saveState.bodyPaintLegLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLegLeft) : '');
+    saveState.bodyPaintLegRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLegRight) : '');
+    saveState.bodyPaintColor = (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(saveState.bodyPaintColor) : '#ffffff');
     saveState.displayName = document.getElementById('username-input').value.substring(0, 12) || "Fisher";
 
     // Persist the server-browser settings typed on the start screen.
@@ -15120,11 +16166,27 @@ function saveGame() {
     if (lobbyAdultBox) saveState.lobbyAdult = lobbyAdultBox.checked;
 
     myData.name = saveState.displayName;
+    myData.bodyPaint = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaint) : '');
+    myData.bodyPaintBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintBack) : '');
+    myData.bodyPaintLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLeft) : '');
+    myData.bodyPaintRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintRight) : '');
+    myData.bodyPaintHeadFront = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadFront) : '');
+    myData.bodyPaintHeadBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadBack) : '');
+    myData.bodyPaintHeadLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadLeft) : '');
+    myData.bodyPaintHeadRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadRight) : '');
+    myData.bodyPaintHeadTop = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadTop) : '');
+    myData.bodyPaintHeadBottom = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadBottom) : '');
+    myData.bodyPaintArmLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintArmLeft) : '');
+    myData.bodyPaintArmRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintArmRight) : '');
+    myData.bodyPaintLegLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLegLeft) : '');
+    myData.bodyPaintLegRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLegRight) : '');
+    myData.bodyPaintColor = (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(saveState.bodyPaintColor) : '#ffffff');
     // Update myData with parts
     myData.ears = saveState.currentEars;
     myData.eyes = saveState.currentEyes;
     myData.nose = saveState.currentNose;
     myData.misc = saveState.currentMisc;
+    myData.protogenLogo=globalThis.window?.ProtogenLogo?.normalize(saveState.protogenLogo)||'';
     myData.tail = saveState.currentTail;
     myData.hair = saveState.currentHair;
 
@@ -15133,6 +16195,9 @@ function saveGame() {
     myData.noseColor = saveState.noseColor || '';
     myData.miscColor = saveState.miscColor || '';
     myData.tailColor = saveState.tailColor || '';
+    myData.handColor = saveState.handColor || '';
+    myData.footColor = saveState.footColor || '';
+    myData.tailAccentColor = saveState.tailAccentColor || '';
     myData.hairColor = saveState.hairColor || '';
 
     // Update myData with base colors
@@ -15144,8 +16209,10 @@ function saveGame() {
     updateLocalVisuals();
     updateHotbarVisuals(); // FIX: Refresh hotbar after load
 
+    let persisted=false;
     try {
         localStorage.setItem('islandFisherSave', JSON.stringify(saveState));
+        persisted=true;
     } catch (e) {
         console.warn("Save failed", e);
     }
@@ -15154,6 +16221,7 @@ function saveGame() {
     // after every sale, so watching the delta here covers all the sell paths
     // without touching each one.
     if (typeof progressionTrackMoney === 'function') progressionTrackMoney();
+    return persisted;
 }
 
 function updateWeatherVisuals() {
@@ -15503,6 +16571,10 @@ function selectFish() {
         if (bd < 35 && Math.random() < 0.25) selectedType = WORLD_BOSS_FISH;
     }
 
+    // Universal golden variants remain available through every zone/weather branch.
+    if(!selectedType.isBoss&&window.Halloween)selectedType=Halloween.roll(Math.random(),Math.random())||selectedType;
+    selectedType = rollGoldenFish(Math.random()) || selectedType;
+
     // 4. Tier Logic (Shiny/Gold/Opalescent)
     const totalTierChance = TIERS.reduce((acc, t) => acc + t.chance, 0);
     let tierRandom = Math.random() * totalTierChance;
@@ -15765,7 +16837,8 @@ const PANEL_OVERLAY_IDS = {
     progress: 'progress-overlay',
     skills: 'skills-ui',
     cooking: 'cooking-ui',
-    playerlist: 'player-list-overlay'
+    playerlist: 'player-list-overlay',
+    tournament: 'tournament-overlay'
 };
 
 function closeAllPanels() {
@@ -15775,6 +16848,64 @@ function closeAllPanels() {
     }
     const bar = document.getElementById('panel-tabbar');
     if (bar) bar.style.display = 'none';
+}
+
+// Escape closes the top-most open menu. Overlay screens share a stacking
+// context, so the last visible one in DOM order is the one drawn on top.
+function closeTopOverlay() {
+    const hiddenMenus = [
+        ['halloween-overlay', () => window.Halloween?.close?.()],
+        ['emote-overlay', () => window.Emotes?.close?.()],
+        ['boat-dock-menu', () => window.Boats?.close?.()]
+    ];
+    for (const [id, close] of hiddenMenus) {
+        const el = document.getElementById(id);
+        if (el && !el.hidden && getComputedStyle(el).display !== 'none') {
+            if (typeof close === 'function') close();
+            return true;
+        }
+    }
+
+    const dialogs = [...document.querySelectorAll('dialog[open]')];
+    const dialog = dialogs[dialogs.length - 1];
+    if (dialog) {
+        if (dialog.id === 'character-studio') {
+            window.CharacterStudio?.close?.();
+            return true;
+        }
+        // The protogen editor handles Escape through its native cancel event.
+        if (dialog.id === 'protogen-logo-editor') return false;
+        try { dialog.close(); } catch (e) { }
+        return true;
+    }
+
+    const openOverlays = [...document.querySelectorAll('.overlay-screen')].filter(el => {
+        if (el.hidden) return false;
+        const style = getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    });
+    if (!openOverlays.length) return false;
+
+    const top = openOverlays[openOverlays.length - 1];
+    const closers = {
+        'scratch-overlay': () => window.toggleScratchShop?.(),
+        'options-overlay': () => window.toggleOptions?.(),
+        'host-overlay': () => window.toggleHostPanel?.(),
+        'player-list-overlay': () => window.togglePlayerList?.(),
+        'screen-queue-overlay': () => window.closeScreenQueue?.(),
+        'trade-overlay': () => window.tradeCancel?.()
+    };
+    if (closers[top.id]) {
+        closers[top.id]();
+        return true;
+    }
+    const closeButton = top.querySelector('.close-x-btn, [data-menu-close], .scratch-close');
+    if (closeButton) {
+        closeButton.click();
+        return true;
+    }
+    top.style.display = 'none';
+    return true;
 }
 
 function switchPanel(name) {
@@ -15796,6 +16927,7 @@ function switchPanel(name) {
         }
         if (name === 'skills' && typeof renderSkillsUI === 'function') renderSkillsUI();
         if (name === 'cooking' && typeof renderCookingUI === 'function') renderCookingUI();
+        if (name === 'tournament' && window.Tournaments) Tournaments.render();
         if (name === 'playerlist' && typeof renderPlayerList === 'function') renderPlayerList();
         document.exitPointerLock();
     }
@@ -15803,13 +16935,15 @@ function switchPanel(name) {
     if (bar) bar.style.display = 'flex';
 }
 
+let nextPanelTabBarUpdate=0;
 function updatePanelTabBar() {
+    const now=performance.now();if(now<nextPanelTabBarUpdate)return;nextPanelTabBarUpdate=now+100;
     const anyOpen = Object.values(PANEL_OVERLAY_IDS).some(id => {
         const el = document.getElementById(id);
         return el && el.style.display === 'flex';
     });
     const bar = document.getElementById('panel-tabbar');
-    if (bar) bar.style.display = anyOpen ? 'flex' : 'none';
+    if (bar) {const display=anyOpen?'flex':'none';if(bar.style.display!==display)bar.style.display=display;}
 }
 
 function getFishSellPrice(name) {
@@ -15857,6 +16991,7 @@ function getItemTooltipText(entry) {
         }
         return lines.join('\n');
     }
+    if(entry.type==='flower'){const flower=typeof FLOWER_TYPES!=='undefined'?FLOWER_TYPES.find(f=>f.id===entry.id):null;return (entry.name||flower?.name||entry.id)+'\nCount: '+(entry.count||1)+'\nSell at the Merchant.';}
     if (entry.type === 'tool') {
         const tool = TOOLS.find(t => t.id === entry.id);
         const name = tool ? tool.name : entry.id;
@@ -16019,6 +17154,11 @@ function renderInventoryGrid() {
         } else if (entry && entry.type === 'tool') {
             const tool = TOOLS.find(t => t.id === entry.id);
             slot.innerHTML = (window.PX && PX.has(entry.id)) ? PX.icon(entry.id, 32) : (tool ? tool.icon : '?');
+        } else if(entry&&entry.type==='flower') {
+            const icon=document.createElement('span');icon.className='inventory-flower';icon.style.color=entry.color||'#e8c77e';
+            if(window.PX&&PX.has('flower'))icon.innerHTML=PX.icon('flower',32);else icon.textContent='✿';
+            slot.appendChild(icon);
+            if(entry.count>1){const badge=document.createElement('div');badge.textContent=entry.count;badge.style.cssText='position:absolute;bottom:2px;right:4px;font-size:10px;color:#fff;background:rgba(0,0,0,.7);padding:0 3px;';slot.appendChild(badge);}
         }
         // Drag handlers
         slot.addEventListener('dragstart', (e) => {
@@ -16126,6 +17266,30 @@ function setupHotbarDrag() {
     }
 }
 
+const OPTIONS_TABS=['audio','display','controls','save','session'];
+let optionsActiveTab='audio';
+window.setOptionsTab=function(name,focus=false){
+    if(!OPTIONS_TABS.includes(name))return;
+    document.removeEventListener('keydown',handleRebind);
+    optionsActiveTab=name;
+    for(const tab of OPTIONS_TABS){
+        const button=document.getElementById('options-tab-'+tab),panel=document.getElementById('options-section-'+tab);
+        if(button){button.setAttribute('aria-selected',String(tab===name));button.tabIndex=tab===name?0:-1;if(focus&&tab===name)button.focus();}
+        if(panel)panel.hidden=tab!==name;
+    }
+    const mobile=document.getElementById('mobile-controls-note'),keys=document.getElementById('keybinds-container'),reset=document.getElementById('btn-reset-keybinds');
+    if(mobile)mobile.hidden=!isMobile;if(keys)keys.hidden=isMobile;if(reset)reset.hidden=isMobile;
+    if(name==='controls'&&!isMobile)renderKeybinds();
+};
+window.handleOptionsTabKey=function(event){
+    let index=OPTIONS_TABS.indexOf(optionsActiveTab);
+    if(event.key==='ArrowRight')index=(index+1)%OPTIONS_TABS.length;
+    else if(event.key==='ArrowLeft')index=(index+OPTIONS_TABS.length-1)%OPTIONS_TABS.length;
+    else if(event.key==='Home')index=0;
+    else if(event.key==='End')index=OPTIONS_TABS.length-1;
+    else return;
+    event.preventDefault();setOptionsTab(OPTIONS_TABS[index],true);
+};
 window.toggleOptions = function () {
     const ui = document.getElementById('options-overlay');
 
@@ -16138,6 +17302,8 @@ window.toggleOptions = function () {
         updateMusicUI();
         updateMidiUI();
         updateTitleUI();
+        updateCharacterModelUI();
+        updatePerformanceUI();
         updateDebugUI();
 
         const volSlider = document.getElementById('volume-slider');
@@ -16148,6 +17314,7 @@ window.toggleOptions = function () {
             renderKeybinds();
         }
 
+        setOptionsTab(optionsActiveTab);
         document.exitPointerLock(); // Unlock Mouse
         ui.style.display = 'flex';
     }
@@ -16157,6 +17324,7 @@ window.toggleShop = function () {
     const ui = document.getElementById('shop-overlay');
     ui.style.display = ui.style.display === 'flex' ? 'none' : 'flex';
     if (ui.style.display === 'flex') { document.exitPointerLock(); renderShop(); }
+    else {window.ShopTryOn?.clear(false);window.ShopCharacterPreview?.destroy();}
 }
 
 window.toggleBaitShop = function () {
@@ -16180,68 +17348,10 @@ window.toggleTutorial = function () {
     }
 }
 
-// --- GUIDED TOUR ---
-let guidedTourStep = 0;
-const GUIDED_TOUR_STEPS = [
-    { text: "Welcome to HTML Fishing! Use WASD to walk around the island.", target: null },
-    { text: "Press TAB to open the menu. From there you can open Journal, Inventory, Progress, Skills, Cooking, and Player List.", target: '#btn-inventory' },
-    { text: "Walk to the lake (the big water) and press 1 for the Rod, then click to cast. Buy bait from the Bait NPC to boost catches.", target: '#hotbar-container' },
-    { text: "When a fish bites, a minigame starts. Keep the marker in the green zone by holding click. Reel it in!", target: null },
-    { text: "Caught fish go to your Inventory (Tab -> Inventory). Drag them to the hotbar to keep your favorites.", target: null },
-    { text: "Press 1-0 to switch hotbar slots. Holding a fish and clicking won't fish; use the rod slot to fish.", target: null },
-    { text: "Sell fish to the Merchant for money. Visit the Shop to buy tools, cosmetics, hats, shirts, and more. Lava World unlocks for $80,000; other zones (ponds, ocean, void) are freely explorable.", target: null },
-    { text: "Level up skills (Fishing, Mining, Lumberjack, etc.) for bonuses. Check Progress for achievements and quests.", target: null },
-    { text: "You're ready! Explore, fish, and have fun. (Skip anytime.)", target: null }
-];
-
-function guidedTourHighlight(el) {
-    document.querySelectorAll('.guided-highlight').forEach(e => e.classList.remove('guided-highlight'));
-    if (el) el.classList.add('guided-highlight');
-}
-
-function guidedTourShow() {
-    const box = document.getElementById('guided-tour');
-    const text = document.getElementById('guided-tour-text');
-    if (!box || !text) return;
-    if (guidedTourStep >= GUIDED_TOUR_STEPS.length) { guidedTourSkip(); return; }
-    const step = GUIDED_TOUR_STEPS[guidedTourStep];
-    text.innerText = step.text;
-    box.style.display = 'block';
-    // highlight target
-    let targetEl = null;
-    if (step.target) targetEl = document.querySelector(step.target);
-    guidedTourHighlight(targetEl);
-}
-
-function guidedTourNext() {
-    guidedTourStep++;
-    if (guidedTourStep >= GUIDED_TOUR_STEPS.length) { guidedTourSkip(); return; }
-    guidedTourShow();
-}
-
-function startGuidedTour() {
-    saveState.tutorialDone = false;
-    guidedTourStep = 0;
-    const box = document.getElementById('guided-tour');
-    if (box) guidedTourShow();
-    if (typeof saveGame === 'function') saveGame();
-}
-
-function guidedTourSkip() {
-    const box = document.getElementById('guided-tour');
-    if (box) box.style.display = 'none';
-    guidedTourHighlight(null);
-    saveState.tutorialDone = true;
-    if (typeof saveGame === 'function') saveGame();
-}
-
-// Auto-start for new players
-setTimeout(() => {
-    if (!saveState.tutorialDone && document.getElementById('guided-tour')) {
-        guidedTourStep = 0;
-        guidedTourShow();
-    }
-}, 2000);
+// Guided walkthrough lives in guided-tutorial.js; keep existing menu entry points.
+function startGuidedTour() { window.GuidedTutorial?.resume(); }
+function guidedTourNext() { window.GuidedTutorial?.next(); }
+function guidedTourSkip() { window.GuidedTutorial?.pause(); }
 
 // --- OLD FISHER DIALOGUE ---
 // A rotating set of tips so the lakeside NPC is more than decoration.
@@ -16255,6 +17365,7 @@ const FISHER_TIPS = [
     "Old Fisher: There's rarer water out past the shore. Row out if you're brave."
 ];
 window.talkToFisher = function () {
+    window.GuidedTutorial?.event('fisher');
     const tip = FISHER_TIPS[fisherTipIndex % FISHER_TIPS.length];
     fisherTipIndex++;
     showToast(tip);
@@ -16387,6 +17498,7 @@ window.changeNose = function (val) {
 
 window.changeMisc = function (val) {
     saveState.currentMisc = val;
+    window.ProtogenLogo?.syncButton();
     saveGame();
     if (player) updateLocalVisuals();
     if (player) updateLocalVisuals();
@@ -16441,6 +17553,7 @@ window.changeTailColor = function (val) {
 
 // Helper function to populate part selector dropdowns
 function populatePartSelectors() {
+    window.ProtogenLogo?.syncButton();
     const populate = (selectId, types, currentVal) => {
         const sel = document.getElementById(selectId);
         if (!sel) return;
@@ -16461,6 +17574,7 @@ function populatePartSelectors() {
     populate('misc-select', MISC_TYPES, saveState.currentMisc);
     populate('tail-select', TAIL_TYPES, saveState.currentTail);
 
+    update3DColorControls();
     // Set part color pickers (default to fur color if not set)
     const furCol = saveState.catColor || '#ff6347';
     const earsColorPicker = document.getElementById('ears-color-picker');
@@ -16578,6 +17692,7 @@ function updateLocalVisuals() {
             const nameTex = createNameTagTexture(saveState.displayName);
             oldName.material.map.dispose();
             oldName.material.map = nameTex;
+            oldName.scale.set(3*nameTex.image.width/256,.75,1);
             oldName.material.needsUpdate = true;
         }
 
@@ -16827,6 +17942,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             eyes: saveState.currentEyes,
             nose: saveState.currentNose,
             misc: saveState.currentMisc,
+            protogenLogo:globalThis.window?.ProtogenLogo?.normalize(saveState.protogenLogo)||'',
             tail: saveState.currentTail,
             color: saveState.catColor,
             belly: saveState.bellyColor,
@@ -16835,12 +17951,27 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             noseColor: saveState.noseColor,
             miscColor: saveState.miscColor,
             tailColor: saveState.tailColor,
+            handColor: saveState.handColor, footColor: saveState.footColor, tailAccentColor: saveState.tailAccentColor,
             hat: saveState.currentHat,
-            shirt: saveState.currentShirt,
+            shirt: saveState.currentShirt, pants: saveState.currentPants,
             collar: saveState.currentCollar,
             rod: saveState.currentRod,
             title: saveState.currentTitle,
-            pattern: saveState.currentPattern,
+            bodyPaint: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaint) : ''),
+            bodyPaintBack: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintBack) : ''),
+            bodyPaintLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLeft) : ''),
+            bodyPaintRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintRight) : ''),
+            bodyPaintHeadFront: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadFront) : ''),
+            bodyPaintHeadBack: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadBack) : ''),
+            bodyPaintHeadLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadLeft) : ''),
+            bodyPaintHeadRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadRight) : ''),
+            bodyPaintHeadTop: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadTop) : ''),
+            bodyPaintHeadBottom: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintHeadBottom) : ''),
+            bodyPaintArmLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintArmLeft) : ''),
+            bodyPaintArmRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintArmRight) : ''),
+            bodyPaintLegLeft: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLegLeft) : ''),
+            bodyPaintLegRight: (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(saveState.bodyPaintLegRight) : ''),
+            bodyPaintColor: (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(saveState.bodyPaintColor) : '#ffffff'),
             hair: saveState.currentHair,
             hairColor: saveState.hairColor
         };
@@ -16864,7 +17995,11 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         saveState.earsColor = outfit.earsColor || '';
         saveState.noseColor = outfit.noseColor || '';
         saveState.miscColor = outfit.miscColor || '';
+        saveState.protogenLogo=globalThis.window?.ProtogenLogo?.normalize(outfit.protogenLogo)||'';
         saveState.tailColor = outfit.tailColor || '';
+        saveState.handColor = outfit.handColor || '';
+        saveState.footColor = outfit.footColor || '';
+        saveState.tailAccentColor = outfit.tailAccentColor || '';
 
         // Apply modular parts (with fallback migration from old species-based outfits)
         if (outfit.ears) {
@@ -16912,10 +18047,25 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         // Apply cosmetics
         saveState.currentHat = saveState.unlockedHats.includes(outfit.hat) ? outfit.hat : 'none';
         saveState.currentShirt = saveState.unlockedShirts.includes(outfit.shirt) ? outfit.shirt : 'none';
+        saveState.currentPants = saveState.unlockedPants.includes(outfit.pants) ? outfit.pants : 'none';
         saveState.currentCollar = saveState.unlockedCollars.includes(outfit.collar) ? outfit.collar : 'none';
         saveState.currentRod = saveState.unlockedRods.includes(outfit.rod) ? outfit.rod : 'bamboo';
         saveState.currentTitle = saveState.unlockedTitles.includes(outfit.title) ? outfit.title : 'none';
-        saveState.currentPattern = saveState.unlockedPatterns.includes(outfit.pattern) ? outfit.pattern : 'none';
+        saveState.bodyPaint = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaint) : '');
+        saveState.bodyPaintBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintBack) : '');
+        saveState.bodyPaintLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintLeft) : '');
+        saveState.bodyPaintRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintRight) : '');
+        saveState.bodyPaintHeadFront = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintHeadFront) : '');
+        saveState.bodyPaintHeadBack = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintHeadBack) : '');
+        saveState.bodyPaintHeadLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintHeadLeft) : '');
+        saveState.bodyPaintHeadRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintHeadRight) : '');
+        saveState.bodyPaintHeadTop = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintHeadTop) : '');
+        saveState.bodyPaintHeadBottom = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintHeadBottom) : '');
+        saveState.bodyPaintArmLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintArmLeft) : '');
+        saveState.bodyPaintArmRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintArmRight) : '');
+        saveState.bodyPaintLegLeft = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintLegLeft) : '');
+        saveState.bodyPaintLegRight = (typeof normalizeBodyPaint === 'function' ? normalizeBodyPaint(outfit.bodyPaintLegRight) : '');
+        saveState.bodyPaintColor = (typeof normalizeBodyPaintColor === 'function' ? normalizeBodyPaintColor(outfit.bodyPaintColor) : '#ffffff');
 
         // Update UI
         populatePartSelectors();
@@ -16945,6 +18095,65 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         }
     }
 
+    const OUTFIT_SHARE_PREFIX='HF1-';
+    const OUTFIT_SHARE_TEXT=['ears','eyes','nose','misc','tail','hat','shirt','pants','collar','rod','title','hair'];
+    const OUTFIT_SHARE_COLORS=['color','belly','eye','earsColor','noseColor','miscColor','tailColor','handColor','footColor','tailAccentColor','hairColor'];
+    const OUTFIT_SHARE_PAINT=['bodyPaint','bodyPaintBack','bodyPaintLeft','bodyPaintRight','bodyPaintHeadFront','bodyPaintHeadBack','bodyPaintHeadLeft','bodyPaintHeadRight','bodyPaintHeadTop','bodyPaintHeadBottom','bodyPaintArmLeft','bodyPaintArmRight','bodyPaintLegLeft','bodyPaintLegRight'];
+    function utf8ToBase64(value){
+        const bytes=new TextEncoder().encode(value);let binary='';
+        for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+        return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    }
+    function base64ToUtf8(value){
+        let text=String(value||'').replace(/-/g,'+').replace(/_/g,'/');
+        while(text.length%4)text+='=';
+        const binary=atob(text),bytes=new Uint8Array(binary.length);
+        for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+    }
+    function textOr(value,fallback='none'){
+        if(typeof value!=='string')return fallback;
+        const clean=value.replace(/[\u0000-\u001f]/g,'').slice(0,64).trim();
+        return clean||fallback;
+    }
+    function colorOr(value,fallback=''){
+        return typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)?value.toLowerCase():fallback;
+    }
+    function normalizeSharedOutfit(raw){
+        if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid outfit');
+        const outfit={id:Date.now(),name:textOr(raw.name,'Shared look').slice(0,12)};
+        for(const key of OUTFIT_SHARE_TEXT)outfit[key]=textOr(raw[key],key==='eyes'?'standard':key==='nose'?'cat':key==='rod'?'bamboo':'none');
+        for(const key of OUTFIT_SHARE_COLORS)outfit[key]=colorOr(raw[key],key==='color'?'#ff0000':key==='belly'?'#ffffff':key==='eye'?'#000000':'');
+        for(const key of OUTFIT_SHARE_PAINT)outfit[key]=typeof normalizeBodyPaint==='function'?normalizeBodyPaint(raw[key]):'';
+        outfit.bodyPaintColor=typeof normalizeBodyPaintColor==='function'?normalizeBodyPaintColor(raw.bodyPaintColor):'#ffffff';
+        outfit.protogenLogo=globalThis.window?.ProtogenLogo?.normalize(raw.protogenLogo)||'';
+        return outfit;
+    }
+    window.encodeOutfitShare=function encodeOutfitShare(outfit){
+        const payload={version:1};
+        for(const key of ['name',...OUTFIT_SHARE_TEXT,...OUTFIT_SHARE_COLORS,...OUTFIT_SHARE_PAINT,'bodyPaintColor','protogenLogo'])payload[key]=outfit?.[key];
+        return OUTFIT_SHARE_PREFIX+utf8ToBase64(JSON.stringify(payload));
+    };
+    window.decodeOutfitShare=function decodeOutfitShare(code){
+        if(typeof code!=='string'||!/^HF1-/.test(code.trim())||code.length>24000)throw Error('Invalid outfit code');
+        return normalizeSharedOutfit(JSON.parse(base64ToUtf8(code.trim().slice(OUTFIT_SHARE_PREFIX.length))));
+    };
+    window.shareOutfit=function shareOutfit(id){
+        const outfit=saveState.savedOutfits.find(o=>o.id===id);if(!outfit)return;
+        const code=window.encodeOutfitShare(outfit),show=()=>prompt('Copy this outfit code:',code);
+        if(navigator.clipboard?.writeText)navigator.clipboard.writeText(code).then(()=>showToast('Outfit code copied!'),show);
+        else show();
+    };
+    window.importOutfitCode=function importOutfitCode(){
+        const code=prompt('Paste an outfit code:');if(!code)return;
+        try{
+            if(saveState.savedOutfits.length>=10){showToast('Wardrobe full! Delete an outfit first.');return;}
+            const outfit=window.decodeOutfitShare(code);
+            saveState.savedOutfits.push(outfit);saveGame();renderOutfitList();window.CharacterStudio?.refresh?.();
+            showToast('Outfit imported: '+outfit.name);
+        }catch(error){showToast('That outfit code is not valid.');}
+    };
+
     window.renderOutfitList = function renderOutfitList() {
         const container = document.getElementById('outfit-list');
         if (!container) return;
@@ -16973,6 +18182,13 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             btnLoad.innerText = outfit.name;
             btnLoad.onclick = () => loadOutfit(outfit.id);
 
+            // Share Button
+            const btnShare = document.createElement('button');
+            btnShare.className = 'btn-sm';
+            btnShare.style.padding = '2px 8px';
+            btnShare.innerText = 'Share';
+            btnShare.onclick = () => shareOutfit(outfit.id);
+
             // Delete Button
             const btnDel = document.createElement('button');
             btnDel.className = 'btn-sm btn-danger';
@@ -16981,6 +18197,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             btnDel.onclick = () => deleteOutfit(outfit.id);
 
             row.appendChild(btnLoad);
+            row.appendChild(btnShare);
             row.appendChild(btnDel);
             container.appendChild(row);
         });
@@ -16992,78 +18209,31 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
      * Updates the character preview canvases in the shop wardrobe sidebar.
      * Shows front and back views of the player's current outfit.
      */
+    window.createCharacterThumbnail = function createCharacterThumbnail(values={},focus='full',width=96,height=128,scope='shop'){
+        const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;canvas.className='character-thumbnail';canvas.setAttribute('aria-hidden','true');
+        const fallback=()=>{const ctx=canvas.getContext('2d');ctx.clearRect(0,0,width,height);ctx.fillStyle='#9fc5db';ctx.font='bold '+Math.round(Math.min(width,height)*.3)+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('◇',width/2,height/2);};
+        try{
+            const state={...saveState,...Object.fromEntries(Object.entries(values).filter(([,value])=>value!==undefined))};
+            const cfg=characterCfgFromSave(state);
+            if(window.CharacterThumbnails)window.CharacterThumbnails.request({canvas,cfg,focus,width,height,scope,build:c=>makeCharacterBody(c,'studio-thumbnail'),dispose:disposeCharacterBody,fallback});
+            else fallback();
+        }catch(error){fallback();}
+        return canvas;
+    };
+
     window.updateCharacterPreview = function updateCharacterPreview() {
-        const frontCanvas = document.getElementById('preview-front');
-        const backCanvas = document.getElementById('preview-back');
-
-        if (!frontCanvas || !backCanvas) return;
-
-        const frontCtx = frontCanvas.getContext('2d');
-        const backCtx = backCanvas.getContext('2d');
-
-        // Clear canvases
-        frontCtx.clearRect(0, 0, 96, 96);
-        backCtx.clearRect(0, 0, 96, 96);
-
-        // Disable smoothing for pixel art
-        frontCtx.imageSmoothingEnabled = false;
-        backCtx.imageSmoothingEnabled = false;
-
-        // Create a temp canvas at 64x88 to draw sprite (extra height for tall ears), then scale up
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = 64;
-        tempCanvas.height = 94;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.imageSmoothingEnabled = false;
-        // Offset down to make room for tall ears (matches createSpeciesTexture)
-        tempCtx.translate(0, 24);
-
-        // Create parts object from current saveState
-        const parts = {
-            ears: saveState.currentEars,
-            eyes: saveState.currentEyes,
-            nose: saveState.currentNose,
-            misc: saveState.currentMisc,
-            tail: saveState.currentTail,
-            hair: saveState.currentHair
-        };
-
-        // Build part colors object
-        const partColors = {
-            earsColor: saveState.earsColor || '',
-            noseColor: saveState.noseColor || '',
-            miscColor: saveState.miscColor || '',
-            tailColor: saveState.tailColor || '',
-            hairColor: saveState.hairColor || ''
-        };
-
-        // Draw front view with modular parts
-        drawSpecies(tempCtx, parts, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false, partColors);
-        drawPattern(tempCtx, saveState.currentPattern, saveState.catColor, false);
-        drawShirt(tempCtx, saveState.currentShirt, false);
-        drawCollar(tempCtx, saveState.currentCollar, false);
-        drawHair(tempCtx, saveState.currentHair, saveState.hairColor, false);
-        drawHat(tempCtx, saveState.currentHat, false);
-        addSpriteOutline(tempCtx, tempCanvas, '#111219', 1);
-
-        // Scale to preview canvas (centered, scaled to fit 96x96)
-        const scale = 96 / 94;
-        const drawW = 64 * scale;
-        const drawH = 94 * scale;
-        const offsetX = (96 - drawW) / 2;
-        frontCtx.drawImage(tempCanvas, 0, 0, 64, 94, offsetX, 0, drawW, drawH);
-
-        // Clear temp and draw back view
-        tempCtx.clearRect(0, -24, 64, 120);
-        drawSpecies(tempCtx, parts, saveState.catColor, saveState.bellyColor, saveState.eyeColor, true, partColors);
-        drawPattern(tempCtx, saveState.currentPattern, saveState.catColor, true);
-        drawShirt(tempCtx, saveState.currentShirt, true);
-        drawCollar(tempCtx, saveState.currentCollar, true);
-        drawHair(tempCtx, saveState.currentHair, saveState.hairColor, true);
-        drawHat(tempCtx, saveState.currentHat, true);
-        addSpriteOutline(tempCtx, tempCanvas, '#111219', 1);
-
-        backCtx.drawImage(tempCanvas, 0, 0, 64, 94, offsetX, 0, drawW, drawH);
+        const previewState=window.ShopTryOn?.state(saveState)||saveState;
+        if(window.__studioPaintUndress&&document.getElementById('character-studio')?.open){
+            previewState.currentHat='none';previewState.currentShirt='none';previewState.currentPants='none';previewState.currentCollar='none';previewState.currentHair='none';
+        }
+        const shop=document.getElementById('shop-overlay'),solid=document.getElementById('preview-3d'),hint=document.getElementById('preview-3d-hint');
+        if(!solid)return;
+        const use3D=!!previewState.model3D&&(shop?.style.display==='flex'||!!document.getElementById('character-studio')?.open);
+        solid.hidden=!use3D;
+        if(hint){hint.hidden=!use3D;hint.textContent='Hold left click and drag to rotate';}
+        if(use3D&&window.ShopCharacterPreview?.update(characterCfgFromSave(previewState),cfg=>makeCharacterBody(cfg,'player'),disposeCharacterBody))return;
+        window.ShopCharacterPreview?.destroy();solid.hidden=true;
+        if(hint){hint.hidden=false;hint.textContent='3D character preview unavailable';}
     }
 
     // ------------------------------------------------------------------
@@ -17135,10 +18305,35 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
 
-        const id = type.id || '';
+        const id = type.eventModel || type.id || '';
         const model = type.model || 'sphere';
 
-        if (id === 'duck') {
+        const newDesigns=['mushroom','cork','pencil','lantern','acorn','apple','orange_fruit','watermelon','lemon','lime','donut','lifering','buoy','bottle','jellyfish','octopus','turtle','koi','rocket','ufo'];
+        if(newDesigns.includes(id)){
+            const cream='#fff4dd',eyes=(x,y)=>{circ(32-x,y,2,OUT);circ(32+x,y,2,OUT);};
+            switch(id){
+                case 'mushroom':rrect(25,30,14,25,4,cream);elli(32,28,25,14,col);for(const x of [19,32,45])circ(x,24,3,cream);break;
+                case 'cork':rrect(21,13,22,43,4,col);rrect(20,27,24,4,1,dark);break;
+                case 'pencil':rrect(27,15,10,39,1,col);poly([[27,15],[32,4],[37,15]],'#e8c18f');circ(32,6,2,OUT);rrect(27,51,10,7,1,'#f19cac');break;
+                case 'lantern':rrect(17,21,30,31,2,col);for(const x of [17,43])rrect(x,20,4,34,0,OUT);poly([[13,22],[32,9],[51,22]],OUT);ring(32,8,5,OUT,2);break;
+                case 'acorn':elli(32,37,17,21,col);elli(32,23,21,9,'#68452b');rrect(30,8,4,12,1,'#4e3524');break;
+                case 'apple':case 'orange_fruit':case 'lemon':case 'lime':case 'watermelon':
+                    elli(32,36,id==='lemon'?25:21,21,col);
+                    if(id==='watermelon'){for(const x of [22,32,42])elli(x,36,2,18,'#2b6338');}
+                    else{rrect(30,9,4,9,0,'#664129');elli(39,12,8,3,'#52873f');}break;
+                case 'donut':ring(32,35,18,col,13);ring(32,32,18,'#ff9fc9',8);for(const x of [19,32,45])rrect(x,22,3,5,0,'#ffe175');break;
+                case 'lifering':ring(32,35,19,cream,11);for(const x of [10,44])rrect(x,31,10,8,1,col);rrect(28,13,8,10,1,col);rrect(28,47,8,10,1,col);break;
+                case 'buoy':poly([[13,55],[21,28],[43,28],[51,55]],col);rrect(28,11,8,23,1,cream);rrect(24,9,16,5,1,col);break;
+                case 'bottle':rrect(20,26,24,31,5,col);rrect(27,12,10,19,2,col);rrect(27,7,10,7,1,'#b48552');rrect(24,34,16,15,1,cream);break;
+                case 'jellyfish':for(const x of [17,27,37,47])rrect(x,34,3,23,1,'#d8a4f5');elli(32,29,24,20,col);eyes(8,30);break;
+                case 'octopus':for(let i=0;i<8;i++)elli(10+i*6,48,5,9,col);elli(32,29,21,23,col);eyes(8,30);break;
+                case 'turtle':for(const x of [10,54])for(const y of [26,48])elli(x,y,8,4,'#82b765');elli(32,35,22,19,col);circ(32,11,8,'#82b765');break;
+                case 'koi':poly([[23,47],[14,59],[48,59],[40,47]],col);elli(32,31,16,23,cream);elli(34,26,10,9,col);eyes(8,15);break;
+                case 'rocket':poly([[18,43],[10,57],[24,52]],'#4d6da4');poly([[46,43],[54,57],[40,52]],'#4d6da4');rrect(23,19,18,35,5,col);poly([[23,21],[32,4],[41,21]],cream);circ(32,30,6,'#77d9f1');break;
+                case 'ufo':elli(32,28,13,14,'#81dbd8');elli(32,39,27,10,col);for(const x of [15,26,38,49])circ(x,40,2,'#ffef99');break;
+            }
+        }
+        else if (id === 'duck') {
             elli(32, 56, 15, 3.5, 'rgba(0,0,0,0.14)');                    // water shadow
             poly([[26, 41], [15, 33], [27, 48]], OUT);                    // tail
             poly([[26.5, 42], [17.5, 35], [27, 47]], '#ffd400');
@@ -17245,7 +18440,35 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         ctx.restore();
     }
 
+    function appendEventShopBadge(entry,item){
+        if(!item.event)return;
+        const badge=document.createElement('span');badge.className='shop-event-badge';
+        badge.textContent=item.event==='hollowtide2026'?'Hollowtide 2026':'Limited edition';
+        entry.appendChild(badge);
+    }
+
+    window.filterShopItems = function filterShopItems() {
+        window.ShopTryOn?.clear();
+        const container=document.getElementById('shop-container');
+        const query=document.getElementById('shop-search').value.trim().toLowerCase();
+        const filter=document.getElementById('shop-filter').value;
+        const entries=Array.from(container.querySelectorAll('.grid-entry'));
+        let shown=0;
+        entries.forEach(entry=>{
+            const button=entry.querySelector('button');
+            const action=(button?.textContent||button?.innerText||'').trim().toLowerCase();
+            const owned=entry.classList.contains('selected')||/^(equip|equipped|owned|unequip|selected|use|remove)$/.test(action);
+            entry.dataset.owned=String(owned);
+            const matches=entry.textContent.toLowerCase().includes(query)&&(filter==='all'||(filter==='owned'?owned:!owned));
+            entry.hidden=!matches;if(matches)shown++;
+        });
+        document.getElementById('shop-results').textContent=shown+' of '+entries.length+' items';
+        document.getElementById('shop-empty').hidden=shown!==0;
+    };
+
     window.renderShop = function renderShop() {
+        window.ShopTryOn?.clear(false);
+        window.CharacterThumbnails?.cancel?.('shop');
         const container = document.getElementById('shop-container');
         container.innerHTML = '';
 
@@ -17253,59 +18476,44 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         populatePartSelectors();
 
         // --- NAVIGATION TABS ---
-        const navDiv = document.createElement('div');
-        navDiv.style.gridColumn = "1 / -1";
-        navDiv.style.width = '100%';
-        navDiv.style.display = 'flex';
-        navDiv.style.justifyContent = 'center';
-        navDiv.style.gap = '5px';
-        navDiv.style.marginBottom = '15px';
-
-        const createTab = (id, label) => {
-            const btn = document.createElement('button');
-            btn.className = 'btn-lg';
-            btn.style.fontSize = '10px';
-            btn.style.padding = '8px 10px';
-            btn.style.flex = '1';
-            const isActive = shopMode === id;
-            btn.style.background = isActive ? 'var(--p-sand)' : 'var(--p-face-2)';
-            btn.style.color = isActive ? '#1a1206' : 'var(--p-text-dim)';
-            btn.style.border = '2px solid var(--p-line)';
-            btn.innerText = label;
-            btn.onclick = () => { shopMode = id; renderShop(); };
-            navDiv.appendChild(btn);
+        const navDiv = document.getElementById('shop-categories');
+        navDiv.replaceChildren();
+        document.getElementById('shop-balance').textContent='$'+Number(saveState.money||0).toLocaleString();
+        const createTab=(id,label)=>{
+            const btn=document.createElement('button');
+            btn.type='button';btn.className='shop-category';btn.textContent=label;
+            btn.setAttribute('aria-pressed',String(shopMode===id));
+            btn.onclick=()=>{shopMode=id;renderShop();};navDiv.appendChild(btn);
         };
-
-        createTab('hats', 'Hats');
-        createTab('rods', 'Rods');
-        createTab('shirts', 'Shirts');
-        createTab('collars', 'Collars');
-        createTab('patterns', 'Patterns');
-        createTab('titles', 'Titles');
-        createTab('misc', 'Misc');
-        createTab('bobbers', 'Bobbers');
-        container.appendChild(navDiv);
+        createTab('hats','Hats');createTab('shirts','Shirts');createTab('pants','Pants');createTab('collars','Collars');
+        createTab('titles','Titles');createTab('rods','Rods');
+        createTab('bobbers','Bobbers');createTab('emotes','Emotes');createTab('misc','Tools & extras');
 
         // --- COLLAR TAB ---
-        if (shopMode === 'collars') {
-            const sortedCollars = [...COLLAR_TYPES].sort((a, b) => a.price - b.price);
+        if(shopMode==='emotes'){window.Emotes?.renderShopItems(container);}
+        else if(shopMode==='pants'){
+            for(const item of PANTS_TYPES.filter(item=>!item.event||saveState.unlockedPants.includes(item.id)).sort((a,b)=>a.price-b.price)){
+                const entry=document.createElement('div'),owned=saveState.unlockedPants.includes(item.id),equipped=saveState.currentPants===item.id;
+                entry.className='grid-entry'+(equipped?' selected':'');
+                window.ShopTryOn?.bind(entry,{pants:item.id},item.name);
+                entry.appendChild(window.createCharacterThumbnail({currentPants:item.id},'full',96,128,'shop'));
+                const name=document.createElement('strong');name.textContent=item.name;entry.appendChild(name);
+                appendEventShopBadge(entry,item);
+                const button=document.createElement('button');button.textContent=equipped?'Equipped':owned?'Equip':'$'+item.price.toLocaleString();button.disabled=equipped;button.onclick=()=>selectPants(item.id);entry.appendChild(button);container.appendChild(entry);
+            }
+            if(window.Halloween?.active()){const note=document.createElement('p');note.className='item-desc';note.textContent='Matching Hollowtide pants are available from Morrow for Soul Embers through November 8. Once unlocked, equip them here any time.';container.appendChild(note);}
+        }
+        else if (shopMode === 'collars') {
+            const sortedCollars = COLLAR_TYPES.filter(item=>!item.event||saveState.unlockedCollars.includes(item.id)).sort((a, b) => a.price - b.price);
             sortedCollars.forEach(item => {
                 const entry = document.createElement('div');
                 const isOwned = saveState.unlockedCollars.includes(item.id);
                 const isEquipped = saveState.currentCollar === item.id;
                 entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+                window.ShopTryOn?.bind(entry,{collar:item.id},item.name);
+                appendEventShopBadge(entry,item);
 
-                const canvas = document.createElement('canvas');
-                canvas.width = 64; canvas.height = 94;
-                const ctx = canvas.getContext('2d');
-                ctx.imageSmoothingEnabled = false;
-                ctx.translate(0, 24);
-                drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
-                drawShirt(ctx, saveState.currentShirt, false);
-                drawCollar(ctx, item.id, false);
-                drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
-                addSpriteOutline(ctx, canvas, '#111219', 1);
-                entry.appendChild(canvas);
+                entry.appendChild(window.createCharacterThumbnail({currentCollar:item.id},'full',96,128,'shop'));
 
                 const name = document.createElement('div');
                 name.style.fontWeight = 'bold'; name.innerText = item.name;
@@ -17341,83 +18549,18 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             });
         }
 
-        // --- PATTERNS TAB ---
-        else if (shopMode === 'patterns') {
-            const sortedPatterns = [...PATTERN_TYPES].sort((a, b) => a.price - b.price);
-            sortedPatterns.forEach(pattern => {
-                const entry = document.createElement('div');
-                const isOwned = saveState.unlockedPatterns.includes(pattern.id);
-                const isEquipped = saveState.currentPattern === pattern.id;
-                entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
-
-                const canvas = document.createElement('canvas');
-                canvas.width = 64; canvas.height = 94;
-                const ctx = canvas.getContext('2d');
-                ctx.imageSmoothingEnabled = false;
-                ctx.translate(0, 24);
-                drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
-
-
-                drawPattern(ctx, pattern.id, saveState.catColor, false);
-                drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
-                addSpriteOutline(ctx, canvas, '#111219', 1);
-                entry.appendChild(canvas);
-
-                const name = document.createElement('div');
-                name.style.fontWeight = 'bold'; name.innerText = pattern.name;
-                entry.appendChild(name);
-
-                const btn = document.createElement('button');
-                if (isEquipped) {
-                    btn.innerText = "Equipped";
-                    btn.disabled = true;
-                } else if (isOwned) {
-                    btn.innerText = "Equip";
-                    btn.onclick = () => {
-                        saveState.currentPattern = pattern.id;
-                        saveGame();
-                        updateLocalVisuals();
-                        renderShop();
-                    };
-                } else {
-                    btn.innerText = `$${pattern.price}`;
-                    btn.style.color = saveState.money >= pattern.price ? 'var(--p-good)' : 'var(--p-bad)';
-                    btn.onclick = () => {
-                        if (saveState.money >= pattern.price) {
-                            saveState.money -= pattern.price;
-                            saveState.unlockedPatterns.push(pattern.id);
-                            Sound.sell();
-                            saveGame();
-                            renderShop();
-                        } else showToast("Not enough money!");
-                    };
-                }
-                entry.appendChild(btn);
-                container.appendChild(entry);
-            });
-        }
-
         // --- SHIRTS TAB ---
         else if (shopMode === 'shirts') {
-            const sortedShirts = [...SHIRT_TYPES].sort((a, b) => a.price - b.price);
+            const sortedShirts = SHIRT_TYPES.filter(item=>!item.event||saveState.unlockedShirts.includes(item.id)).sort((a, b) => a.price - b.price);
             sortedShirts.forEach(shirt => {
                 const entry = document.createElement('div');
                 const isOwned = saveState.unlockedShirts.includes(shirt.id);
                 const isEquipped = saveState.currentShirt === shirt.id;
                 entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+                window.ShopTryOn?.bind(entry,{shirt:shirt.id},shirt.name);
+                appendEventShopBadge(entry,shirt);
 
-                const canvas = document.createElement('canvas');
-                canvas.width = 64; canvas.height = 94;
-                const ctx = canvas.getContext('2d');
-                ctx.imageSmoothingEnabled = false;
-                ctx.translate(0, 24);
-                drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
-                drawShirt(ctx, shirt.id, false);
-                drawCollar(ctx, saveState.currentCollar, false);
-                drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
-                drawHat(ctx, saveState.currentHat, false); // Add drawHat here
-                addSpriteOutline(ctx, canvas, '#111219', 1);
-                entry.appendChild(canvas);
+                entry.appendChild(window.createCharacterThumbnail({currentShirt:shirt.id},'full',96,128,'shop'));
 
                 const name = document.createElement('div');
                 name.style.fontWeight = 'bold'; name.innerText = shirt.name;
@@ -17453,25 +18596,16 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
 
         // --- HATS TAB ---
         else if (shopMode === 'hats') {
-            const sortedHats = [...HAT_TYPES].sort((a, b) => a.price - b.price);
+            const sortedHats = HAT_TYPES.filter(item=>!item.event||saveState.unlockedHats.includes(item.id)).sort((a, b) => a.price - b.price);
             sortedHats.forEach(hat => {
                 const entry = document.createElement('div');
                 const isOwned = saveState.unlockedHats.includes(hat.id);
                 const isEquipped = saveState.currentHat === hat.id;
                 entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+                window.ShopTryOn?.bind(entry,{hat:hat.id},hat.name);
+                appendEventShopBadge(entry,hat);
 
-                const canvas = document.createElement('canvas');
-                canvas.width = 64; canvas.height = 94;
-                const ctx = canvas.getContext('2d');
-                ctx.imageSmoothingEnabled = false;
-                ctx.translate(0, 24);
-                drawSpecies(ctx, { ears: saveState.currentEars, eyes: saveState.currentEyes, nose: saveState.currentNose, misc: saveState.currentMisc, tail: saveState.currentTail }, saveState.catColor, saveState.bellyColor, saveState.eyeColor, false);
-                drawShirt(ctx, saveState.currentShirt, false);
-                drawCollar(ctx, saveState.currentCollar, false);
-                drawHair(ctx, saveState.currentHair, saveState.hairColor, false);
-                drawHat(ctx, hat.id, false);
-                addSpriteOutline(ctx, canvas, '#111219', 1);
-                entry.appendChild(canvas);
+                entry.appendChild(window.createCharacterThumbnail({currentHat:hat.id},'head',96,128,'shop'));
 
                 const name = document.createElement('div');
                 name.style.fontWeight = 'bold'; name.innerText = hat.name;
@@ -17495,7 +18629,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             const uniqueFishCount = (typeof countDiscoveredSpecies === 'function')
                 ? countDiscoveredSpecies(saveState.journal)
                 : Object.keys(saveState.journal).length;
-            const sortedRods = [...ROD_TYPES].sort((a, b) => {
+            const sortedRods = ROD_TYPES.filter(item=>!item.event||saveState.unlockedRods.includes(item.id)).sort((a, b) => {
                 if (a.price === b.price) return (a.unlockCount || 0) - (b.unlockCount || 0);
                 return a.price - b.price;
             });
@@ -17505,6 +18639,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
                 const isOwned = saveState.unlockedRods.includes(item.id);
                 const isEquipped = saveState.currentRod === item.id;
                 entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+                appendEventShopBadge(entry,item);
 
                 const canvas = document.createElement('canvas');
                 canvas.width = 64; canvas.height = 94;
@@ -17575,12 +18710,14 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
 
         // --- TITLES & MISC ---
         else if (shopMode === 'titles') {
-            const sortedTitles = [...TITLE_TYPES].sort((a, b) => a.price - b.price);
+            const sortedTitles = TITLE_TYPES.filter(item=>!item.event||saveState.unlockedTitles.includes(item.id)).sort((a, b) => a.price - b.price);
             sortedTitles.forEach(title => {
                 const entry = document.createElement('div');
                 const isOwned = saveState.unlockedTitles.includes(title.id);
                 const isEquipped = saveState.currentTitle === title.id;
                 entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+                window.ShopTryOn?.bind(entry,{},title.name||title.text||'No title',title.id==='none'?null:title);
+                appendEventShopBadge(entry,title);
                 const preview = document.createElement('div');
                 preview.innerText = `< ${title.text || "No Title"} >`;
                 preview.style.color = title.color || '#87CEEB';
@@ -17591,7 +18728,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
                 else if (isOwned) {
                     btn.innerText = "Equip";
                     btn.onclick = () => { saveState.currentTitle = title.id; saveGame(); updateLocalVisuals(); renderShop(); };
-                } else {
+                } else if (title.collection) { btn.innerText="Complete fishing collection"; btn.disabled=true; } else {
                     btn.innerText = `$${title.price}`;
                     btn.onclick = () => { if (saveState.money >= title.price) { saveState.money -= title.price; saveState.unlockedTitles.push(title.id); Sound.sell(); saveGame(); renderShop(); } else showToast("Not enough money!"); };
                 }
@@ -17604,12 +18741,13 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
 
         // --- BOBBERS TAB ---
         else if (shopMode === 'bobbers') {
-            const sortedBobbers = [...BOBBER_TYPES].sort((a, b) => a.price - b.price);
+            const sortedBobbers = BOBBER_TYPES.filter(item=>!item.event||saveState.unlockedBobbers.includes(item.id)).sort((a, b) => a.price - b.price);
             sortedBobbers.forEach(item => {
                 const entry = document.createElement('div');
                 const isOwned = saveState.unlockedBobbers.includes(item.id);
                 const isEquipped = saveState.currentBobber === item.id;
                 entry.className = isEquipped ? 'grid-entry selected' : 'grid-entry';
+                appendEventShopBadge(entry,item);
 
                 const canvas = document.createElement('canvas');
                 canvas.width = 64; canvas.height = 64;
@@ -17778,6 +18916,10 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             boatDiv.className = 'grid-entry';
             const boatTool = TOOLS.find(t => t.id === 'boat') || { price: 2500 };
 
+            if(window.Rowboat3D){
+                const preview=Rowboat3D.thumbnail();
+                if(preview){const image=document.createElement('img');image.src=preview;image.alt='3D wooden rowboat with paired oars';image.style.cssText='display:block;width:100%;max-width:280px;height:140px;object-fit:contain;margin:0 auto 8px;';boatDiv.appendChild(image);}
+            }
             const bTitle = document.createElement('div');
             bTitle.innerHTML = (window.PX ? PX.icon('boat', 16) : '') + " <b>Rowboat</b>";
             boatDiv.appendChild(bTitle);
@@ -17802,6 +18944,8 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             }
             container.appendChild(boatDiv);
         }
+
+        filterShopItems();
 
         // --- IMPORTANT: RENDER OUTFITS EVERY TIME SHOP UPDATES ---
         renderOutfitList();
@@ -17854,8 +18998,11 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         container.appendChild(upgradeDiv);
 
         // --- 2. RENDER BAR SIZE (formerly Click Power) UPGRADE ---
-        const cLvl = saveState.clickPowerLevel;
-        const cMax = CLICK_POWER_RATES.length - 1;
+        const cMax = FISHING_BAR_BONUSES.length - 1;
+        const cLvl = Math.max(0,Math.min(cMax,Math.floor(Number(saveState.clickPowerLevel)||0)));
+        const skillLevel = getLevelFromXP(saveState.skills?.fishing?.xp||0);
+        const currentSize = fishingBarSize(cLvl,skillLevel).toFixed(1);
+        const nextSize = fishingBarSize(cLvl+1,skillLevel).toFixed(1);
 
         const pDiv = document.createElement('div');
         pDiv.className = 'grid-entry';
@@ -17869,9 +19016,9 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         pDesc.style.fontSize = '15px';
         pDesc.style.margin = '5px 0';
         if (cLvl < cMax) {
-            pDesc.innerHTML = "Increases catch area.<br>Easier validation.";
+            pDesc.innerHTML = `Green zone: ${currentSize}% → ${nextSize}%<br>Before fish rarity modifiers.`;
         } else {
-            pDesc.innerHTML = "Max Size.<br>Huge bar!";
+            pDesc.innerHTML = `Green zone: ${currentSize}%<br>All bar upgrades owned.`;
         }
         pDiv.appendChild(pDesc);
 
@@ -17881,7 +19028,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
             btn.innerText = `Upgrade ($${cost})`;
             btn.style.marginTop = 'auto';
             btn.style.color = saveState.money >= cost ? 'var(--p-good)' : 'var(--p-bad)';
-            btn.onclick = () => buyClickPowerUpgrade(cost);
+            btn.onclick = () => buyClickPowerUpgrade();
             pDiv.appendChild(btn);
         } else {
             const lbl = document.createElement('div');
@@ -18027,25 +19174,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
 
         let guitarMesh = player.getObjectByName('guitarMesh');
         if (isGuitarActive) {
-            if (!guitarMesh) {
-                const tex = createGuitarTexture();
-
-                // --- FIX: AlphaTest added ---
-                const mat = new THREE.SpriteMaterial({
-                    map: tex,
-                    transparent: true,
-                    depthWrite: false,
-                    depthTest: true,
-                    alphaTest: 0.5
-                });
-
-                guitarMesh = new THREE.Sprite(mat);
-                guitarMesh.name = 'guitarMesh';
-                guitarMesh.renderOrder = 10;
-                guitarMesh.position.set(0.3, 1.25, 0.2);
-                guitarMesh.scale.set(1.5, 1.5, 1);
-                player.add(guitarMesh);
-            }
+            if(!guitarMesh){guitarMesh=makeHeldTool('guitar','guitarMesh');player.add(guitarMesh);}
             guitarMesh.visible = true;
         } else {
             if (guitarMesh) guitarMesh.visible = false;
@@ -18088,22 +19217,7 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
 
         let gloveMesh = player.getObjectByName('gloveMesh');
         if (isGloveActive) {
-            if (!gloveMesh) {
-                const tex = createGloveTexture();
-
-                // --- FIX: AlphaTest added ---
-                const mat = new THREE.SpriteMaterial({
-                    map: tex,
-                    transparent: true,
-                    alphaTest: 0.5
-                });
-
-                gloveMesh = new THREE.Sprite(mat);
-                gloveMesh.name = 'gloveMesh';
-                gloveMesh.position.set(0.6, 1.25, 0.5);
-                gloveMesh.scale.set(1.2, 1.2, 1);
-                player.add(gloveMesh);
-            }
+            if(!gloveMesh){gloveMesh=makeHeldTool('glove','gloveMesh');player.add(gloveMesh);}
             gloveMesh.visible = true;
         } else {
             if (gloveMesh) gloveMesh.visible = false;
@@ -18225,6 +19339,8 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
 
                 const msg = {
                     type: 'sound',
+                    id: myPeerId,
+                    houseOwner: window.Housing?.presence?.().houseOwner||'',
                     name: 'guitar',
                     pos: { x: player.position.x, y: player.position.y, z: player.position.z },
                     var: note.freq
@@ -18271,10 +19387,13 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         }
     }
 
-    function buyClickPowerUpgrade(cost) {
+    function buyClickPowerUpgrade() {
+        const level=Math.max(0,Math.floor(Number(saveState.clickPowerLevel)||0));
+        if(level>=FISHING_BAR_BONUSES.length-1)return;
+        const cost=CLICK_POWER_PRICES[level];
         if (saveState.money >= cost) {
             saveState.money -= cost;
-            saveState.clickPowerLevel++;
+            saveState.clickPowerLevel=level+1;
             saveGame();
             Sound.sell();
             renderBaitShop();
@@ -18380,7 +19499,7 @@ function createPortalTexture() {
     return tex;
 }
 
-function spawnPortal(x, z, fromNetwork = false) {
+function spawnPortal(x, z, fromNetwork = false, permanent = false) {
     if (voidPortalMesh) scene.remove(voidPortalMesh);
 
     const tex = createPortalTexture();
@@ -18390,9 +19509,11 @@ function spawnPortal(x, z, fromNetwork = false) {
     // Get terrain height for proper Y positioning
     const terrainY = (typeof getTerrainHeight === 'function') ? getTerrainHeight(x, z) : 0;
     voidPortalMesh.position.set(x, terrainY + 0.2, z);
+    voidPortalMesh.userData.permanent = !!permanent;
     scene.add(voidPortalMesh);
 
-    portalDespawnTime = Date.now() + 120000;
+    portalDespawnTime = permanent ? Infinity : Date.now() + 120000;
+    if (permanent) return;
 
     showToast("A Void Portal has opened!");
     broadcastSound('magic', { x: x, y: 0, z: z });
@@ -18406,7 +19527,46 @@ function spawnPortal(x, z, fromNetwork = false) {
     }
 }
 
+function createVoidWorld(){
+    if(!voidFloorMesh){
+        voidFloorMesh=new THREE.Mesh(new THREE.CircleGeometry(40,32),new THREE.MeshBasicMaterial({color:0x111111}));
+        voidFloorMesh.name='voidWorldFloor';voidFloorMesh.rotation.x=-Math.PI/2;voidFloorMesh.position.set(10000,2000,10000);
+    }
+    if(voidFloorMesh.parent!==scene)scene.add(voidFloorMesh);
+    if(!voidExitPortalMesh){
+        voidExitPortalMesh=new THREE.Group();
+        const disc=new THREE.Mesh(new THREE.CircleGeometry(2.6,32),new THREE.MeshBasicMaterial({color:0x9b6dff,transparent:true,opacity:.75,side:THREE.DoubleSide,depthWrite:false}));
+        disc.rotation.x=-Math.PI/2;voidExitPortalMesh.add(disc);
+        const rim=new THREE.Mesh(new THREE.RingGeometry(2.7,3.4,32),new THREE.MeshBasicMaterial({color:0xd8c4ff,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));
+        rim.rotation.x=-Math.PI/2;rim.position.y=.02;voidExitPortalMesh.add(rim);
+        voidExitPortalMesh.position.set(10000,2000.25,10000+32);
+        voidExitPortalMesh.name='voidExitPortal';
+        scene.add(voidExitPortalMesh);
+        const light=new THREE.PointLight(0x9b6dff,1.4,22);light.position.set(10000,2003,10000+32);scene.add(light);
+    }
+    if(voidExitPortalMesh.parent!==scene)scene.add(voidExitPortalMesh);
+    return voidFloorMesh;
+}
+
+function findCustomPortalLocation(level,random=Math.random){
+    const cells=[];for(let i=0;i<level.heights.length;i++)if(level.heights[i]>level.seaLevel+.2)cells.push(i);
+    // Sample actual dry cells, so tiny islands in a large ocean are not missed.
+    for(let tries=0;tries<100&&cells.length;tries++){
+        const pick=Math.min(cells.length-1,Math.floor(random()*cells.length)),index=cells[pick];cells[pick]=cells[cells.length-1];cells.pop();
+        const p=Level.cellCenter(level,index%level.grid,Math.floor(index/level.grid)),y=Level.sampleHeight(level,p.x,p.z);
+        if(y<=level.seaLevel+.2)continue;
+        if(treeColliders.some(c=>Math.hypot(p.x-c.x,p.z-c.z)<(c.radius||0)+2))continue;
+        if(staticColliders.some(c=>staticColliderHits(c,{x:p.x,y:y+.2,z:p.z},2,.4)))continue;
+        return p;
+    }
+    return null;
+}
+
 function enterLavaWorld() {
+    window.Boats?.abandon();
+    if(window.Housing && Housing.inside)return;
+    if(!lavaFloorMesh||!lavaLakeMesh)createLavaWorld();
+    if(!isInLavaWorld)lastIslandPos.copy(player.position);
     isInLavaWorld = true;
     isInVoid = false;
 
@@ -18424,13 +19584,26 @@ function enterLavaWorld() {
 }
 
 function exitLavaWorld() {
+    if(!isInLavaWorld)return;
     isInLavaWorld = false;
-    respawnPlayer(); // Returns to main island
+    if(player){
+        player.position.copy(lastIslandPos);
+        player.position.y=Math.max(lastIslandPos.y,getTerrainHeight(player.position.x,player.position.z)+.5);
+        playerVelocity.set(0,0,0);
+        knockbackVelocity.set(0,0,0);
+    }
+    portalCooldown=Date.now()+3000;
+    scene.background=new THREE.Color(0x87CEEB);
+    scene.fog=new THREE.Fog(0x87CEEB,20,100);
+    updateWeatherVisuals();
 }
 
 function enterVoid() {
+    window.Boats?.abandon();
+    if(window.Housing && Housing.inside)return;
     if (isInVoid) return;
     isInVoid = true;
+    voidPortalArmed = false;
 
     // Save last position just in case, though Respawn will reset to default
     lastIslandPos.copy(player.position);
@@ -18443,21 +19616,15 @@ function enterVoid() {
     scene.background = new THREE.Color(0x000000);
     scene.fog = new THREE.Fog(0x000000, 10, 50);
 
-    if (!voidFloorMesh) {
-        voidFloorMesh = new THREE.Mesh(
-            new THREE.CircleGeometry(40, 32),
-            new THREE.MeshBasicMaterial({ color: 0x111111 })
-        );
-        voidFloorMesh.rotation.x = -Math.PI / 2;
-        voidFloorMesh.position.set(10000, 2000, 10000);
-        scene.add(voidFloorMesh);
-    }
+    createVoidWorld();
 
     showToast("Entered the Void.");
     updateWeatherVisuals();
 }
 
 window.respawnPlayer = function () {
+    window.Boats?.abandon();
+    if(window.Housing && Housing.inside)Housing.leave();
     // Reset Void State
     isInVoid = false;
     isInLavaWorld = false;
@@ -18493,15 +19660,16 @@ window.exitVoid = function () {
     isInVoid = false;
 
     player.position.copy(lastIslandPos);
-    player.position.y = 0.5;
+    player.position.y = Math.max(lastIslandPos.y,getTerrainHeight(player.position.x,player.position.z)+.5);
     playerVelocity.y = 0;
 
     portalCooldown = Date.now() + 3000;
+    voidPortalArmed = false;
 
     scene.background = new THREE.Color(0x87CEEB);
     scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
 
-    document.getElementById('btn-void-respawn').style.display = 'none';
+    const button=document.getElementById('btn-void-respawn');if(button)button.style.display='none';
 }
 
 // ---------------------------------------------------------------------------
@@ -18538,6 +19706,7 @@ function setSailBoatVisible(on) {
 }
 
 window.toggleSailing = function () {
+    if(window.Boats?.isAboard()){Boats.interact(true);return;}
     if (isInVoid || isInLavaWorld) { showToast("Can't sail here."); return; }
     if (!saveState.hasBoat) {
         showToast('You need a Rowboat first — buy one from the Merchant!');
@@ -19095,6 +20264,7 @@ function respawnFlower(index) {
 let hudVisible = true;
 function toggleHud() {
     hudVisible = !hudVisible;
+    document.body.classList.toggle('hud-hidden', !hudVisible);
     const disp = hudVisible ? '' : 'none';
 
     // 1. Hotbar
@@ -19108,9 +20278,7 @@ function toggleHud() {
         else chat.style.display = ''; // Let CSS or JS logic handle it
     }
 
-    // 3. Instructions
-    const instr = document.getElementById('instructions');
-    if (instr) instr.style.display = disp;
+
 
     // 4. Logs
     const log = document.getElementById('fish-log');
@@ -19144,39 +20312,82 @@ function toggleHud() {
     const room = document.getElementById('room-info-ui');
     if (room) room.style.display = disp;
 
-    // --- HIDE 3D PLAYER LABELS ---
-    // Toggle name tags, titles, and chat bubbles on all players
-    const togglePlayerLabels = (mesh) => {
-        if (!mesh) return;
-        const nameTag = mesh.getObjectByName('nameTag');
-        const titleSprite = mesh.getObjectByName('titleSprite');
-        const chatBubble = mesh.getObjectByName('chatBubble');
-        const talkingIcon = mesh.getObjectByName('talkingIcon');
-        if (nameTag) nameTag.visible = hudVisible;
-        if (titleSprite) titleSprite.visible = hudVisible && saveState.showTitles;
-        if (chatBubble) chatBubble.visible = hudVisible;
-        if (talkingIcon) talkingIcon.visible = hudVisible;
-    };
-
-    // Local player
-    if (player) togglePlayerLabels(player);
-
-    // Remote players
-    Object.values(otherPlayers).forEach(p => togglePlayerLabels(p.mesh));
-
-    // NPCs
-    togglePlayerLabels(npcMerchant);
-    togglePlayerLabels(npcStylist);
-    togglePlayerLabels(npcBait);
-    togglePlayerLabels(npcTutorial);
-    togglePlayerLabels(npcLavaMerchant);
-    togglePlayerLabels(npcLavaStylist);
-    togglePlayerLabels(npcLavaBait);
-    togglePlayerLabels(npcFisher);
-    togglePlayerLabels(npcScratch);
-
-    // Ghost
-    if (ghostMesh) togglePlayerLabels(ghostMesh);
+    // Traverse actual scene labels so new/seasonal/custom-map NPCs cannot be
+    // omitted from a hand-maintained list. Parent/NPC visibility is untouched.
+    if(typeof scene!=='undefined'&&scene)scene.traverse(syncHudLabel);
 
     if (hudVisible) showToast("HUD Visible");
 }
+function update3DColorControls() {
+    const accentRow=document.getElementById('tail-accent-color-row');
+    const accentPicker=document.getElementById('tail-accent-color-picker');
+    const supported=window.Character3D?.tailAccentTypes?.includes(saveState.currentTail);
+    if(accentRow)accentRow.hidden=!saveState.model3D||!supported;
+    if(accentPicker)accentPicker.value=saveState.tailAccentColor||saveState.bellyColor||'#ffffff';
+    for(const part of ['hand','foot']) {
+        const row=document.getElementById(part+'-color-row');
+        const picker=document.getElementById(part+'-color-picker');
+        if(row)row.hidden=!saveState.model3D;
+        if(picker)picker.value=saveState[part+'Color']||saveState.catColor||'#ff6347';
+    }
+}
+window.change3DTailAccent=function(value) {
+    if(!saveState.model3D||!window.Character3D?.tailAccentTypes?.includes(saveState.currentTail)|| (value!==''&&!/^#[0-9a-f]{6}$/i.test(value)))return;
+    saveState.tailAccentColor=value;saveGame();
+    if(player)updateLocalVisuals();
+    update3DColorControls();updateCharacterPreview();
+};
+window.change3DLimbColor=function(part,value) {
+    if(!saveState.model3D||!['hand','foot'].includes(part)||!/^#[0-9a-f]{6}$/i.test(value))return;
+    saveState[part+'Color']=value;saveGame();
+    if(player)updateLocalVisuals();
+    update3DColorControls();updateCharacterPreview();
+};
+function updateCharacterModelUI() {
+    update3DColorControls();
+}
+window.toggleCharacterModels=function() {
+    if(typeof TWO_D_MODE_AVAILABLE!=='undefined'&&!TWO_D_MODE_AVAILABLE){updateCharacterModelUI();return;}
+    saveState.model3D=!saveState.model3D;saveState.preferredModel3D=saveState.model3D;
+    const groups=new Set(),roots=[];
+    if(typeof scene!=='undefined' && scene)roots.push(scene);
+    if(window.Housing && Housing.renderScene)roots.push(Housing.renderScene);
+    roots.forEach(root=>root.traverse(obj=>{if(obj.name==='playerSprite'&&obj.userData.cfg)groups.add(obj.parent);}));
+    groups.forEach(group=>{
+        const old=group.getObjectByName('playerSprite'),pos=old.position.clone(),rot=old.rotation.clone(),scale=old.scale.clone();
+        const body=replaceCharacterBody(group,old.userData.cfg);
+        body.position.copy(pos);body.rotation.copy(rot);body.scale.copy(scale);
+    });
+    updateCharacterModelUI();saveGame();
+    if(document.getElementById('shop-overlay')?.style.display==='flex')updateCharacterPreview();
+};
+
+function updatePerformanceUI(){
+    const button=document.getElementById('btn-fps-counter');
+    if(button){button.textContent='FPS Counter: '+(saveState.showFPS!==false?'ON':'OFF');button.setAttribute('aria-pressed',String(saveState.showFPS!==false));}
+    const resolution=document.getElementById('render-scale');if(resolution)resolution.value=String(saveState.renderScale===undefined?0:saveState.renderScale);
+    const retroButton=document.getElementById('btn-retro-shader');
+    if(retroButton){const on=!!saveState.retroShader;retroButton.textContent='Retro shader: '+(on?'ON':'OFF');retroButton.setAttribute('aria-pressed',String(on));}
+    const pixelSize=document.getElementById('retro-pixel-size');
+    if(pixelSize){pixelSize.value=String(retroPixelSize());pixelSize.disabled=!saveState.retroShader;}
+    const counter=document.getElementById('performance-counter');if(counter)counter.hidden=saveState.showFPS===false;
+}
+window.toggleFPSCounter=function(){saveState.showFPS=saveState.showFPS===false;updatePerformanceUI();saveGame();};
+
+window.changeRenderScale=function(value){const scale=Number(value);if(![0,.75,1].includes(scale))return;saveState.renderScale=scale;if(typeof renderer!=='undefined'&&renderer)renderer.setPixelRatio(scale===0?(window.devicePixelRatio||1):scale);updatePerformanceUI();saveGame();};
+
+window.toggleRetroShader=function(){
+    saveState.retroShader=!saveState.retroShader;
+    if(saveState.retroShader){
+        try{ensureRetroPipeline();resizeRetroPipeline();}
+        catch(e){console.warn('[retro] could not start shader',e);saveState.retroShader=false;if(typeof showToast==='function')showToast('Retro shader is unavailable on this device','error');}
+    }
+    updatePerformanceUI();saveGame();
+};
+window.changeRetroPixelSize=function(value){
+    const size=Number(value);
+    if(!RETRO_PIXEL_SIZES.includes(size))return;
+    saveState.retroPixelSize=size;
+    resizeRetroPipeline();
+    updatePerformanceUI();saveGame();
+};

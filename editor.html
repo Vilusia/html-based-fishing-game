@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Level Editor &mdash; HTML Fishing</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&display=swap" rel="stylesheet">
@@ -178,7 +182,7 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
   <div class="sec" id="sec-building">
     <h3>BUILDING</h3>
     <div id="building-list" style="display:flex;flex-direction:column;gap:5px;"></div>
-    <div class="hint">Doors face you when placed. The Wooden Dock can sit on water.</div>
+    <div class="hint">Doors face you when placed. Player House opens personal, saved interiors in the game. The Wooden Dock can sit on water.</div>
   </div>
 
   <div class="sec" id="sec-prop">
@@ -274,7 +278,7 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
       <kbd>B</kbd><span>Buildings tool — place huts, houses, lighthouses and more</span>
       <kbd>X</kbd><span>Props tool — barrels, benches, campfires, reeds and more</span>
       <kbd>E</kbd><span>Caves tool — place a cave entrance (small to huge)</span>
-      <kbd>R / SHIFT+R</kbd><span>Rotate the prop or NPC under the cursor by 45°</span>
+      <kbd>R / SHIFT+R</kbd><span>Rotate the building, prop, NPC, tree, rock or cave under the cursor by 45°</span>
       <kbd>G</kbd><span>Toggle the grid</span>
       <kbd>CTRL+Z / CTRL+Y</kbd><span>Undo / redo</span>
       <kbd>F</kbd><span>Frame the whole level</span>
@@ -290,7 +294,7 @@ input[type=range]{width:120px;accent-color:var(--p-good);background:transparent;
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="icons.js?v=108"></script>
-<script src="worldgen.js?v=112"></script>
-<script src="editor.js?v=107"></script>
+<script src="worldgen.js?v=12.517"></script>
+<script src="editor.js?v=137"></script>
 </body>
 </html>

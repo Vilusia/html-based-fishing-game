@@ -51,9 +51,10 @@ try {
         Write-Host "== Copying files to ${SshTarget}:$RemotePath ==" -ForegroundColor Cyan
         # Ship only what the site needs (no .git, no master-server code).
         $files = @(
-            'index.html', 'editor.html', 'core.js', 'ui.js', 'props.js', 'fish.js',
-            'ocean.js', 'worldgen.js', 'character3d.js', 'networking.js', 'audio.js',
-            'progression.js', 'level-loader.js', 'icons.js', 'editor.js'
+            'index.html', 'editor.html', 'favicon.ico', 'favicon.svg', 'favicon-16.png', 'favicon-32.png', 'favicon-48.png', 'apple-touch-icon.png',
+            'core.js', 'ui.js', 'character-studio.js', 'character-studio.css', 'character-thumbnails.js', 'shop-try-on.js', 'protogen-logo.js', 'protogen-logo.css', 'guided-tutorial.js', 'guided-tutorial.css', 'performance.js', 'housing.js', 'furniture.js', 'outdoor-props.js', 'network-guard.js', 'exploration.js', 'rowboat.js', 'props.js', 'fish.js',
+            'ocean.js', 'worldgen.js', 'character3d.js', 'bobbers3d.js', 'shop-preview.js', 'emotes.js', 'halloween.js', 'boats.js', 'mobile-ui.js', 'mobile-ui.css', 'networking.js', 'audio.js', 'reel-audio.js',
+            'progression.js', 'tournaments.js', 'level-loader.js', 'icons.js', 'editor.js'
         ) | Where-Object { Test-Path (Join-Path $repo $_) }
 
         ssh $SshTarget "mkdir -p '$RemotePath'"

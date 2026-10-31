@@ -71,6 +71,7 @@
             try {
                 localStorage.removeItem(KEY);
                 sessionStorage.removeItem(SESSION_KEY);
+                sessionStorage.removeItem("htmlfishing.level.hash");
             } catch (err) { /* ignore */ }
             refreshUI();
         },
@@ -84,6 +85,9 @@
     }
 
     function reloadCustom() { location.href = "index.html?custom=1"; }
+    // Cache-bust the HTML too: an old cached index can keep pointing at old
+    // game scripts even after the custom level itself is cleared.
+    function reloadDefault() { location.replace("index.html?default=" + Date.now()); }
 
     function wire() {
         const loadBtn = document.getElementById("btn-custom-load");
@@ -116,7 +120,7 @@
         if (clearBtn) clearBtn.onclick = function () {
             window.CustomLevel.clear();
             note("Custom level cleared — reloading the normal island...");
-            setTimeout(function () { location.href = "index.html"; }, 300);
+            setTimeout(reloadDefault, 300);
         };
 
         if (window.CUSTOM_LEVEL) note("Playing custom level: " + window.CUSTOM_LEVEL.name);

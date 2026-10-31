@@ -1,0 +1,19 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),THREE=require('../vendor/three.min.js');const root=path.join(__dirname,'..'),ui=fs.readFileSync(path.join(root,'ui.js'),'utf8');
+function setup(cfg={}){const c=vm.createContext({THREE,window:{}});vm.runInContext(fs.readFileSync(path.join(root,'character3d.js'),'utf8'),c);const C=c.window.Character3D,t=()=>new THREE.Texture(),body=C.buildCharacter(cfg,{base:'#dca3ca',belly:'#fff',parts:'cat',pc:{}},{headFront:t(),headBack:t(),torsoFront:t(),torsoBack:t()});body.position.y=1.46875;const owner=new THREE.Group();owner.add(body);vm.runInContext(ui.slice(ui.indexOf('function updateJumpAnimation('),ui.indexOf('function syncCharacterOverhead(')),c);return {c,C,owner,body};}
+test('takeoff, airborne tuck, falling and landing animate finite limbs and return exactly to rest',()=>{
+ const {c,C,owner,body}=setup(),batch=body.userData.walkBatches[0],p=batch.geometry.attributes.position.array;const right=batch.vertices.find(v=>v.side>0).index*3;
+ c.updateJumpAnimation(owner,true,10,1/60);const takeoff=Array.from(p);for(let i=0;i<15;i++)c.updateJumpAnimation(owner,true,4,1/60);assert.notDeepEqual(Array.from(p),takeoff);assert(p[right+2]!==batch.rest[right+2]);c.updateJumpAnimation(owner,true,-4,1/60);
+ let crouched=false;for(let i=0;i<30;i++){c.updateJumpAnimation(owner,false,0,1/60);if(body.position.y<1.46)crouched=true;}assert(crouched);assert.equal(body.position.y,1.46875);assert.equal(body.userData.jumpState.weight,0);assert.equal(body.userData.jumpState.landing,0);
+ for(const batch of body.userData.walkBatches)for(let i=0;i<batch.rest.length;i++)assert(Math.abs(batch.geometry.attributes.position.array[i]-batch.rest[i])<1e-6);
+ assert([...p].every(Number.isFinite));assert(body.userData.drawCalls<=3);
+});
+test('jumping preserves occupied hands and cannot override sitting, sliding, boats or emotes',()=>{
+ for(const flag of ['holdingRod','holdingFish','holdingTool']){const {c,owner,body}=setup({[flag]:true});for(let i=0;i<15;i++)c.updateJumpAnimation(owner,true,4,1/60);for(const batch of body.userData.walkBatches)for(const v of batch.emoteVertices.filter(v=>v.side>0))for(let k=0;k<3;k++)assert.equal(batch.geometry.attributes.position.array[v.index*3+k],batch.rest[v.index*3+k]);}
+ for(const cfg of [{sitting:true},{bellySliding:true},{}]){const {c,owner,body}=setup(cfg);if(!cfg.sitting&&!cfg.bellySliding)owner.userData.emoting=true;c.updateJumpAnimation(owner,true,5,.1);assert.equal(body.userData.jumpState.weight,0);}
+ const {c,owner,body}=setup();c.updateJumpAnimation(owner,true,5,.1);c.updateJumpAnimation(owner,false,0,.1,true);assert.equal(body.userData.jumpState.weight,0);assert.equal(body.userData.jumpState.landing,0);
+});
+test('walking resumes after landing and the retained 2D jump settles without residual offsets',()=>{
+ const {c,C,owner,body}=setup();for(let i=0;i<15;i++)c.updateJumpAnimation(owner,true,4,1/60);for(let i=0;i<30;i++)c.updateJumpAnimation(owner,false,0,1/60);C.animateWalk(body,true,.1);const batch=body.userData.walkBatches[0];assert(batch.vertices.some(v=>Math.abs(batch.geometry.attributes.position.array[v.index*3+2]-batch.rest[v.index*3+2])>.01));
+ body.userData.is3D=false;c.updateJumpAnimation(owner,true,5,.1);assert.equal(body.rotation.z,-.08);for(let i=0;i<30;i++)c.updateJumpAnimation(owner,false,0,1/60);assert.equal(body.position.y,1.46875);assert.equal(body.rotation.z,0);
+});
+test('local and remote jump poses use explicit synced airborne and velocity fields',()=>{assert(ui.includes('myData.jumping = !!player.userData.jumpAirborne'));assert(ui.includes('myData.jumpVelocity = myData.jumping?'));assert(ui.includes('updateJumpAnimation(player,player.userData.jumpAirborne'));assert(ui.includes('updateJumpAnimation(p.mesh,p.lastData?.jumping===true'));});

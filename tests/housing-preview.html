@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>House interaction preview</title>
+<style>
+:root{--p-face:#26343b;--p-line:#829d9e;--p-text:#f3ebdb}body{margin:0;background:#1d282a;font:16px system-ui;color:var(--p-text)}canvas{display:block}.overlay-screen{display:none;position:fixed;inset:0;background:#142125d9;align-items:center;justify-content:center}.btn-lg{padding:10px 15px;border:1px solid #90a99c;background:#344c49;color:#fff;cursor:pointer}input{padding:7px;margin:6px;max-width:95%}#npc-prompt{position:fixed;bottom:65px;left:50%;transform:translateX(-50%);background:#17231e;padding:10px}#tools{position:fixed;bottom:12px;left:12px;display:flex;gap:8px;z-index:1600}#message{position:fixed;top:8px;left:8px;max-width:250px}#saved{font-size:12px}
+</style></head><body><div id="message">House preview · WASD to walk · E to interact</div><div id="npc-prompt"></div><div id="tools"><button class="btn-lg" id="enter">Interact with door</button><button class="btn-lg" id="reset">Return to doorstep</button><span id="saved"></span></div>
+<script src="../vendor/three.min.js"></script><script src="../worldgen.js"></script>
+<script>
+var scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,.1,150),renderer=new THREE.WebGLRenderer({antialias:false});
+renderer.setSize(innerWidth,innerHeight);document.body.prepend(renderer.domElement);scene.background=new THREE.Color('#6e9790');scene.add(new THREE.HemisphereLight('#fff4dc','#5e7356',1));
+var player=new THREE.Group();var body=new THREE.Mesh(new THREE.BoxGeometry(.8,1.8,.65),new THREE.MeshBasicMaterial({color:'#dfa8ad'}));body.position.y=.9;player.add(body);player.position.set(0,0,5.8);scene.add(player);
+var saveState=JSON.parse(localStorage.getItem('housing.preview')||'null')||{house:{name:'My house',wall:'#eadac4',floor:'#b0825e',trim:'#714933',furniture:[]},keybinds:{interact:'KeyE'}};
+if(saveState.money===undefined)saveState.money=10000;
+var playerVelocity=new THREE.Vector3(),knockbackVelocity=new THREE.Vector3(),cameraRotationY=0,cameraDistance=9,isSailing=false,isProne=false,isDiving=false,isInVoid=false,isInLavaWorld=false,isHost=false,hostConn=null,clientConns={},myPeerId='preview',myDeviceID='preview',otherPlayers={},fishingState='idle',interactTarget=null,canSell=false,controls={};
+function showToast(text){document.getElementById('message').textContent=text;}function saveGame(){localStorage.setItem('housing.preview',JSON.stringify(saveState));document.getElementById('saved').textContent='House saved';}function sendUpdate(){}function updateWeatherVisuals(){}function stopFishing(){}function toggleSailing(){}
+</script><script src="../furniture.js"></script><script src="../housing.js"></script><script>
+var house=WorldGen.makeBuilding({type:'house',scale:1,rot:0});scene.add(house);Housing.registerExterior(house);
+var lawn=new THREE.Mesh(new THREE.PlaneGeometry(45,45),new THREE.MeshBasicMaterial({color:'#66875b'}));lawn.rotation.x=-Math.PI/2;lawn.position.y=-.02;scene.add(lawn);
+document.getElementById('enter').onclick=()=>Housing.interact();document.getElementById('reset').onclick=()=>{Housing.leave();player.position.set(0,0,5.8);};
+document.addEventListener('keydown',e=>{controls[e.code]=true;if(e.code==='KeyE')Housing.interact();});document.addEventListener('keyup',e=>controls[e.code]=false);
+function frame(){requestAnimationFrame(frame);if(!Housing.modalOpen){var np=player.position.clone();np.x+=(controls.KeyD?1:0)*.07-(controls.KeyA?1:0)*.07;np.z+=(controls.KeyS?1:0)*.07-(controls.KeyW?1:0)*.07;if(Housing.inside?Housing.canStand(np):!Housing.collidesExterior(np))player.position.copy(np);}Housing.tick();camera.position.set(player.position.x+9,8,player.position.z+12);camera.lookAt(player.position.x,1.3,player.position.z-1);renderer.render(Housing.renderScene||scene,camera);}frame();
+</script></body></html>

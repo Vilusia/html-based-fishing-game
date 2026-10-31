@@ -293,12 +293,31 @@ const TITLE_TYPES = [
     { id: 'straight', text: 'Straight', price: 999999999, color: '#444444' }
 ];
 
+TITLE_TYPES.push(
+    {id:'lake_collector',text:'Lakeside Collector',price:0,color:'#76c3b0',collection:'lake'},
+    {id:'pond_collector',text:'Pond Jewel Collector',price:0,color:'#c29ee0',collection:'pond'},
+    {id:'angler_collector',text:'Freshwater Collector',price:0,color:'#a6c77b',collection:'angler'}
+);
 const TITLE_MAP = new Map(TITLE_TYPES.map(t => [t.id, t]));
 function getTitleById(id) {
     return TITLE_MAP.get(id) || TITLE_MAP.get('none');
 }
 
 
+// Golden color variants of real species. They use a separate universal roll,
+// never ordinary bait/zone weights, so rarity stays the same everywhere.
+const GOLDEN_FISH = [
+    {name:'Golden Common Carp',species:'Common Carp',shape:'carp',rarity:'Legendary',color:'#efbf3f',drain:110,price:12000,chance:0,condition:'golden',zone:'any',golden:true},
+    {name:'Golden Rainbow Trout',species:'Rainbow Trout',shape:'trout',rarity:'Legendary',color:'#ffd45b',drain:115,price:14000,chance:0,condition:'golden',zone:'any',golden:true},
+    {name:'Golden Largemouth Bass',species:'Largemouth Bass',shape:'bass',rarity:'Legendary',color:'#dca52a',drain:120,price:16000,chance:0,condition:'golden',zone:'any',golden:true},
+    {name:'Golden Atlantic Salmon',species:'Atlantic Salmon',shape:'salmon',rarity:'Legendary',color:'#f9ce66',drain:125,price:18000,chance:0,condition:'golden',zone:'any',golden:true}
+];
+const GOLDEN_FISH_CHANCE = 1 / 10000; // Each species: 0.01%; any golden: 0.04%.
+function rollGoldenFish(roll){
+    if(!Number.isFinite(roll)||roll<0||roll>=GOLDEN_FISH.length*GOLDEN_FISH_CHANCE)return null;
+    return GOLDEN_FISH[Math.floor(roll/GOLDEN_FISH_CHANCE)];
+}
+FISH_TYPES.push(...GOLDEN_FISH);
 const FISH_NAME_MAP = new Map();
 for (const fish of FISH_TYPES) {
     FISH_NAME_MAP.set(fish.name, fish);
@@ -420,6 +439,189 @@ const HAT_TYPES = [
 ];
 
 
+const PANTS_TYPES = [
+    {
+        "id": "none",
+        "name": "No Pants",
+        "price": 0,
+        "color": null,
+        "type": "none"
+    },
+    {
+        "id": "denim",
+        "name": "Classic Jeans",
+        "price": 550,
+        "color": "#42658a",
+        "type": "jeans"
+    },
+    {
+        "id": "dark_denim",
+        "name": "Midnight Jeans",
+        "price": 850,
+        "color": "#24334b",
+        "type": "jeans"
+    },
+    {
+        "id": "washed_denim",
+        "name": "Stonewash Jeans",
+        "price": 750,
+        "color": "#91abc0",
+        "type": "jeans"
+    },
+    {
+        "id": "black_denim",
+        "name": "Black Jeans",
+        "price": 800,
+        "color": "#292c38",
+        "type": "jeans"
+    },
+    {
+        "id": "ripped_denim",
+        "name": "Ripped Jeans",
+        "price": 1600,
+        "color": "#577b9b",
+        "type": "ripped"
+    },
+    {
+        "id": "sand_chinos",
+        "name": "Sand Chinos",
+        "price": 650,
+        "color": "#c3a679",
+        "type": "chinos"
+    },
+    {
+        "id": "navy_chinos",
+        "name": "Navy Chinos",
+        "price": 900,
+        "color": "#303f60",
+        "type": "chinos"
+    },
+    {
+        "id": "wine_chinos",
+        "name": "Wine Chinos",
+        "price": 1100,
+        "color": "#75404d",
+        "type": "chinos"
+    },
+    {
+        "id": "olive_cargo",
+        "name": "Olive Cargo Pants",
+        "price": 1400,
+        "color": "#69744a",
+        "type": "cargo"
+    },
+    {
+        "id": "sand_cargo",
+        "name": "Sand Cargo Pants",
+        "price": 1400,
+        "color": "#ae946c",
+        "type": "cargo"
+    },
+    {
+        "id": "slate_cargo",
+        "name": "Slate Cargo Pants",
+        "price": 1700,
+        "color": "#596778",
+        "type": "cargo"
+    },
+    {
+        "id": "grey_joggers",
+        "name": "Grey Joggers",
+        "price": 700,
+        "color": "#8e939e",
+        "type": "joggers"
+    },
+    {
+        "id": "black_joggers",
+        "name": "Black Joggers",
+        "price": 900,
+        "color": "#292936",
+        "type": "joggers"
+    },
+    {
+        "id": "red_joggers",
+        "name": "Red Joggers",
+        "price": 1000,
+        "color": "#b83f4b",
+        "type": "joggers"
+    },
+    {
+        "id": "blue_joggers",
+        "name": "Blue Joggers",
+        "price": 1000,
+        "color": "#405c9b",
+        "type": "joggers"
+    },
+    {
+        "id": "green_joggers",
+        "name": "Green Joggers",
+        "price": 1000,
+        "color": "#3f7755",
+        "type": "joggers"
+    },
+    {
+        "id": "purple_joggers",
+        "name": "Purple Joggers",
+        "price": 1300,
+        "color": "#77518c",
+        "type": "joggers"
+    },
+    {
+        "id": "pink_joggers",
+        "name": "Pink Joggers",
+        "price": 1300,
+        "color": "#d98aad",
+        "type": "joggers"
+    },
+    {
+        "id": "cream_linen",
+        "name": "Cream Linen Pants",
+        "price": 1800,
+        "color": "#e6dcca",
+        "type": "linen"
+    },
+    {
+        "id": "sailor_stripes",
+        "name": "Sailor Stripe Pants",
+        "price": 2400,
+        "color": "#e1e7ed",
+        "type": "stripes",
+        "secondary": "#314b77"
+    },
+    {
+        "id": "bee_stripes",
+        "name": "Bumblebee Pants",
+        "price": 2600,
+        "color": "#e8bb42",
+        "type": "stripes",
+        "secondary": "#302d36"
+    },
+    {
+        "id": "candy_stripes",
+        "name": "Candy Cane Pants",
+        "price": 2600,
+        "color": "#f2eee4",
+        "type": "stripes",
+        "secondary": "#b94351"
+    },
+    {
+        "id": "galaxy_pants",
+        "name": "Galaxy Joggers",
+        "price": 8000,
+        "color": "#382752",
+        "type": "stars",
+        "secondary": "#a788dc"
+    },
+    {
+        "id": "fishing_waders",
+        "name": "Angler Waders",
+        "price": 3500,
+        "color": "#3b615e",
+        "type": "cargo",
+        "secondary": "#c8b47b"
+    }
+];
+
 const SHIRT_TYPES = [
     // --- BASICS ---
     { id: 'none', name: 'No Shirt', price: 0, type: 'none' },
@@ -495,19 +697,6 @@ const COLLAR_TYPES = [
     { id: 'pearls', name: 'Pearls', price: 100000, color: '#ffffff', type: 'pearls' }
 ];
 
-// --- FUR PATTERN DEFINITIONS ---
-const PATTERN_TYPES = [
-    { id: 'none', name: 'No Pattern', price: 0 },
-    { id: 'spots', name: 'Spots', price: 500, color: '#000000' },
-    { id: 'stripes', name: 'Tiger Stripes', price: 750, color: '#000000' },
-    { id: 'calico', name: 'Calico Patches', price: 1000 },
-    { id: 'tuxedo', name: 'Tuxedo', price: 800, color: '#000000' },
-    { id: 'tabby', name: 'Tabby', price: 600, color: '#000000' },
-    { id: 'dalmatian', name: 'Dalmatian', price: 1200, color: '#000000' },
-    { id: 'cow', name: 'Cow Print', price: 1500, color: '#000000' },
-    { id: 'hearts', name: 'Hearts', price: 2000, color: '#ff69b4' },
-    { id: 'stars', name: 'Stars', price: 2500, color: '#ffd700' }
-];
 const BAIT_TYPES = [
     // EARLY GAME
     { id: 'none', name: 'No Bait', price: 0, unlockFish: 0, power: 0, rarityMult: 1.0, tierLuck: 1.0 },
@@ -607,6 +796,7 @@ const _optVec2 = new THREE.Vector3();
 const _optVec3 = new THREE.Vector3();
 const _optVec4 = new THREE.Vector3();
 const _optColor1 = new THREE.Color();
+const _rainColor = new THREE.Color(0x445566);
 // --------------------------------------
 
 // --- RATE LIMITING GLOBALS (CLIENT) ---
@@ -628,8 +818,9 @@ let chatPoolIndex = 0;
 
 // --- SCENE & RENDERER ---
 let scene, camera, renderer, clock;
+let hemiLight = null, fillLight = null;
 let player, playerVelocity = new THREE.Vector3();
-let isDiving = false, isProne = false, diveTimer = 0;
+let isDiving = false, isProne = false, isSitting = false, diveTimer = 0;
 let diveDir = new THREE.Vector3();
 let lastSpacePress = 0;
 let pendingJump = false, pendingJumpTime = 0;
@@ -707,6 +898,9 @@ let rainSystem = null;
 let nextWeatherChange = Date.now() + 300000;
 
 let voidPortalMesh = null;
+let voidExitPortalMesh = null;
+let lavaExitPortalMesh = null;
+let voidPortalArmed = true;
 let isInVoid = false;
 let voidFloorMesh = null;
 let lastIslandPos = new THREE.Vector3(25, 0, 0);
@@ -738,7 +932,14 @@ const AUTO_CLICK_PRICES = [0, 1000, 5000, 20000, 100000, 500000];
 
 // Click Power Upgrade Tiers (REBALANCED)
 const CLICK_POWER_RATES = [1, 2, 4, 6, 10, 15];
-const CLICK_POWER_PRICES = [0, 3000, 15000, 75000, 400000, 2000000];
+const CLICK_POWER_PRICES = [500, 3000, 15000, 75000, 400000];
+// Green-zone percentage points: smaller beginner area, with useful gradual upgrades.
+const FISHING_BAR_BONUSES = [0, .8, 1.8, 3, 4.4, 6];
+function fishingBarSize(upgradeLevel,skillLevel){
+    const upgrade=Math.max(0,Math.min(FISHING_BAR_BONUSES.length-1,Math.floor(Number(upgradeLevel)||0)));
+    const skill=Math.max(1,Math.min(99,Math.floor(Number(skillLevel)||1)));
+    return 14+FISHING_BAR_BONUSES[upgrade]+(skill-1)*.15;
+}
 let chargeStart = 0, castMarker, lastCastPos = new THREE.Vector3();
 const MAX_CHARGE_TIME = 1500, MAX_CAST_DISTANCE = 18, MIN_CAST_DISTANCE = 3;
 let lastFootstepTime = 0;

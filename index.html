@@ -3,12 +3,22 @@
 
 <head>
     <meta charset="UTF-8">
+    <!-- Defense in depth: also checks redirected image destinations. No broad
+         https: or wildcard hosts; local/generated game art remains available. -->
+    <meta http-equiv="Content-Security-Policy" content="img-src 'self' data: blob: https://i.imgur.com https://i.redd.it https://preview.redd.it https://media.giphy.com https://media0.giphy.com https://media1.giphy.com https://media2.giphy.com https://media3.giphy.com https://media4.giphy.com https://i.giphy.com;">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>HTML Fisher</title>
+    <title>HTML Fishing</title>
+    <meta name="theme-color" content="#1b1f2e">
+    <link rel="icon" href="favicon.ico" sizes="any">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+    <link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&display=swap"
         rel="stylesheet">
     <style>
@@ -488,10 +498,15 @@
             color: var(--p-text-dim);
         }
 
+        /* Auto anchor ads sit at the viewport edge. While a game is active,
+           reserve a safe strip above them so the hotbar and lower HUD stay
+           readable and clickable. */
+        body { --game-anchor-space: 0px; }
+
         /* --- HOTBAR UI --- */
         #hotbar-container {
             position: absolute;
-            bottom: 20px;
+            bottom: calc(20px + var(--game-anchor-space));
             left: 50%;
             transform: translateX(-50%);
             display: flex;
@@ -520,7 +535,7 @@
             cursor: pointer;
             position: relative;
             box-shadow: inset 1px 1px 0 var(--p-bevel-dark);
-            transition: background 0.08s steps(2);
+            transition: background 0.08s steps(2), bottom 0.22s ease;
         }
 
         .hotbar-slot:hover {
@@ -549,7 +564,7 @@
         /* --- HUD: BOTTOM LEFT (BAIT & CHAT) --- */
         #bait-ui {
             position: absolute;
-            bottom: 20px;
+            bottom: calc(20px + var(--game-anchor-space));
             left: 20px;
             padding: 10px 15px;
             pointer-events: auto;
@@ -557,12 +572,13 @@
             flex-direction: column;
             gap: 5px;
             z-index: 50;
+            transition: bottom 0.22s ease;
         }
 
         /* --- CHAT UI --- */
         #chat-ui {
             position: absolute;
-            bottom: 100px;
+            bottom: calc(100px + var(--game-anchor-space));
             left: 20px;
             width: 30vw;
             max-width: 350px;
@@ -572,7 +588,7 @@
             display: flex;
             flex-direction: column;
             pointer-events: none;
-            transition: opacity 0.5s ease-in-out;
+            transition: opacity 0.5s ease-in-out, bottom 0.22s ease;
             opacity: 0;
         }
 
@@ -1292,72 +1308,6 @@
             margin-top: 5px;
         }
 
-        /* --- PATREON BANNER --- */
-        #patreon-container {
-            position: absolute;
-            bottom: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 160px;
-            height: 80px;
-            background: transparent;
-            border: none;
-            border-radius: 0;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            overflow: visible;
-            z-index: 3500;
-            pointer-events: auto;
-        }
-
-        #patreon-content {
-            width: 160px;
-            height: 80px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
-        }
-
-        #patreon-content img {
-            width: 160px;
-            height: 80px;
-            object-fit: contain;
-            border-radius: 0;
-            box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
-        }
-
-        #patreon-content img:hover {
-            filter: brightness(1.12);
-        }
-
-        #btn-close-patreon {
-            position: absolute;
-            top: -8px;
-            right: -8px;
-            background: #7a2b28;
-            color: #f7d9d6;
-            border: 2px solid var(--p-line);
-            border-radius: 0;
-            cursor: pointer;
-            font-family: var(--font-display);
-            font-size: 11px;
-            width: 22px;
-            height: 22px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 99999;
-            transition: background 0.08s steps(2);
-        }
-
-        #btn-close-patreon:hover {
-            background: var(--p-bad);
-            color: #fff;
-        }
-
         /* --- JOURNAL TIER MEDALS --- */
         .journal-medals {
             display: flex;
@@ -1392,7 +1342,7 @@
         /* --- GLOBAL CHAT SETTINGS (NEW 450px HEIGHT) --- */
         #chat-ui {
             position: absolute;
-            bottom: 100px;
+            bottom: calc(100px + var(--game-anchor-space));
             left: 20px;
             width: 30vw;
             max-width: 350px;
@@ -1402,27 +1352,12 @@
             display: flex;
             flex-direction: column;
             pointer-events: none;
-            transition: opacity 0.5s ease-in-out;
+            transition: opacity 0.5s ease-in-out, bottom 0.22s ease;
             opacity: 0;
         }
 
         /* --- RESPONSIVE ADJUSTMENTS (PORTRAIT) --- */
         @media (max-width: 900px) {
-            #patreon-container {
-                bottom: auto !important;
-                top: 70px;
-                transform: translateX(-50%) scale(0.9);
-                z-index: 4000;
-            }
-
-            #btn-close-patreon {
-                width: 40px !important;
-                height: 40px !important;
-                font-size: 24px !important;
-                top: -10px !important;
-                right: -10px !important;
-            }
-
             /* SHOW DEDICATED INVENTORY BUTTON ON MOBILE */
             #btn-inventory-mobile {
                 display: flex !important;
@@ -2061,25 +1996,6 @@
                 font-size: 1.8vh;
             }
 
-            /* --- PATREON --- */
-            #patreon-container {
-                bottom: auto !important;
-                top: 8vh;
-                width: 20vh;
-                height: 10vh;
-            }
-
-            #patreon-content,
-            #patreon-content img {
-                width: 20vh;
-                height: 10vh;
-            }
-
-            #btn-close-patreon {
-                width: 4vh !important;
-                height: 4vh !important;
-                font-size: 2.5vh !important;
-            }
         }
 
         /* --- SMALL SCREEN HEIGHT FIX (APPLIED GLOBALLY FOR SMALL DISPLAYS) --- */
@@ -2547,6 +2463,25 @@
             margin: 0 0 4px 0;
         }
 
+        .scratch-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            text-align: left;
+        }
+
+        .scratch-head .overlay-header {
+            flex: 1;
+            min-width: 0;
+        }
+
+        #scratch-close {
+            flex: 0 0 auto;
+            min-height: 36px;
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
         #scratch-balance {
             font-family: var(--font-display);
             color: var(--p-gold);
@@ -2806,15 +2741,343 @@
             height: 26px;
         }
     </style>
+    <style>
+        #patch-notes-dialog {width:min(92vw,760px);max-height:82vh;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;box-sizing:border-box;padding:24px;background:var(--p-face,#242c34);color:var(--p-text,#f4eddf);border:2px solid var(--p-line,#789);font-family:var(--font-body,system-ui);line-height:1.55;}
+        #patch-notes-dialog::backdrop {background:rgba(0,0,0,.75);}
+        #patch-notes-dialog h2,#patch-notes-dialog h3 {color:var(--p-gold,#e2c07a);}
+        #patch-notes-dialog li {margin:8px 0;}
+        #patch-notes-dialog .patch-close {position:sticky;bottom:0;background:var(--p-face,#242c34);padding-top:10px;text-align:right;}
+    </style>
+<style>body.hud-hidden #house-status,body.hud-hidden #tournament-hud {display:none!important;}</style>
+    <style>
+        #tournament-hud, #tournament-hud * {font-family:"Segoe UI",Arial,sans-serif !important;font-size:14px;line-height:1.5;letter-spacing:.2px;text-transform:none;-webkit-font-smoothing:antialiased;}
+        #tournament-hud summary {font-weight:600;}
+        #tournament-hud {bottom:calc(90px + var(--game-anchor-space)) !important;transition:bottom .22s ease;}
+    </style>
+    <style>
+        #options-overlay #options-container {width:min(94vw,820px);max-width:820px;max-height:88vh;max-height:88dvh;padding:0;overflow:hidden;display:flex;flex-direction:column;text-align:left;font-family:"Segoe UI",Arial,sans-serif;font-size:14px;line-height:1.5;}
+        #options-container *,#options-container *::before,#options-container *::after {box-sizing:border-box;min-width:0;}
+        #options-container [hidden] {display:none!important;}
+        #options-container .settings-header {display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--p-line);gap:12px;}
+        #options-container h2 {margin:0;font-size:18px;}
+        #options-container h3 {margin:0 0 6px;font-size:18px;font-family:inherit;color:var(--p-gold,#e2c07a);}
+        #options-container h4 {margin:0 0 8px;font-size:14px;font-family:inherit;}
+        #options-container p {margin:4px 0 12px;color:var(--p-text-dim);}
+        #options-container .settings-header p {margin:6px 0 0;}
+        #options-container .settings-tabs {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:12px 24px;flex-shrink:0;}
+        #options-container button {margin:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;font-family:inherit;letter-spacing:.2px;}
+        #options-container button[aria-selected="true"] {border-color:var(--p-gold,#e2c07a);color:var(--p-gold,#e2c07a);background:var(--p-face-3);}
+        #options-container button:focus-visible,#options-container select:focus-visible,#options-container input:focus-visible {outline:2px solid var(--p-gold,#e2c07a);outline-offset:3px;}
+        #options-container .settings-content {padding:12px 24px 24px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;min-height:0;flex:1;}
+        #options-container .settings-card {padding:16px;border:1px solid var(--p-line);background:var(--p-sunken);margin:16px 0;}
+        #options-container .setting-row {display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,1.5fr);gap:16px;align-items:center;margin:12px 0;}
+        #options-container input[type="range"],#options-container select {width:100%;margin:0;}
+        #options-container .settings-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+        #options-container .settings-actions button {width:100%;}
+        #options-container .settings-danger {border-color:#a65c65;}
+        #options-container .settings-footer {display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-top:1px solid var(--p-line);gap:12px;flex-shrink:0;}
+        #options-container .settings-footer span {color:var(--p-text-dim);font-size:12px;}
+        #options-container #keybinds-container {max-height:none;overflow:visible;}
+        #options-container .control-row {display:flex;justify-content:space-between;align-items:center;gap:12px;margin:8px 0;}
+        @media(max-width:560px){#options-container .settings-header,#options-container .settings-content,#options-container .settings-footer {padding:14px;}#options-container .settings-tabs {padding:10px;gap:4px;}#options-container .settings-tabs button {font-size:11px;padding:8px 3px;}#options-container .setting-row {grid-template-columns:1fr;gap:6px;}#options-container .settings-footer span {display:none;}}
+    </style>
+<style id="boutique-styles">
+/* Boutique: one responsive shell for studio, catalog and wardrobe. */
+#shop-overlay {padding:24px;box-sizing:border-box;background:rgba(10,18,23,.94);overflow:auto;}
+#shop-overlay #shop-wrapper {display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:0;width:min(1160px,100%);height:min(850px,90dvh);max-height:none;overflow:hidden;padding:0;border:2px solid var(--p-line);background:var(--p-face);box-shadow:0 18px 70px #0008;align-items:stretch;}
+#shop-overlay #shop-main-panel {min-height:0;min-width:0;width:auto;height:auto;display:flex;flex-direction:column;gap:12px;padding:24px;overflow:auto;background:var(--p-face);}
+#shop-overlay .overlay-header {text-align:left;margin:0!important;flex-shrink:0;}
+#shop-overlay .shop-heading {display:flex;align-items:center;justify-content:space-between;gap:16px;}
+#shop-overlay .shop-eyebrow {font:10px var(--font-display);letter-spacing:2px;color:var(--p-sand);margin-bottom:12px;}
+#shop-overlay h2 {font-size:22px;margin:0 0 8px;line-height:1.4;}
+#shop-overlay .overlay-subtitle {font-size:16px;color:var(--p-text-dim);}
+#shop-overlay .shop-wallet {display:flex;flex-direction:column;gap:6px;padding:10px 14px;background:var(--p-sunken);border:1px solid var(--p-line);text-align:right;white-space:nowrap;}
+#shop-overlay .shop-wallet span {font-size:13px;color:var(--p-text-dim);}
+#shop-overlay .shop-wallet strong {font-size:20px;color:var(--p-sand);}
+#shop-appearance {border:1px solid var(--p-line);background:var(--p-face-2);flex-shrink:0;}
+#shop-appearance summary {cursor:pointer;padding:12px 14px;font-weight:bold;font-size:16px;color:var(--p-text);}
+#shop-appearance summary span {font-size:14px;color:var(--p-text-dim);font-weight:normal;margin-left:12px;}
+#shop-overlay #color-picker-container {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;width:100%;margin:0;padding:12px;box-sizing:border-box;border:0!important;border-top:1px solid var(--p-line)!important;max-height:none;}
+#shop-overlay .picker-row[hidden] {display:none!important;}
+#shop-overlay .picker-row {display:grid;grid-template-columns:minmax(0,1fr) 32px;gap:6px;margin:0;padding:0;text-align:left;min-width:0;}
+#shop-overlay .picker-row {align-content:start;}
+#shop-overlay #tail-accent-color-row {grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;}
+#shop-overlay #tail-accent-color-picker {grid-column:1/-1;}
+#shop-overlay #tail-accent-color-row button {width:100%;min-width:0;max-width:100%;box-sizing:border-box;margin:0;padding:8px 4px;font:14px var(--font-body)!important;letter-spacing:0;white-space:normal;overflow-wrap:anywhere;}
+#shop-overlay .picker-row label {grid-column:1/-1;font-size:14px;color:var(--p-text-dim);}
+#shop-overlay .picker-row select {min-width:0;width:100%;max-width:none;font:14px var(--font-body);padding:7px;box-sizing:border-box;}
+#shop-overlay .picker-row input[type=color] {width:32px;height:34px;padding:2px;border:1px solid var(--p-line);cursor:pointer;}
+#shop-overlay #shop-categories {display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--p-line);padding-bottom:12px;flex-shrink:0;}
+#shop-overlay .shop-category {font:14px var(--font-body);padding:9px 13px;margin:0;min-height:38px;border:1px solid var(--p-line);background:var(--p-face-2);color:var(--p-text-dim);box-shadow:none;cursor:pointer;}
+#shop-overlay .shop-category[aria-pressed=true] {background:var(--p-sand);color:#211d14;border-color:var(--p-sand);font-weight:bold;}
+#shop-overlay .shop-toolbar {display:flex;gap:12px;flex-shrink:0;}
+#shop-overlay .shop-toolbar label {display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--p-text-dim);}
+#shop-overlay .shop-search {flex:1;min-width:0;}
+#shop-overlay .shop-toolbar input,#shop-overlay .shop-toolbar select {width:100%;min-width:0;box-sizing:border-box;background:var(--p-sunken);border:1px solid var(--p-line);color:var(--p-text);padding:10px;font:16px var(--font-body);min-height:42px;}
+#shop-overlay .shop-event-badge {align-self:center;padding:3px 7px;border:1px solid #78627e;background:#352c40;color:#e5c7ef;font:12px var(--font-body);}
+#shop-results {font-size:13px;color:var(--p-text-dim);}
+#shop-overlay #shop-container {display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));align-content:start;align-items:stretch;gap:12px;max-height:none;min-height:180px;overflow:auto;padding:0;border:0!important;background:transparent!important;flex:1 0 260px!important;box-sizing:border-box;}
+#shop-overlay #shop-container .grid-entry {display:flex;flex-direction:column;align-items:center;gap:10px;min-width:0;margin:0;padding:16px 10px;font-size:15px;line-height:1.4;text-align:center;box-shadow:none;position:relative;}
+#shop-overlay #shop-container .grid-entry[hidden] {display:none!important;}
+#shop-overlay #shop-container .grid-entry canvas {object-fit:contain;image-rendering:pixelated;max-width:100%;flex-shrink:0;}
+#shop-overlay #shop-container .grid-entry canvas.character-thumbnail {image-rendering:auto;}
+#shop-overlay #shop-container .grid-entry canvas.studio-thumbnail-loading {background:radial-gradient(circle at 50% 42%,#284b65,#142a3d);}
+#shop-overlay #shop-container .grid-entry .item-desc {font-size:13px;color:var(--p-text-dim);}
+#shop-overlay #shop-container .grid-entry button {margin-top:auto;width:100%;font:14px var(--font-body)!important;padding:9px 6px!important;min-height:38px;box-sizing:border-box;background:var(--p-sunken);border:1px solid var(--p-line);box-shadow:none;}
+#shop-overlay #shop-container .grid-entry.selected button {color:var(--p-sand);opacity:1;}
+#shop-overlay #shop-main-panel>.btn-lg {align-self:flex-end;min-width:140px;font-size:12px;padding:12px 20px;margin:0!important;flex-shrink:0;}
+#shop-overlay #wardrobe-sidebar {display:flex!important;flex-direction:column;gap:14px;min-width:0;width:auto;max-height:none;height:auto;order:0;border:0;border-left:1px solid var(--p-line);padding:24px 18px;background:var(--p-face-2)!important;overflow:auto;}
+#shop-overlay #character-preview {margin:0;padding:18px 4px;background:var(--p-sunken);border:1px solid var(--p-line);}
+#shop-overlay #outfit-list {min-height:100px;flex:1 0 160px!important;}
+#shop-overlay button:focus-visible,#shop-overlay summary:focus-visible,#shop-overlay input:focus-visible,#shop-overlay select:focus-visible {outline:2px solid var(--p-sand);outline-offset:3px;}
+#shop-empty {margin:0;padding:18px;text-align:center;color:var(--p-text-dim);}
+@media(max-width:800px) {
+ #shop-overlay {padding:42px 10px 10px;justify-content:flex-start;}
+ #shop-overlay #shop-wrapper {display:flex;flex-direction:column;width:100%;height:auto;max-height:none;overflow:visible;gap:0;flex-shrink:0;}
+ #shop-overlay #shop-main-panel {padding:16px;overflow:visible;}
+ #shop-overlay #wardrobe-sidebar {padding:16px;max-height:none;border-left:0;border-top:1px solid var(--p-line);overflow:visible;}
+ #shop-overlay #character-preview {padding:12px;}
+ #shop-overlay #color-picker-container {grid-template-columns:repeat(2,minmax(0,1fr));}
+ #shop-overlay h2 {font-size:18px;}
+ #shop-overlay .shop-eyebrow {font-size:8px;letter-spacing:1px;}
+ #shop-overlay .shop-wallet {padding:8px;}
+ #shop-overlay .shop-wallet strong {font-size:17px;}
+ #shop-overlay #shop-container {grid-template-columns:repeat(auto-fill,minmax(130px,1fr));overflow:visible;flex:1 0 auto!important;min-height:0;}
+ #shop-overlay #outfit-list {max-height:260px;overflow:auto;flex:auto!important;}
+}
+@media(max-width:380px) {#shop-overlay .shop-toolbar{flex-direction:column;}#shop-overlay .shop-heading{align-items:flex-start;}#shop-overlay #shop-container{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}#shop-overlay .shop-wallet span{font-size:11px;}}
+</style>
+<style>
+#shop-overlay #preview-3d {height:280px;width:100%;overflow:hidden;}
+#shop-overlay #character-preview #preview-3d canvas {display:block;width:100%;height:100%;max-width:100%;touch-action:none;cursor:grab;}
+#shop-overlay #character-preview #preview-3d canvas.dragging {cursor:grabbing;}
+#shop-overlay #preview-3d-hint {font:13px var(--font-body);color:var(--p-text-dim);margin:10px 6px 0;text-align:center;}
+#shop-overlay #preview-3d[hidden],#shop-overlay #preview-3d-hint[hidden] {display:none!important;}
+</style><style>
+
+#emote-overlay[hidden]{display:none!important;}
+#emote-overlay {position:fixed;inset:0;z-index:6000;background:transparent;display:flex;align-items:center;justify-content:center;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));box-sizing:border-box;}
+#emote-panel {--emote-size:min(84vw,calc(100dvh - 112px),440px);position:relative;box-sizing:border-box;width:min(760px,100%);max-height:100%;display:grid;justify-items:center;gap:10px;overflow:auto;background:none;border:0;box-shadow:none;padding:0;color:#eef1e4;text-align:center;text-shadow:0 2px 4px #000;}
+.emote-header {display:flex;align-items:center;justify-content:space-between;gap:12px;width:var(--emote-size);}
+#emote-heading {font:13px var(--font-display);letter-spacing:2px;margin:0;color:#ecdfb5;}
+#emote-panel .emote-close {min-height:44px;min-width:64px;padding:8px 12px;background:#152226a8;color:#eef1e4;border:1px solid #b8c5b544;border-radius:24px;font:16px var(--font-body);cursor:pointer;}
+#emote-wheel {position:relative;aspect-ratio:1;width:var(--emote-size);margin:0;border-radius:50%;background:none;flex-shrink:0;}
+.emote-ring {display:block;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 4px 9px #0005);}
+.emote-segment {fill:#162127c9;stroke:#d5dfcf44;stroke-width:1.3;cursor:pointer;transition:fill .1s,stroke .1s;}
+.emote-segment.is-selected {fill:#476c60df;stroke:#e8c77e;stroke-width:3;}
+.emote-slot {position:absolute;transform:translate(-50%,-50%);width:29%;pointer-events:none;}
+#emote-wheel .emote-play {display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;width:100%;min-height:54px;padding:3px;background:none;color:#fff;border:0;box-shadow:none;font:clamp(12px,3vmin,18px)/1.15 var(--font-body);cursor:pointer;pointer-events:auto;text-shadow:0 2px 4px #000;touch-action:manipulation;}
+.emote-symbol {display:block;font:clamp(22px,6vmin,34px)/1 sans-serif;}
+.emote-slot-label {display:block;overflow-wrap:anywhere;}
+#emote-panel button:focus-visible {outline:2px solid #e8c77e;outline-offset:3px;border-radius:10px;}
+.emote-center {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:39%;display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none;}
+.emote-center strong {font:clamp(13px,3.7vmin,22px)/1.1 var(--font-body);color:#fff;}
+.emote-center small {font:clamp(10px,2.4vmin,14px)/1.1 var(--font-body);color:#d4d9c7;}
+#emote-panel .emote-edit-toggle {pointer-events:auto;min-height:44px;max-width:100%;padding:6px 10px;background:none;color:#e8c77e;border:0;font:clamp(12px,3vmin,16px) var(--font-body);cursor:pointer;}
+#emote-panel .emote-help {font:14px/1.3 var(--font-body);color:#e2e5d8;margin:0;max-width:420px;}
+#emote-choices[hidden] {display:none!important;}
+#emote-choices {max-width:100%;max-height:180px;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;}
+#emote-choices p {font:16px/1.3 var(--font-body);margin:4px 0 8px;color:#fff;}
+#emote-choices button {font:16px var(--font-body);min-height:44px;padding:8px 12px;margin:4px;border:1px solid #c5cfb766;border-radius:24px;background:#172a26de;color:#f2eedc;cursor:pointer;}
+.emote-art {display:grid;place-items:center;height:80px;width:100%;color:var(--p-sand);font:12px var(--font-display);}
+.emote-shop-help {grid-column:1/-1;color:var(--p-text-dim);}
+#emote-hud-toggle {display:none;position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:100;min-height:44px;padding:10px 14px;border:1px solid #b5c4ae77;border-radius:24px;background:#192b26b8;color:#eee8d1;font:16px var(--font-body);cursor:pointer;touch-action:manipulation;}
+body.hud-hidden #emote-hud-toggle {display:block;}
+body.emote-wheel-open #emote-hud-toggle,body.hud-hidden #btn-emotes {display:none!important;}
+body.hud-hidden #emote-overlay:not([hidden]) {display:flex!important;visibility:visible!important;}
+@media(max-width:559px){#emote-panel.is-assigning {--emote-size:min(78vw,calc(100dvh - 310px),340px);}#emote-panel.is-assigning #emote-choices {max-height:170px;}}
+@media(min-width:560px){#emote-panel.is-assigning {--emote-size:min(44vw,calc(100dvh - 112px),360px);grid-template-columns:auto minmax(0,1fr);column-gap:20px;}.is-assigning .emote-header,.is-assigning .emote-help {grid-column:1/-1;width:100%;}.is-assigning #emote-wheel {grid-column:1;grid-row:2;}.is-assigning #emote-choices {grid-column:2;grid-row:2;max-height:var(--emote-size);}}
+@media(max-height:450px){#emote-panel {gap:4px;}#emote-panel .emote-help {font-size:12px;}#emote-wheel .emote-play {gap:2px;min-height:44px;}.emote-symbol {font-size:20px;}.emote-center {gap:0;}#emote-panel .emote-edit-toggle {padding:3px;}}
+</style><style>
+#halloween-overlay[hidden],#halloween-hud[hidden]{display:none!important;}#halloween-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;background:#100b1bea;z-index:5500;box-sizing:border-box;}
+#halloween-panel{box-sizing:border-box;width:min(100%,1000px);max-height:92dvh;overflow:auto;border:2px solid #ae744b;background:radial-gradient(ellipse at top,#3c2545,#171923 65%);color:#f7e8d2;padding:28px;box-shadow:0 0 80px #d58b2229;}
+#halloween-panel header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;}#halloween-heading{font:22px var(--font-display);color:#ffbd65;line-height:1.6;margin:12px 0;}#halloween-panel h3{font:11px var(--font-display);letter-spacing:1px;color:#c4e4bd;margin-top:28px;}#halloween-panel p{font:16px var(--font-body);line-height:1.5;}
+.halloween-eyebrow{font:10px var(--font-body);letter-spacing:2px;color:#d4accd;}.halloween-banner{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:16px;border:1px solid #775d62;background:#111b1b;margin-top:20px;}.halloween-banner strong{font-size:24px;color:#b9edbf;}.halloween-banner span,.halloween-intro{color:#c4bbc9;}
+#halloween-rewards{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:12px;}.halloween-card{padding:18px;background:#272436;border:1px solid #665163;display:flex;flex-direction:column;gap:8px;}.halloween-preview{display:block;align-self:center;width:96px;height:112px;object-fit:contain;image-rendering:pixelated;}.halloween-preview.character-thumbnail{height:128px;image-rendering:auto;}.halloween-fish-preview{width:52px;height:52px;object-fit:contain;image-rendering:pixelated;float:left;margin-right:10px;}.halloween-fish-card{min-height:55px;} .halloween-card small{font:10px var(--font-body);color:#b3c5b0;letter-spacing:1px;}.halloween-card h3{font:16px var(--font-body)!important;margin:0!important;color:#ffcf90!important;}.halloween-card p{font-size:14px!important;flex:1;}.halloween-card button{padding:12px 8px;font:14px var(--font-body);background:#44314d;color:#c6f2c0;border:1px solid #8a7496;cursor:pointer;}.halloween-card button:disabled{opacity:.55;cursor:default;}#halloween-fish{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px;}.halloween-fish-card{background:#1d2428;border:1px solid #49585a;padding:12px;font:14px var(--font-body);color:#d4e7d3;}
+#halloween-hud{position:static;display:inline-flex;align-items:center;margin-left:8px;padding:4px 8px;white-space:nowrap;background:#2d2135ee;color:#d7ecb9;border:1px solid #9c7651;font:14px var(--font-body);pointer-events:none;}.toast.toast-halloween{color:#cdf3b8;border-color:#8b6b9c;}body.hud-hidden #halloween-hud{display:none!important;}
+@media(max-width:600px){#halloween-overlay{padding:8px;}#halloween-panel{padding:16px;}#halloween-heading{font-size:17px;}#halloween-hud{font-size:11px;margin-left:4px;padding:3px 5px;}.halloween-banner strong{font-size:21px;}}
+</style>
+    <style id="main-menu-styles">
+        #lobby-screen {position:fixed;inset:0;width:100%;height:100%;height:100dvh;box-sizing:border-box;padding:28px;overflow:auto;background:radial-gradient(ellipse at 15% 15%,var(--p-water-dark) 0,transparent 55%),linear-gradient(145deg,var(--p-sunken),var(--p-face) 70%);justify-content:safe center;}
+        #lobby-screen #lobby-container {display:grid;grid-template-columns:minmax(240px,.8fr) minmax(0,1.2fr);gap:0;width:min(1040px,100%);max-width:1040px;max-height:none;padding:0;margin:auto;overflow:hidden;text-align:left;background:var(--p-face)!important;border:1px solid var(--p-bevel)!important;box-shadow:0 24px 90px #0006!important;flex-shrink:0;}
+        #lobby-container *,#lobby-container *::before,#lobby-container *::after {box-sizing:border-box;min-width:0;}
+        #lobby-container .menu-intro {position:relative;display:flex;flex-direction:column;overflow:hidden;padding:40px 32px;min-height:590px;background:var(--p-face-2);color:var(--p-text);border-right:1px solid var(--p-bevel);}
+        #lobby-container .menu-eyebrow {font:9px/1.8 var(--font-display);letter-spacing:1.5px;color:var(--p-text-dim);}
+        #lobby-container h1 {position:relative;z-index:1;font:clamp(30px,4vw,48px)/1.3 var(--font-display);letter-spacing:-2px;margin:30px 0 18px;color:var(--p-text);}
+        #lobby-container h1 span {color:var(--p-sand);}
+        #lobby-container .menu-tagline {display:block;font:26px/1.25 var(--font-body);color:var(--p-text-dim);margin:0;position:relative;z-index:1;}
+        #lobby-container .menu-lake {position:absolute;bottom:0;left:0;width:100%;height:280px;}
+        #lobby-container .menu-intro-footer {position:relative;margin-top:auto;padding-top:200px;z-index:1;font:9px var(--font-display);letter-spacing:2px;color:var(--p-text-dim);}
+        #lobby-container .menu-content {padding:32px;display:flex;flex-direction:column;gap:22px;}
+        #lobby-container .menu-heading h2 {font:17px/1.5 var(--font-display);text-transform:none;letter-spacing:0;color:var(--p-text);margin:8px 0 0;}
+        #lobby-container label {display:block;font:17px var(--font-body);color:var(--p-text-dim);margin-bottom:8px;}
+        #lobby-container input[type=text] {display:block;width:100%;margin:0;padding:12px 14px;min-height:46px;text-align:left;font:20px var(--font-body);background:var(--p-sunken);border:1px solid var(--p-bevel);color:var(--p-text);}
+        #lobby-container input::placeholder {color:var(--p-text-mute);}
+        #lobby-container #start-options {display:flex;flex-direction:column;gap:22px;}
+        #lobby-container .menu-play-grid {display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+        #lobby-container .btn-lg {margin:0;width:auto;min-height:42px;padding:12px;font:10px/1.5 var(--font-display);letter-spacing:0;background:var(--p-face-2);color:var(--p-text);border:1px solid var(--p-bevel);box-shadow:none;white-space:normal;}
+        #lobby-container .menu-play {display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:12px;padding:18px 14px;min-height:130px;text-align:left;text-transform:none;}
+        #lobby-container .menu-action-title {display:flex;justify-content:space-between;gap:6px;font:11px/1.5 var(--font-display);}
+        #lobby-container .menu-action-desc {font:18px/1.2 var(--font-body);color:var(--p-text-dim);}
+        #lobby-container .menu-primary {background:var(--p-sand);color:var(--p-sunken);border-color:var(--p-sand);}
+        #lobby-container .menu-primary .menu-action-desc {color:var(--p-sunken);}
+        #lobby-container button:disabled {opacity:.45;cursor:default;}
+        #lobby-container .btn-lg:hover:not(:disabled) {background:var(--p-face-3);border-color:var(--p-water);}
+        #lobby-container .menu-primary:hover {background:var(--p-gold);border-color:var(--p-gold);}
+        #lobby-container :is(button,input,a,summary):focus-visible {outline:2px solid var(--p-gold);outline-offset:4px;}
+        #lobby-container .menu-join-row {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;}
+        #lobby-container .menu-custom {border-top:1px solid var(--p-bevel-dark);border-bottom:1px solid var(--p-bevel-dark);}
+        #lobby-container .menu-custom summary {cursor:pointer;padding:16px 0;font:18px var(--font-body);color:var(--p-text);}
+        #lobby-container .menu-custom summary span {display:block;margin:5px 0 0 18px;color:var(--p-text-dim);font-size:16px;}
+        #lobby-container .menu-custom-body {padding:0 0 16px;}
+        #lobby-container #custom-level-name {color:var(--p-sand);margin:0 0 10px;overflow-wrap:anywhere;}
+        #lobby-container .menu-custom-actions {display:flex;flex-wrap:wrap;gap:8px;}
+        #lobby-container .menu-custom-body p {display:block;font:16px/1.3 var(--font-body);color:var(--p-text-dim);margin:12px 0 0;}
+        #lobby-container #lobby-status {font:18px/1.3 var(--font-body);color:var(--p-sand);overflow-wrap:anywhere;}
+        #lobby-container #lobby-status:empty {display:none;}
+        #lobby-container .menu-ai-credit {margin:0;color:var(--p-text-dim);font:16px/1.4 var(--font-body);}
+        #lobby-container .menu-footer {margin-top:auto;display:flex;justify-content:space-between;align-items:center;gap:12px;}
+        #lobby-container .menu-footer nav {display:flex;flex-wrap:wrap;gap:20px;}
+        #lobby-container .menu-footer button,#lobby-container .menu-footer a {display:inline-block;padding:4px 0;background:none;border:0;box-shadow:none;text-transform:none;text-decoration:none;font:17px var(--font-body);letter-spacing:0;color:var(--p-text-dim);}
+        #lobby-container .menu-footer :is(button,a):hover {color:var(--p-gold);}
+        #lobby-container #lobby-version {position:static;color:var(--p-text-mute);font:15px var(--font-body);white-space:nowrap;}
+        @media(max-width:720px){#lobby-screen {padding:16px;}#lobby-screen #lobby-container {grid-template-columns:1fr;}#lobby-container .menu-intro {min-height:170px;padding:22px;border-right:0;border-bottom:1px solid var(--p-bevel);}#lobby-container h1 {font-size:30px;margin:10px 0 0;line-height:1.1;}#lobby-container h1 br {display:none;}#lobby-container h1 span::before {content:' ';}#lobby-container .menu-tagline {font-size:20px;margin-top:10px;}#lobby-container .menu-tagline br {display:none;}#lobby-container .menu-lake {width:50%;height:160px;left:auto;right:0;opacity:.55;}#lobby-container .menu-intro-footer {display:none;}#lobby-container .menu-content {padding:22px;gap:20px;}}
+        @media(max-width:390px){#lobby-screen {padding:8px;}#lobby-container .menu-content {padding:18px;}#lobby-container .menu-play-grid {grid-template-columns:1fr;}#lobby-container .menu-play {min-height:100px;}#lobby-container .menu-join-row {grid-template-columns:1fr;}}
+    </style>
+<style>
+#boat-dock-menu[hidden]{display:none!important}#boat-dock-menu{display:flex;z-index:3300;padding:24px;box-sizing:border-box}#boat-dock-menu>section{width:min(960px,94vw);max-height:86dvh;overflow:auto;background:var(--p-face);border:2px solid var(--p-bevel);padding:24px;box-sizing:border-box}#boat-dock-menu .boat-catalog{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}#boat-dock-menu article{padding:16px;background:var(--p-sunken);border:1px solid var(--p-bevel-dark)}#boat-dock-menu h3{font-size:12px;color:var(--p-sand)}#boat-dock-menu article .btn-lg{width:100%;margin:8px 0 0;padding:10px;font-size:10px}#boat-dock-menu p{color:var(--p-text-dim);font-size:17px}
+</style>
+
+    <style id="server-browser-styles">
+        #server-browser-panel {box-sizing:border-box;width:min(1040px,96vw);height:min(86dvh,820px);max-width:100%;display:flex;flex-direction:column;align-items:stretch;gap:0;min-height:0;background:var(--p-face);border:1px solid var(--p-bevel);box-shadow:0 24px 80px rgba(0,0,0,.55);overflow:hidden;}
+        #server-browser-header {display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 22px 12px;border-bottom:1px solid var(--p-line);}
+        .server-browser-heading {min-width:0;}
+        .server-browser-heading h2 {margin:0;font-size:22px;letter-spacing:.02em;}
+        #server-browser-panel .server-browser-intro {color:var(--p-text-dim);font-size:14px;margin:4px 0 0;line-height:1.35;max-width:60ch;}
+        #server-browser-summary {flex:0 0 auto;color:var(--p-text-dim);font-size:12px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;padding-top:6px;}
+        #server-browser-toolbar {display:flex;flex-direction:column;gap:9px;min-width:0;padding:11px 22px;background:var(--p-face-2);border-bottom:1px solid var(--p-line);}
+        .server-browser-search-row {display:flex;align-items:stretch;gap:8px;min-width:0;}
+        #server-search-input {box-sizing:border-box;flex:1 1 auto;min-width:0;min-height:40px;text-align:left;margin:0;font-size:15px;background:var(--p-sunken);color:var(--p-text);border:1px solid var(--p-line);padding:8px 12px;}
+        #server-refresh-btn {flex:0 0 auto;margin:0;min-height:40px;padding:0 14px;font-size:12px;}
+        .server-browser-filter-row {display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;min-width:0;}
+        #server-browser-filters {flex:1 1 260px;min-width:0;border:1px solid var(--p-line);background:var(--p-sunken);}
+        #server-browser-filters summary {min-height:40px;display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;list-style:none;padding:0 11px;user-select:none;}
+        #server-browser-filters summary::-webkit-details-marker {display:none;}
+        #server-browser-filters summary::after {content:'+';margin-left:auto;font-size:19px;line-height:1;color:var(--p-text-dim);}
+        #server-browser-filters[open] summary::after {content:'−';}
+        #server-filter-count {font-size:12px;color:var(--p-text-dim);margin-left:auto;white-space:nowrap;}
+        #server-filter-count:not(:empty) {margin-left:0;}
+        #server-tag-filters {display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:5px;padding:0 11px 9px;}
+        .server-tag-filter {min-height:32px;margin:0;padding:4px 7px;font-size:12px;line-height:1.2;text-align:center;background:var(--p-face);border:1px solid var(--p-line);color:var(--p-text-dim);cursor:pointer;}
+        .server-tag-filter[aria-pressed="true"] {background:var(--p-good);border-color:var(--p-good);color:#111;font-weight:700;}
+        .server-browser-filter-actions {display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 11px 10px;}
+        .server-adult-toggle {display:flex;align-items:center;gap:7px;font-size:13px;color:var(--p-text-dim);margin:0;}
+        #server-browser-panel #server-adult-filter {width:18px;height:18px;min-height:18px;margin:0;accent-color:#c0392b;}
+        #server-clear-filters {margin:0 0 0 auto;padding:4px 8px;font-size:12px;}
+        .server-browser-sort {display:flex;align-items:center;gap:7px;flex:0 0 auto;font-size:12px;color:var(--p-text-dim);white-space:nowrap;}
+        #server-sort {min-height:40px;background:var(--p-sunken);color:var(--p-text);border:1px solid var(--p-line);font-size:13px;padding:0 8px;}
+        .server-browser-head {display:grid;grid-template-columns:minmax(0,1fr) 90px 130px 70px 84px;gap:12px;align-items:center;padding:9px 22px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--p-text-mute);background:var(--p-face);border-bottom:1px solid var(--p-line);}
+        #server-list-content {flex:1 1 auto;box-sizing:border-box;min-height:100px;overflow:auto;overscroll-behavior:contain;text-align:left;background:var(--p-face);}
+        .server-browser-row {display:grid;grid-template-columns:minmax(0,1fr) 90px 130px 70px 84px;gap:12px;align-items:center;padding:11px 22px;border-bottom:1px solid var(--p-line);background:var(--p-face);}
+        .server-browser-row:hover {background:var(--p-face-2);}
+        .server-browser-row.is-mine {background:var(--p-sunken);box-shadow:inset 3px 0 var(--p-good);}
+        .server-browser-info {min-width:0;display:flex;flex-direction:column;gap:4px;}
+        .server-browser-title {display:flex;align-items:center;gap:7px;min-width:0;font-weight:700;overflow:hidden;white-space:nowrap;}
+        .server-browser-status {width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:var(--p-good);box-shadow:0 0 0 2px color-mix(in srgb,var(--p-good) 20%,transparent);}
+        .server-browser-status.full {background:#e0a23c;box-shadow:0 0 0 2px rgba(224,162,60,.22);}
+        .server-browser-name {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .server-browser-badge {flex:0 0 auto;font-size:10px;line-height:1.5;padding:0 5px;border:1px solid var(--p-line);color:var(--p-text-dim);text-transform:uppercase;letter-spacing:.04em;}
+        .server-browser-badge.mine {background:var(--p-good);border-color:var(--p-good);color:#111;}
+        .server-browser-badge.adult {background:#5a1f1a;border-color:#c0392b;color:#ffb3ab;}
+        .server-browser-tags {display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0;}
+        .server-tag-chip {max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:1.5;padding:0 5px;border:1px solid var(--p-line);background:var(--p-sunken);color:var(--p-text-dim);}
+        .server-tag-chip.more {font-weight:700;color:var(--p-text);}
+        .server-browser-players {font-size:16px;font-weight:700;text-align:left;white-space:nowrap;font-variant-numeric:tabular-nums;}
+        .server-browser-players small {font-size:11px;font-weight:400;color:var(--p-text-dim);}
+        .server-browser-host,.server-browser-age {font-size:13px;color:var(--p-text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .server-browser-join {justify-self:end;min-width:70px;min-height:32px;height:32px;margin:0;padding:0 10px;font-size:11px;}
+        .server-browser-empty {padding:28px 22px;color:var(--p-text-dim);font-size:15px;}
+        .server-browser-footer {display:flex;justify-content:flex-end;gap:8px;padding:11px 22px;background:var(--p-face-2);border-top:1px solid var(--p-line);}
+        #server-browser-panel .server-browser-footer button {margin:0;}
+        @media(max-width:760px){
+            #server-browser-panel {width:100%;height:100%;border-left:0;border-right:0;}
+            #server-browser-header {padding:14px 16px 10px;}
+            .server-browser-heading h2 {font-size:20px;}
+            #server-browser-panel .server-browser-intro {display:none;}
+            #server-browser-toolbar {padding:10px 16px;}
+            .server-browser-head {display:none;}
+            .server-browser-row {grid-template-columns:minmax(0,1fr) auto auto;gap:9px;padding:12px 16px;}
+            .server-browser-host,.server-browser-age {display:none;}
+            .server-browser-players {font-size:14px;text-align:center;min-width:38px;}
+            .server-browser-join {min-width:66px;min-height:36px;height:36px;font-size:11px;}
+            .server-browser-footer {padding:10px 16px;}
+        }
+    </style>
+    <link rel="stylesheet" href="mobile-ui.css?v=12.454">
+    <link rel="stylesheet" href="guided-tutorial.css?v=12.484">
+    <link rel="stylesheet" href="protogen-logo.css?v=12.484">
+    <link rel="stylesheet" href="character-studio.css?v=12.513">
+    <!-- AdSense Auto Ads: force the anchor to the bottom edge. Gameplay reserves
+         a safe area above it (--game-anchor-space) so controls stay uncovered. -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8963484651467747"
+        data-overlays="bottom" crossorigin="anonymous"></script>
+    <style id="outdoor-prop-styles">
+        #props-panel {box-sizing:border-box;width:min(94vw,780px)!important;max-width:780px!important;}
+        #props-list {box-sizing:border-box;min-height:0;max-width:none;align-self:stretch;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))!important;}
+        #props-list .prop-card {aspect-ratio:auto;min-height:150px;padding:14px 8px;gap:5px;cursor:pointer;font:17px/1.2 var(--font-body);color:var(--p-text);}
+        #props-list .prop-card.is-owned {border-color:var(--p-water);}
+        #props-list .prop-ownership {font-size:15px;color:var(--p-sand);}
+        #props-list .is-owned .prop-ownership {color:var(--p-text-dim);}
+        #props-list .prop-action {font-size:17px;color:var(--p-text);}
+        #props-list .prop-card:focus-visible {outline:2px solid var(--p-gold);outline-offset:2px;}
+        @media(max-width:480px){#props-list{grid-template-columns:repeat(2,minmax(0,1fr))!important;padding:8px;gap:8px;}}
+    </style>
+    <style id="create-lobby-styles">
+        #create-lobby-overlay {padding:20px;box-sizing:border-box;overflow:auto;}
+        #create-lobby-panel {box-sizing:border-box;display:flex;flex-direction:column;width:min(640px,100%);max-height:90dvh;min-height:0;text-align:left;background:var(--p-face);border:1px solid var(--p-bevel);box-shadow:0 24px 80px #0008;overflow:hidden;}
+        .create-lobby-header {display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:22px 24px 18px;border-bottom:1px solid var(--p-line);}
+        #create-lobby-panel h2 {margin:0;font-size:22px;letter-spacing:0;}
+        .create-lobby-header p {margin:8px 0 0;font:17px/1.35 var(--font-body);color:var(--p-text-dim);max-width:44ch;}
+        #create-lobby-panel .close-x-btn {position:static;flex-shrink:0;margin:0;min-width:36px;min-height:36px;}
+        .create-lobby-body {padding:22px 24px;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:20px;}
+        .create-lobby-field label {display:block;margin-bottom:8px;font:18px var(--font-body);color:var(--p-text);}
+        #create-lobby-panel #lobby-name-input {box-sizing:border-box;display:block;width:100%;max-width:none;margin:0;min-height:44px;padding:10px 12px;text-align:left;font:20px var(--font-body);background:var(--p-sunken);border:1px solid var(--p-line);color:var(--p-text);}
+        .create-lobby-options {display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--p-line);background:var(--p-face-2);}
+        .create-lobby-option {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;margin:0;cursor:pointer;}
+        .create-lobby-option+.create-lobby-option {border-left:1px solid var(--p-line);}
+        .create-lobby-option strong {display:block;font:18px var(--font-body);color:var(--p-text);}
+        .create-lobby-option small {display:block;font:15px var(--font-body);color:var(--p-text-dim);margin-top:4px;}
+        #create-lobby-panel input[type=checkbox] {flex-shrink:0;width:18px;height:18px;margin:0;accent-color:var(--p-good);}
+        #create-lobby-panel #lobby-adult-input {accent-color:var(--p-bad);}
+        #lobby-tag-drawer {border:1px solid var(--p-line);background:var(--p-sunken);}
+        #lobby-tag-drawer summary {display:flex;align-items:center;gap:12px;list-style:none;cursor:pointer;padding:12px 14px;font:18px var(--font-body);user-select:none;}
+        #lobby-tag-drawer summary::-webkit-details-marker {display:none;}
+        #lobby-tag-drawer summary::after {content:'+';margin-left:auto;font-size:22px;color:var(--p-text-dim);}
+        #lobby-tag-drawer[open] summary::after {content:'−';}
+        #lobby-tag-count {font-size:15px;color:var(--p-text-dim);}
+        .create-lobby-tag-help {margin:0;padding:0 14px 12px;font:16px/1.3 var(--font-body);color:var(--p-text-dim);}
+        #lobby-tag-buttons {display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;padding:0 14px 14px;}
+        #lobby-tag-buttons .server-tag-filter {font:16px/1.25 var(--font-body);min-height:36px;padding:6px;}
+        .create-lobby-tag-actions {display:flex;justify-content:flex-end;padding:0 14px 12px;}
+        #lobby-clear-tags {margin:0;font:15px var(--font-body);}
+        #lobby-selected-tags {display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;min-height:22px;align-items:center;font:16px var(--font-body);color:var(--p-text-mute);}
+        #lobby-selected-tags .server-tag-chip {font:15px/1.4 var(--font-body);max-width:190px;padding:2px 7px;}
+        .create-lobby-footer {display:flex;justify-content:flex-end;gap:10px;padding:16px 24px;background:var(--p-face-2);border-top:1px solid var(--p-line);}
+        #create-lobby-panel .create-lobby-footer button {margin:0;min-height:44px;font-size:11px;padding:10px 18px;}
+        #create-lobby-panel :is(button,input,summary):focus-visible {outline:2px solid var(--p-gold);outline-offset:3px;}
+        @media(max-width:520px){#create-lobby-overlay{padding:10px;}#create-lobby-panel{max-height:96dvh;}.create-lobby-header{padding:18px;}.create-lobby-body{padding:18px;gap:16px;}.create-lobby-options{grid-template-columns:1fr;}.create-lobby-option+.create-lobby-option{border-left:0;border-top:1px solid var(--p-line);}.create-lobby-footer{padding:14px 18px;}#create-lobby-panel .create-lobby-footer button{flex:1;padding:10px;}}
+    </style>
 </head>
 
 <body>
+    <div id="notification-area" role="status" aria-live="polite" aria-atomic="false"></div>
 
     <div id="game-container"></div>
     <div id="vignette"></div>
     <div id="loading">Initializing Game Engine...</div>
     <!-- Version text is filled from GAME_VERSION (core.js) at load so it can't drift. -->
     <div id="version"></div>
+    <div id="performance-counter" aria-label="Performance counter" style="position:fixed;bottom:calc(12px + var(--game-anchor-space));left:12px;z-index:9999;pointer-events:none;white-space:pre;font:12px/1.5 monospace;font-variant-numeric:tabular-nums;color:#fff;background:rgba(15,22,28,.8);padding:6px 9px;border-radius:5px;box-sizing:border-box;width:min(420px,calc(100vw - 24px));height:66px;overflow:hidden;contain:strict;">FPS: measuring…</div>
     <!-- HOTBAR -->
     <div id="hotbar-container">
         <!-- Generated by JS -->
@@ -2837,134 +3100,271 @@
         <div id="midi-status">No File Loaded</div>
     </div>
 
-    <div id="server-browser-overlay" class="overlay-screen" style="z-index: 3100;">
-        <button class="close-x-btn" onclick="closeServerBrowser()">×</button>
-        <h2>Community Servers</h2>
-        <p style="color: var(--p-text-dim); font-size: 15px; margin: 0 0 10px; max-width: 560px;">
-            Public lobbies hosted by other players. No room code needed —
-            just hit JOIN.
-        </p>
-        <input type="text" id="server-search-input" placeholder="Search lobbies by name, host or tag…"
-            maxlength="40"
-            style="width: 90%; max-width: 560px; text-align: left; margin-bottom: 8px;">
-        <div id="server-tag-filters"
-            style="width: 90%; max-width: 560px; display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-bottom: 8px;">
-        </div>
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--p-text-dim); margin-bottom: 8px; cursor: pointer;">
-            <input type="checkbox" id="server-adult-filter" style="width: 16px; height: 16px; margin: 0; accent-color: #c0392b;">
-            Show 18+ lobbies only
-        </label>
-        <div id="server-list-content"
-            style="width: 90%; max-width: 560px; max-height: 52vh; overflow-y: auto; text-align: left;">
-        </div>
-        <div style="display: flex; gap: 5px; margin-top: 12px;">
-            <button class="btn-lg" onclick="refreshServerBrowser()" style="margin: 0;">REFRESH</button>
-            <button class="btn-lg" onclick="closeServerBrowser()" style="margin: 0;">CLOSE</button>
-        </div>
+    <div id="server-browser-overlay" class="overlay-screen" style="z-index:3100;">
+        <button class="close-x-btn" onclick="closeServerBrowser()" aria-label="Close server browser">×</button>
+        <section id="server-browser-panel" aria-labelledby="server-browser-heading">
+            <header id="server-browser-header">
+                <div class="server-browser-heading">
+                    <h2 id="server-browser-heading">Community Servers</h2>
+                    <p class="server-browser-intro">Pick a public lobby and join the crew. Filter by tag or player count.</p>
+                </div>
+                <div id="server-browser-summary"><span id="server-result-count">Loading…</span></div>
+            </header>
+            <div id="server-browser-toolbar">
+                <div class="server-browser-search-row">
+                    <input type="search" id="server-search-input" placeholder="Search servers, hosts or tags…" aria-label="Search lobbies by name, host or tag" maxlength="40">
+                    <button type="button" class="btn-sm" id="server-refresh-btn" onclick="refreshServerBrowser()">Refresh</button>
+                </div>
+                <div class="server-browser-filter-row">
+                    <details id="server-browser-filters">
+                        <summary><span>Filters</span><span id="server-filter-count">All lobbies</span></summary>
+                        <div id="server-tag-filters"></div>
+                        <div class="server-browser-filter-actions">
+                            <label class="server-adult-toggle"><input type="checkbox" id="server-adult-filter"> 18+ only</label>
+                            <button type="button" class="btn-sm" id="server-clear-filters" onclick="clearServerBrowserFilters()">Clear filters</button>
+                        </div>
+                    </details>
+                    <label class="server-browser-sort">Sort
+                        <select id="server-sort" aria-label="Sort servers">
+                            <option value="players">Most players</option>
+                            <option value="newest">Newest</option>
+                            <option value="name">Name</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+            <div class="server-browser-head" aria-hidden="true">
+                <span>Server</span><span>Players</span><span>Host</span><span>Age</span><span></span>
+            </div>
+            <div id="server-list-content" aria-label="Public lobbies" aria-live="polite"></div>
+            <div class="server-browser-footer">
+                <button class="btn-lg" onclick="closeServerBrowser()">Close</button>
+            </div>
+        </section>
     </div>
 
-    <div id="create-lobby-overlay" class="overlay-screen" style="z-index: 3150; display: none;">
-        <button class="close-x-btn" onclick="closeCreateLobby()">×</button>
-        <h2>Make Lobby</h2>
-        <p style="color: var(--p-text-dim); font-size: 15px; margin: 0 0 12px; max-width: 520px;">
-            Name your lobby, pick some tags so the right players find it, then start hosting.
-            Friends can still join with a room code either way.
-        </p>
-
-        <label>Lobby Name:</label>
-        <input type="text" id="lobby-name-input" placeholder="My Lobby" maxlength="24"
-            style="text-align: center; width: 90%; max-width: 420px;">
-
-        <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin: 10px 0 2px;">
-            <input type="checkbox" id="lobby-public-input" checked
-                style="width: 18px; height: 18px; margin: 0; accent-color: var(--p-good);">
-            <span style="font-size: 16px; color: var(--p-text-dim);">List in Server Browser</span>
-        </div>
-        <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin: 2px 0 10px;">
-            <input type="checkbox" id="lobby-adult-input"
-                style="width: 18px; height: 18px; margin: 0; accent-color: #c0392b;">
-            <span style="font-size: 16px; color: var(--p-text-dim);">18+ / Adult-only lobby</span>
-        </div>
-
-        <div
-            style="font-family: var(--font-display); font-size: 10px; letter-spacing: 1px; color: var(--p-sand); margin-bottom: 6px;">
-            TAGS <span id="lobby-tag-count" style="color: var(--p-text-mute);"></span></div>
-        <div id="lobby-tag-buttons"
-            style="width: 90%; max-width: 520px; display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-bottom: 14px;">
-        </div>
-
-        <div style="display: flex; gap: 5px;">
-            <button class="btn-lg btn-green" onclick="createLobbyAndHost()" style="margin: 0;">START HOSTING</button>
-            <button class="btn-lg" onclick="closeCreateLobby()" style="margin: 0;">BACK</button>
-        </div>
+    <div id="create-lobby-overlay" class="overlay-screen" style="z-index:3150;display:none;">
+        <section id="create-lobby-panel" role="dialog" aria-modal="true" aria-labelledby="create-lobby-heading">
+            <header class="create-lobby-header">
+                <div><h2 id="create-lobby-heading">Create a lobby</h2><p>Set up your island. Friends can always join with your room code.</p></div>
+                <button class="close-x-btn" type="button" onclick="closeCreateLobby()" aria-label="Close lobby setup">×</button>
+            </header>
+            <div class="create-lobby-body">
+                <div class="create-lobby-field">
+                    <label for="lobby-name-input">Lobby name</label>
+                    <input type="text" id="lobby-name-input" placeholder="My Lobby" maxlength="24">
+                </div>
+                <div class="create-lobby-options">
+                    <label class="create-lobby-option" for="lobby-public-input"><span><strong>Public lobby</strong><small>Show in the server browser</small></span><input type="checkbox" id="lobby-public-input" checked></label>
+                    <label class="create-lobby-option" for="lobby-adult-input"><span><strong>Adults only</strong><small>Mark this lobby as 18+</small></span><input type="checkbox" id="lobby-adult-input"></label>
+                </div>
+                <div class="create-lobby-tags">
+                    <details id="lobby-tag-drawer">
+                        <summary>Lobby tags <span id="lobby-tag-count" aria-live="polite"></span></summary>
+                        <p class="create-lobby-tag-help">Choose up to 10 tags to help players find your lobby.</p>
+                        <div id="lobby-tag-buttons"></div>
+                        <div class="create-lobby-tag-actions"><button id="lobby-clear-tags" type="button" class="btn-sm">Clear tags</button></div>
+                    </details>
+                    <div id="lobby-selected-tags" aria-label="Selected lobby tags"></div>
+                </div>
+            </div>
+            <footer class="create-lobby-footer">
+                <button class="btn-lg" type="button" onclick="closeCreateLobby()">Back</button>
+                <button class="btn-lg btn-green" type="button" onclick="createLobbyAndHost()">Start hosting</button>
+            </footer>
+        </section>
     </div>
 
     <div id="lobby-screen" style="display: none;">
-        <h2>HTML Fishing</h2>
-
-        <div id="lobby-container">
-            <label>Your Name:</label>
-            <input type="text" id="username-input" placeholder="Fisher" maxlength="12">
-
-            <hr style="width: 100%; border: 0; border-top: 2px solid var(--p-line); margin: 15px 0;">
-            <div id="start-options">
-                <button class="btn-lg btn-green" id="btn-make-lobby">MAKE LOBBY</button>
-                <div style="margin: 10px;">OR</div>
-                <input type="text" id="room-id-input" placeholder="Enter Room ID" style="text-align:center;">
-                <button class="btn-lg" id="btn-join">JOIN GAME</button>
-                <!-- Community Server Browser (P2P player-hosted lobbies) -->
-                <div style="margin-top: 10px;">
-                    <button class="btn-lg" onclick="openServerBrowser()" style="width: 100%; margin:0;">
-                        Browse Community Servers
-                    </button>
-                </div>
-                <div id="custom-level-box"
-                    style="margin-top: 12px; padding: 10px; border: 2px solid var(--p-line); background: var(--p-sunken); box-shadow: inset 1px 1px 0 var(--p-bevel-dark);">
-                    <div
-                        style="font-family: var(--font-display); font-size: 10px; letter-spacing: 1px; color: var(--p-sand); margin-bottom: 8px;">
-                        CUSTOM LEVEL</div>
-                    <div id="custom-level-name" style="font-size: 16px; color: var(--p-text-dim); margin-bottom: 8px;">
-                        None loaded</div>
-                    <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-                        <button class="btn-lg" id="btn-custom-load" style="margin: 0; flex: 1;">LOAD FILE</button>
-                        <button class="btn-lg" id="btn-custom-editor" style="margin: 0; flex: 1;">OPEN EDITOR</button>
-                        <button class="btn-lg btn-green" id="btn-custom-play" style="margin: 0; flex: 1;">PLAY</button>
-                        <button class="btn-lg btn-danger" id="btn-custom-clear" style="margin: 0;">CLEAR</button>
+        <main id="lobby-container" aria-labelledby="menu-title">
+            <section class="menu-intro">
+                <div class="menu-eyebrow">A LITTLE LAKE. A LOT OF POSSIBILITIES.</div>
+                <h1 id="menu-title">HTML<br><span>Fishing</span></h1>
+                <p class="menu-tagline">Cast a line.<br> Stay a while.</p>
+                <svg class="menu-lake" viewBox="0 0 480 280" aria-hidden="true" preserveAspectRatio="xMidYMax slice">
+                    <circle cx="355" cy="52" r="27" fill="var(--p-sand)"/>
+                    <path d="M0 120 80 60 170 115 270 78 370 125 480 70V280H0Z" fill="#394d70"/>
+                    <path d="M0 155 110 120 225 160 340 120 480 150V280H0Z" fill="#293957"/>
+                    <path d="M0 190 110 166 270 174 480 151V280H0Z" fill="var(--p-water-dark)"/>
+                    <g fill="none" stroke="var(--p-water)" stroke-width="3"><path d="M220 205h75m-115 24h55m95-43h53m-40 64h80M50 207h65"/></g>
+                    <path d="M0 244 95 225 170 246 210 280H0Z" fill="#182137"/>
+                    <path d="m87 235 20-66 14 4-7 68Z" fill="#141c30"/>
+                    <path d="m100 175 52-80 3 110Z" fill="#141c30"/>
+                    <path d="m103 158 44-65 3 91Z" fill="#2b3c59"/>
+                    <path d="m119 235 48-90 28 8" fill="none" stroke="var(--p-sand)" stroke-width="4"/>
+                    <path d="M195 153q55 10 58 69" fill="none" stroke="var(--p-text-dim)" stroke-width="1.5"/>
+                    <path d="M249 221h8" stroke="var(--p-sand)" stroke-width="4"/>
+                </svg>
+                <div class="menu-intro-footer">CAST · CATCH · CHILL</div>
+            </section>
+            <section class="menu-content">
+                <header class="menu-heading"><div><div class="menu-eyebrow">WELCOME TO THE LAKE</div><h2>Find your fishing spot</h2></div></header>
+                <div class="menu-profile"><label for="username-input">Your name</label><input type="text" id="username-input" placeholder="Fisher" maxlength="12" autocomplete="nickname"></div>
+                <div id="start-options">
+                    <div class="menu-play-grid">
+                        <button class="btn-lg menu-play menu-primary" id="btn-make-lobby"><span class="menu-action-title">Create a lobby <span aria-hidden="true">↗</span></span><span class="menu-action-desc">Your island. Invite your friends.</span></button>
+                        <button class="btn-lg menu-play" onclick="openServerBrowser()"><span class="menu-action-title">Find a lobby <span aria-hidden="true">↗</span></span><span class="menu-action-desc">Meet anglers on community servers.</span></button>
                     </div>
-                    <input type="file" id="custom-level-file" accept=".json,application/json" style="display: none;">
-                    <div style="font-size: 13px; color: var(--p-text-mute); margin-top: 7px; line-height: 1.35;">
-                        Multiplayer: the host supplies the map — anyone who joins downloads it automatically.</div>
+                    <section class="menu-join" aria-labelledby="menu-join-title"><label id="menu-join-title" for="room-id-input">Have a room code?</label><div class="menu-join-row"><input type="text" id="room-id-input" placeholder="Enter room ID" autocomplete="off" spellcheck="false"><button class="btn-lg" id="btn-join">Join friends</button></div></section>
+                    <details id="custom-level-box" class="menu-custom"><summary>Custom islands <span>Load a map or create your own</span></summary><div class="menu-custom-body"><div id="custom-level-name">None loaded</div><div class="menu-custom-actions"><button class="btn-lg" id="btn-custom-load">Load file</button><button class="btn-lg" id="btn-custom-editor">Open editor</button><button class="btn-lg btn-green" id="btn-custom-play">Play map</button><button class="btn-lg btn-danger" id="btn-custom-clear">Clear</button></div><input type="file" id="custom-level-file" accept=".json,application/json" style="display:none"><p>Hosting a custom island? Your friends download the map automatically when they join.</p></div></details>
                 </div>
-            </div>
-            <div id="lobby-version"
-                style="position: absolute; bottom: 10px; right: 10px; color: var(--p-text-mute); font-size: 15px;">
-            </div>
-            <div id="lobby-status" style="margin-top: 15px; color: var(--p-text-dim); font-size: 16px;"></div>
-            <div id="host-room-info" style="display: none;">
-                <p>Share this Room ID with friends:</p>
-                <div id="room-id-display"></div>
-                <p style="font-size: 15px; color: var(--p-text-mute);">Waiting for players...</p>
-                <button class="btn-lg" onclick="location.reload()">LEAVE</button>
-            </div>
-
-            <!-- Discord Link -->
-            <div style="margin-top: 15px; display: flex; justify-content: center;">
-                <a href="https://discord.gg/7HRa4EMgxg" target="_blank"
-                    style="display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: #4752c4; border: 2px solid var(--p-line); box-shadow: inset 1px 1px 0 rgba(255,255,255,0.25); text-decoration: none; color: #fff; font-family: var(--font-display); font-size: 10px; letter-spacing: 0.5px;">
-                    <svg width="20" height="15" viewBox="0 0 71 55" fill="white">
-                        <path
-                            d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1c-.6 1.1-1.3 2.6-1.8 3.8a54 54 0 00-16.2 0c-.5-1.2-1.2-2.7-1.8-3.8 0-.1-.1-.1-.2-.1a58.4 58.4 0 00-14.7 4.6s-.1 0-.1.1C1.5 18.8-.9 32.3.3 45.7l.1.2a59 59 0 0017.7 9 .2.2 0 00.3-.1c1.4-1.9 2.6-3.9 3.6-6a.2.2 0 00-.1-.3c-2-.8-3.8-1.7-5.6-2.7-.2-.1-.2-.4 0-.5l1.1-.9c.1 0 .1 0 .2 0a42 42 0 0035.8 0h.2l1.1.9c.2.1.2.4 0 .5-1.8 1-3.6 1.9-5.6 2.7-.2.1-.2.3-.1.4 1.1 2.1 2.3 4 3.7 6 0 .1.2.1.3 0a58.6 58.6 0 0017.8-9l.1-.1c1.4-15-2.4-28.1-10-39.7 0 0 0-.1-.1-.1zM23.7 37.5c-3.4 0-6.3-3.2-6.3-7 0-3.9 2.8-7.1 6.3-7.1s6.4 3.2 6.3 7c0 3.9-2.8 7.1-6.3 7.1zm23.3 0c-3.5 0-6.3-3.2-6.3-7 0-3.9 2.8-7.1 6.3-7.1s6.4 3.2 6.3 7c0 3.9-2.8 7.1-6.3 7.1z" />
-                    </svg>
-                    Discord
-                </a>
-            </div>
-
-            <!-- Community Links -->
-            <div style="margin-top: 15px; font-size: 15px; color: var(--p-text-mute); text-align: center;">
-                HTML Fishing &bull; Cast, Catch, Chill
-            </div>
-        </div>
+                <div id="lobby-status" role="status" aria-live="polite"></div>
+                <div id="host-room-info" style="display:none"><p>Share this Room ID with friends:</p><div id="room-id-display"></div><p>Waiting for players...</p><button class="btn-lg" onclick="location.reload()">Leave</button></div>
+                <p class="menu-ai-credit">Created with AI assistance.</p>
+                <footer class="menu-footer"><nav aria-label="Community and updates"><button id="btn-patch-notes" onclick="document.getElementById('patch-notes-dialog').showModal()">Patch notes</button><a href="https://discord.gg/JACd5Ww7Rx" target="_blank" rel="noopener noreferrer">Discord <span aria-hidden="true">↗</span></a></nav><span id="lobby-version"></span></footer>
+            </section>
+        </main>
     </div>
+
+    <dialog id="patch-notes-dialog" aria-labelledby="patch-notes-title">
+        <h2 id="patch-notes-title">Patch Notes</h2>
+        <p>New features, improvements, and fixes for HTML Fishing.</p>
+        <div id="patch-notes-content">
+            <!-- Add future dated update entries here, newest first. -->
+            <article data-update-date="2026-10-30" aria-labelledby="patch-2026-10-30">
+                <h3 id="patch-2026-10-30"><time datetime="2026-10-30">October 30, 2026</time> — Chat Image Protection</h3>
+                <p><strong>Latest update · v12.519</strong></p>
+                <ul><li><strong>3D body paint:</strong> paint directly on your 3D character in the Body tab, including the head, torso front/back/sides, both arms and both legs, and pick any custom brush color. A whole-body Mirror toggle keeps matching marks on both halves, arms, legs and head sides. Outfits and hair are removed while Paint mode is active and restored when it is turned off or the studio closes. Paint is saved with outfits and included in saved characters and multiplayer sync.</li><li><strong>Shareable outfits:</strong> copy a saved outfit code from the wardrobe or the Looks tab and import it on another character. Imported looks are validated, save with your wardrobe, and only equip clothing you own.</li><li><strong>High-ping recovery:</strong> after a connection stall, queued movement, boat controls and other normal packets can arrive in a burst without triggering the packet-flood kick. Sustained spam, oversized messages and invalid traffic are still blocked.</li><li><strong>Background-tab voice:</strong> voice proximity now follows incoming network positions even while the game tab is inactive, so players who walk into range are audible again. Returning to the tab also resumes any suspended audio. Mute and house isolation still apply.</li><li><strong>Quest-style tutorial:</strong> the walkthrough is a right-side quest list showing the current chapter's steps and a clear Do this instruction. It measures the tournament HUD every tick, so anchor ads or an expanded tournament can no longer make the card overlap it. Text-only steps appear in a centered card, then dismiss and continue automatically. Objectives check off and advance without a Next button; action progress is recorded before the tracker initializes or while paused. Full instructions and chapter jumping remain under the ? button.</li><li><strong>Paint mode guidance:</strong> the Character studio now explains body painting with numbered steps, a clear active/paused status, Fine/Medium/Wide brushes, one-click Undo stroke and a confirmation before Clear all.</li><li><strong>Enhanced lighting:</strong> the world now uses filmic tone mapping with a warmer sky bounce, a cool side fill, cleaner shadow edges and a stronger moon. Sunrises and sunsets blend through warm sunlight, while rain, lava and Void areas keep their own balanced lighting. This applies whether the retro shader is on or off.</li><li><strong>Real rain:</strong> falling drops are now thin, wind-slanted streaks that follow you instead of square sprites. The procedural rain sound layers a soft filtered body with fine high-frequency hiss for fuller rainfall.</li><li><strong>Cleaner menus:</strong> Lucky Lou's scratch shop now has a Close button inside the panel instead of the floating red X. Escape now closes the top open menu, including scratch cards, shops, inventory, options, dialogs, trades, the screen queue and other overlays.</li><li><strong>Retro shader:</strong> Display now renders the world through a chunky pixel shader with richer color, a soft vignette and light grain. It is on by default for new and existing saves, and an explicit OFF choice is remembered. Pick 2×, 3× or 4× pixels and toggle it at any time. The lower internal resolution can also improve performance.</li><li><strong>Live server analytics:</strong> the master server now serves a live connections dashboard at <code>/analytics</code>, showing current players, active lobbies, host types and live sessions, plus weekly, monthly and yearly concurrent-player graphs. History starts with the first sample after the updated server starts.</li><li><strong>Bigger scenery catalog:</strong> the level editor gained 17 new buildings and 37 new props, including cottages, taverns, chapels, barns, a forge, bakery, greenhouse, farmhouse, gazebo, ruins, treehouse, fishing shack, boathouse and pier, plus pine/palm/dead trees, boulders, lily pads, cattails, picnics, swings, wells, fountains, statues, wagons, canoes, buoys, fishing racks, crab traps, anvils, firewood and market goods.</li><li><strong>Editor rotation and ear fix:</strong> R / Shift+R now rotates buildings, props, NPCs, trees, rocks and caves by 45°. Inner ears now use one clean inset surface instead of separate shrunken facet triangles, removing the pink cross/seam patterns on pointed and round ears.</li><li><strong>Default island refresh:</strong> rebuilt the home island's look with one central lake, a glowing light pond, a dark pond, the cave fishing grotto, village paths and lanterns, a Void rift, a lava shrine, and the shared generated archipelago offshore. All NPCs, the boat dock, and the player house sit along the new routes, with clearer shores, reeds, lilies, rocks, and garden details. Benches now sit off the walking paths and face the ponds, house and dock. Clearing a custom island now reloads this refreshed default map with fresh scripts instead of an older cached island.</li><li><strong>Pattern shop retired:</strong> the old fur-pattern category and its purchases are gone; free body paint replaces them.</li><li><strong>Clearer sitting motion:</strong> increased seated breathing and hand movements so they are easier to see at the normal camera distance, with hand adjustments occurring more often.</li><li><strong>Relaxed sitting animation:</strong> seated players now breathe gently and occasionally shift their hands, including boat passengers. Legs stay planted and held items keep their grip.</li><li><strong>Complete NPC HUD hiding:</strong> Hide HUD now hides every NPC name and overhead icon, including Captain Finn, Morrow, the Inferno Guard and custom-map NPCs. Labels created while the HUD is hidden stay hidden, and return when the HUD is shown.</li><li><strong>Shop hover try-on:</strong> hover or keyboard-focus hats, tops, pants, collars and titles to see a temporary preview on your character. Moving away restores your equipped look; previewing never purchases or equips an item.</li><li><strong>3D shop previews:</strong> hats, shirts, pants and collars now show the actual 3D character in shop cards, using one shared cached thumbnail renderer for fast category switching. The old 2D player previews, their fallbacks and the obsolete 2D Models toggle are gone, so character previews are 3D only.</li><li><strong>True 3D studio thumbnails:</strong> style cards now render the actual character models, including current colors, clothes, hair, extras and protogen signs. Head features use a closer view and tails use a rear view. Shared rendering, caching and incremental loading keep large categories responsive.</li><li><strong>New character studio:</strong> create your look with a large rotatable preview, icon-led categories, visual style cards, species starting points, color palettes, search, undo/redo and quick camera views. Browse owned clothing and save or load favorite looks. The layout adapts to phones, and protogen sign drawing stays available beside Extras.</li><li><strong>Custom protogen signs:</strong> selecting Side Circles &amp; Fins in Extras reveals a neatly placed Draw sign button. Draw, erase, undo or clear a sign with mouse or touch, then save it to both side circles in your eye color. Signs are saved with your character/outfits and visible to other players.</li><li><strong>Restart Twitch at live:</strong> added Restart at live (this device) to open a fresh live-channel player instead of resuming your paused or rewound position. Only your player restarts; the room queue and other viewers stay unchanged. Playback starts automatically where permitted, with one muted retry if Twitch blocks sound.</li><li><strong>Twitch playback recovery:</strong> removed pause and channel-reset commands from same-channel live requests, leaving playing viewers uninterrupted. Renamed the control to Resume live for room and added a larger Play here button for devices that require a local click. The menu now clarifies that Twitch live delays cannot be precisely synchronized.</li><li><strong>Approved chat image hosts:</strong> inline images now require direct HTTPS links from Imgur, Reddit image CDNs or the supported GIPHY media hosts. Other URLs remain plain text without an automatic image request. Added image-source browser restrictions to block redirects to other hosts and disabled referrer sharing on chat/GIF images.</li></ul>
+            </article>
+            <article data-update-date="2026-10-29" aria-labelledby="patch-2026-10-29">
+                <h3 id="patch-2026-10-29"><time datetime="2026-10-29">October 29, 2026</time> — Exploration &amp; Gameplay Update</h3>
+                <p><strong>Update · v12.480</strong></p>
+                <ul>
+                    <li><strong>Lobby ownership protection:</strong> public listing updates and removal now require a private host capability, preventing other users from replacing an existing lobby’s join target. Includes safer listing registration, expiry recovery and server request limits. Requires the updated master directory service; room-code joins remain available during the upgrade.</li>
+                    <li><strong>Twitch resync without player reloads:</strong> live catch-up now uses Twitch player controls and keeps the existing player on outdoor screens and house TVs. Sound opt-in and proximity muting also use player controls when available, avoiding reloads. Initial playback can still require a tap; exact live timing remains limited by Twitch and buffering.</li>
+                    <li><strong>Twitch control loading fix:</strong> corrected the screen script cache version so updated browsers load the Resync to live button in the stream queue, including house TVs.</li>
+                    <li><strong>Twitch live resync:</strong> screen owners can use Resync to live in the stream queue to reload the live channel for everyone, including house TV viewers. Keeps the queue and individual sound preferences; buffering can still vary between viewers.</li>
+                    <li><strong>Ear and protogen update:</strong> inner ears now follow their outer surfaces instead of floating in front. Protogen ears are taller and swept back. Replaced the Extras visor with paired side circles and triangular fins; their inner screens match your eye color. The face visor remains available under Nose.</li>
+                    <li><strong>Interactive tutorial:</strong> a full chapter-based walkthrough now covers movement, fishing, every NPC, shops, gathering, cooking, exploration, homes, boats, social tools, events and custom maps alongside the written guide. Follow direction arrows and complete real objectives, with mobile instructions, saved progress, pause/resume and optional task skipping.</li>
+                    <li><strong>Stream Player display fix:</strong> corrected the rebuilt outdoor screen housing to face the video overlay, preventing its backing from hiding Twitch streams or YouTube videos.</li>
+                    <li><strong>Cleaner lobby setup:</strong> lobby creation now matches the server browser with one unified panel, aligned privacy and age options, a collapsible tag picker, compact selected-tag badges, and a clear-tags action.</li>
+                    <li><strong>Nearby footsteps only:</strong> footsteps now fade out within a shorter range, and distant movement sounds are rejected before playback. Remote sounds use the sender’s tracked position, stay within the same house or outdoor space, and no longer replay your own sounds through the host.</li>
+                    <li><strong>One placed home per player:</strong> the Props menu now allows one home at a time, including pending placements. Undo your home before moving it; undo also works in solo play. The host enforces the same limit for guests.</li>
+                    <li><strong>Room spam safeguards:</strong> all client message handlers now share packet-rate and size limits. Sustained flooding or repeated malformed packets trigger an automatic kick, prop cleanup, and a two-minute reconnect cooldown. Placed props are capped at 10 per player and 100 per room, outdoor screens retain a five-screen cap, and duplicate IDs and distant placements are rejected. Shared video queues are capped at 50 entries, rooms allow at most 32 guest connections, and a failed peer send no longer interrupts broadcasts to others.</li>
+                    <li><strong>Shared exploration finds:</strong> search randomly placed coin pouches, drift bottles, and treasure caches for money on the default home island, custom-map land, and offshore islands. Offshore finds pay more. The first collector earns the reward and the find disappears for everyone; new finds appear every 15 minutes. Rewards retry until saved, and late joiners receive the current shared finds.</li>
+                    <li><strong>Custom-map island shores:</strong> generated islands on custom levels now have broad sandy beaches, greener, flatter interiors, and irregular coastlines instead of dome-shaped hills. Default island terrain keeps its existing shape.</li>
+                    <li><strong>3D personal rowboat:</strong> the Misc tool shop rowboat now uses a hollow wooden 3D hull with benches and paired oars, including a matching shop preview. Oars row while moving and settle when stopped, for you and other players in both character modes. Replaced the rowing hiss with softer water pulls and bubbling splashes timed to the strokes.</li>
+                    <li><strong>Animated prop fires:</strong> campfires and tiki torches now have swaying, flickering flames and light. Lanterns have a flickering flame inside their glass, and BBQ grills have glowing coals and small dancing flames beneath the grate.</li>
+                    <li><strong>Reliable tournament results:</strong> guests request fresh results when the timer expires or updates stall. Hosts retry prizes until the recipient confirms saving them, and saved prize receipts prevent duplicate payments after reloading.</li>
+                    <li><strong>Outdoor prop overhaul:</strong> rebuilt all 26 outdoor decoration models with a coordinated low-poly style and added a leafy bush. The Props menu now sells permanent unlocks using game money; purchased props can be placed repeatedly for free. Updated seat surfaces to fit the new models and batched outdoor models for more efficient rendering. House furniture and house placement keep their existing systems.</li>
+                    <li><strong>Creation credit:</strong> the main menu now notes that the game was created with AI assistance.</li>
+                    <li><strong>Fitted inner ears:</strong> corrected pointed, round, and floppy 3D ear interiors so they follow the outer ear surfaces and tilt without sticking out.</li>
+                    <li><strong>Protogen visor corners:</strong> fixed body-colored corners showing on the 3D face screen; the screen now stays dark all the way to its edges.</li>
+                    <li><strong>Protogen face screen:</strong> the Protogen nose now forms a large dark visor with screen eyes and a talking mouth in your selected eye color, in both character renderers.</li>
+                    <li><strong>Matching blue main menu:</strong> updated the main menu panels, buttons, text, borders, and lake illustration to match the blue palette used throughout the other game menus.</li>
+                </ul>
+            </article>
+            <article data-update-date="2026-10-28" aria-labelledby="patch-2026-10-28">
+                <h3 id="patch-2026-10-28"><time datetime="2026-10-28">October 28, 2026</time> — House &amp; Furniture Update</h3>
+                <p><strong>v12.460</strong></p>
+                <ul>
+                    <li><strong>Concise Game Guide:</strong> tutorial tabs now give short feature summaries for controls, fishing, skills, exploration, boats and houses, social tools, progression, custom maps, and events, without the long patch-style details.</li>
+                    <li><strong>Custom water-zone flicker:</strong> colored fishing-zone water on custom levels now uses a lifted, depth-biased decal above the water surface, so it no longer strobes or z-fights while moving the camera.</li>
+                    <li><strong>Site name:</strong> the browser tab title now reads <strong>HTML Fishing</strong>.</li>
+                    <li><strong>New site icon:</strong> added a gold pixel-fish favicon for browser tabs, bookmarks and phone home screens, including an editor-tab version.</li>
+                    <li><strong>Patreon banner removed:</strong> the Patreon banner no longer appears in the game HUD or the mobile menu.</li>
+                    <li><strong>Dynamic ad-safe HUD:</strong> AdSense Auto Ads use a bottom anchor, and the reserved strip now follows the anchor’s live height. The hotbar, bait panel, chat, tournament panel and mobile controls move up when the ad expands and drop back down when it is collapsed or dismissed.</li>
+                    <li><strong>Server browser refresh:</strong> the community list is now a compact table with server, players, host and age columns, a sort menu and a collapsible filter drawer. Each lobby shows two tag badges plus a +N overflow, and the room code is tucked away until you join, cutting the tag clutter.</li>
+                    <li><strong>Custom-island horizons:</strong> generated ocean islands now follow the painted island’s actual footprint instead of the full editing canvas. Small islands in large custom maps get nearby islands in view, and generated islands can occupy the author’s open water as solid land with their trees, colliders, and flowers.</li>
+                    <li><strong>Custom Lava World entrance:</strong> when a custom level has no Inferno Guard placed, the guard now stands on clear dry ground beside the authored spawn instead of the stock map’s fixed coordinate, so the Lava World can be entered from custom worlds again.</li>
+                    <li><strong>Camera-turn hitching fix:</strong> removed repeated per-frame character animation and held-item allocations that caused random frame drops while standing still and rotating the camera. Idle and reeling poses now reuse their math objects, and equipment lookups are cached until the character changes. The FPS overlay is size-contained and updates at most once a second, so its text changes cannot stall a frame.</li>
+                    <li><strong>Custom-map special worlds:</strong> Lava World and the Void now initialize on custom levels as well as the default map. Lava rocks keep their collisions after creating or joining a lobby. Custom-map void portals now choose clear dry-land cells, even on small islands, and returning from the Void respects the terrain height.</li>
+                    <li><strong>Endless-looking seas:</strong> added camera-following visual water beyond the default and custom map edges, with world-aligned texture tiling. Playable boundaries still stop walking, swimming, and boats, and the host rejects out-of-bounds player updates. Collected flowers now show their icon, quantity, and tooltip in the inventory instead of looking like an empty occupied slot.</li>
+                    <li><strong>Custom-level oceans:</strong> greatly expanded the surrounding water and seabed to cover the full archipelago. Offshore islands now use the default map’s island shapes, size mix, trees, rocks, flowers, and scenery, with spacing that keeps them clear of the authored land and each other. Fixed clipped stretched-island edges, matched terrain and scenery to custom sea levels, and extended sailing and multiplayer boundaries to the larger ocean. Casting respects the generated shorelines, and offshore flowers and colliders remain present when hosting or joining.</li>
+                    <li><strong>Radial emote wheel:</strong> replaced the boxed menu with five highlighted wheel segments and a clear center. Use Edit wheel to assign emotes, and use arrow keys or 1–5 to choose slots. The wheel stays available with the HUD hidden through its shortcut or the small Emotes button.</li>
+                    <li><strong>Custom-map NPC facing:</strong> fixed some NPCs facing backward after a map loads. All placed NPCs now fully reset their orientation before applying the direction saved in the level editor, including Morrow and Captain Finn.</li>
+                    <li><strong>Cast after a catch:</strong> pressing Fish or starting a cast while showing a fish now puts it away, cancels the display timer, and restores the rod and its holding pose before casting. The change syncs to other players.</li>
+                    <li><strong>Mobile server browser:</strong> fixed loaded lobbies disappearing when filter buttons squeezed the list down to zero height. Phone filters now start collapsed, with dedicated scrolling for servers, a landscape layout, and a clear-filters button. Loaded lists also stay visible while refreshing.</li>
+                    <li><strong>Mobile main menu:</strong> fixed oversized lobby layouts on phones and tablets. The menu now uses a compact header, readable touch controls, a dedicated landscape form, and scrolling for expanded custom-island options and smaller keyboard viewports.</li>
+                    <li><strong>Mobile redesign:</strong> rebuilt the touch HUD for portrait and landscape phones and tablets, with safe-area spacing, larger touch targets, a compact top bar, and separate Gear and Menu panels. Secondary actions and bait stay tucked away while playing. Added touch access to sitting, emotes, boat disembarking, and tap-to-equip inventory slots. Improved thumbstick sizing, multi-touch control releases, camera gestures, double-tap belly slides, chat keyboard handling, and scrolling menus.</li>
+                    <li><strong>Ferry deck movement:</strong> fixed cabin collisions stopping an entire diagonal walking step. Passengers now slide along the cabin, and walking animations follow actual deck movement rather than playing in place against a wall.</li>
+                    <li><strong>Passenger deck controls:</strong> fixed E sending passengers back to shore on all five boats. Passengers can walk as soon as they board, and pressing E keeps them on deck. Use R to disembark; drivers still use E to switch between the helm and walking.</li>
+                    <li><strong>Boat upgrades:</strong> walk around shared boat decks while riding with friends. Drivers can press E to leave or return to the helm; R disembarks. Steering now turns in the correct direction. Buy permanent boat unlocks from Captain Finn ($2,500–$85,000); launches and passenger rides are free after purchase. The level editor shows a green spawn-area box beside Captain Finn, and boats launch inside that area.</li>
+                    <li><strong>Co-op boating:</strong> visit Captain Finn at the expanded default-island dock to launch five shared boats: the 2-seat Lakeside Skiff, 3-seat Reef Runabout, 4-seat Angler Launch, 6-seat Sunset Pontoon, and 8-seat Harbor Ferry. Seats include the driver. The driver uses forward/back to throttle and left/right to turn; passengers ride together and can fish. Board stopped boats with E or through the dock captain, and disembark with R. Drivers use E to switch between walking and the helm. Boat motion and deck positions sync through the host, late joiners see the fleet, and disconnects release occupied seats safely. Each player can have one active boat.</li>
+                    <li><strong>Build your own harbor:</strong> added Captain Finn and a Co-op Boat Dock with a walkable deck and boarding steps to the level editor. Place the captain near open water to launch boats on custom maps.</li>
+                    <li><strong>YouTube pause &amp; resume:</strong> the Stream Queue panel now lets a stream player’s owner or home TV’s house owner pause and resume YouTube videos for everyone watching. Visitors and non-owning hosts cannot use the control. Paused timestamps sync to late joiners and house visitors, stay frozen during background sync, and resume from the same point.</li>
+                    <li><strong>Cave summit route:</strong> added 25 flat stone ledges leading from the cave approach to a broad summit landing. Two-unit rises fit the normal jump, scenery stays clear of the starting route, and platforms catch descending players without snapping them upward from below. The visible cave rock tops now support landings too.</li>
+                    <li><strong>Cave collision:</strong> removed the invisible box walls and floor-level barriers from raised cave rocks. Cave walls and the roof now use their visible rock faces and actual height, keeping the entrance and pool approach open while solid rock still blocks movement. Walking, belly slides, knockback, and sight lines use the corrected cave collision.</li>
+                    <li><strong>Fishing balance:</strong> reduced the beginner green zone to 14% and made bar upgrades expand it gradually by a total of 6 percentage points. Every tier now improves the zone, including the first upgrade, which costs $500. Fishing skill still adds 0.15 percentage points per level gained. The upgrade shop now shows the current and next green-zone sizes.</li>
+                    <li><strong>Left-side reeling:</strong> moved the reel crank and the reeling hand to the left side of the fishing rod while keeping the rod-holding hand in place.</li>
+                    <li><strong>Clean 3D skin textures:</strong> removed duplicate painted noses, tails, ears, wings, and other modeled parts from 3D faces and bodies. Eyes, blinking, clothing designs, fur patterns, and flat markings remain intact; the retained 2D sprites keep their full artwork.</li>
+                    <li><strong>Standing idle:</strong> relaxed breathing, gentle upper-body sway, and free-arm movement now bring stationary players to life. Rods, fish, and every held tool follow the gripping hand while feet stay planted; walking, jumping, reeling, sitting, and emotes take priority.</li>
+                    <li><strong>Thinking while chatting:</strong> composing a chat message brings your free hand to your chin. The pose and idle state sync to other players, stop when chat loses focus or another action takes over, and have matching motion in the retained 2D renderer.</li>
+                    <li><strong>Halloween wardrobe after the festival:</strong> owned event cosmetics remain in their regular shop categories for permanent equipping, now marked Hollowtide 2026. Unowned exclusives stay unavailable for regular cash. When November 8 ends in New York time, Morrow and the event HUD automatically disappear, the festival shop closes, and any open regular shop refreshes without a reload.</li>
+                    <li><strong>Jump animation:</strong> players now push off, tuck their legs in the air, and settle into a brief landing crouch. Free arms move with the jump while equipped items stay gripped. Airborne poses sync to nearby players, respect sitting and sliding, and also animate in the retained 2D mode.</li>
+                    <li><strong>Visible ears:</strong> ears and their inner surfaces now emerge more clearly above and beside full hairstyles, including curly, afro, messy, and long hair. Cropped styles keep their existing fit, and the retained 2D renderer also keeps ears visible through hair.</li>
+                    <li><strong>Pants collection:</strong> browse 24 new jeans, joggers, chinos, cargos, and patterned pants in the shop’s Pants tab, with a No Pants option. Pants save with your outfits, sync to other players, appear in previews, and follow your leg animations while keeping feet colors independent. The retained 2D renderer wears them too.</li>
+                    <li><strong>Hollowtide matching sets:</strong> Morrow now offers Ghostlight Joggers, Midnight Harvest Trousers, Pumpkin Patch Jeans, and Witching Stripe Joggers for Soul Embers through November 8. Match the festival hoodie, coat, and hats; owned pairs stay wearable afterward. Festival cosmetics now apply to your character immediately when bought or equipped.</li>
+                    <li><strong>Smooth hip connection:</strong> the tops of 3D legs now stay full-width and sit flush inside the body, with the same leg length and grounded feet.</li>
+                    <li><strong>Longer 3D legs:</strong> players and NPCs now have more visible leg room beneath shirts for future pants cosmetics. Hats, hair, faces, collars, shirts, and tails stay fitted to the raised upper body. Updated walking, sitting, emotes, reeling, hand-held items, overhead labels, and camera framing suit the new proportions; outfit previews use the same model.</li>
+                    <li><strong>Reeling animation:</strong> anglers now steady their rod with one hand and turn the reel with the other while fighting a fish. Nearby players see the animation too, and hands return to their holding pose when reeling stops. The retained 2D rod also has a reeling motion.</li>
+                    <li><strong>Clear NPC areas:</strong> default-island trees and rocks now leave space around every NPC, including Tutorial, Old Fisher, Lucky Lou, and Morrow’s Hollowtide stall.</li>
+                    <li><strong>Community invite:</strong> the main menu Discord link now uses the updated server invite.</li>
+                    <li><strong>A fresh welcome:</strong> a redesigned lakeside main menu brings clear create-and-find lobby choices, a dedicated join-by-code row, expandable custom island tools, and matching community links. The layout adapts to smaller screens and supports keyboard focus.</li>
+                    <li><strong>Cooking inventory fix:</strong> selling fish now updates the cooking inventory too. Cooking lists only currently owned fish, and an already-started cooking batch cannot turn sold fish into meals. Bulk sales also use each species’ correct sell price.</li>
+                    <li><strong>Reeling sound:</strong> a mechanical reel loop plays during the fishing minigame. Nearby players hear it from the angler’s position, through the SFX volume control. It stops when reeling ends, the player leaves, or they move out of hearing range, and stays isolated between houses.</li>
+                    <li><strong>Readable speech bubbles:</strong> overhead chat now wraps by actual text width instead of character count, preventing clipped beginnings and endings. Long words, emoji, and line breaks fit within the bubble’s padding.</li>
+                    <li><strong>Hollowtide HUD placement:</strong> moved the Soul Ember counter beside your money in the top stats bar so it no longer covers chat or the message input.</li>
+                    <li><strong>Full-length name tags:</strong> long NPC names, including Morrow · Lantern Keeper, now expand their nameplate instead of clipping the text.</li>
+                    <li><strong>The Hollowtide Festival · Oct 28–Nov 8, 2026:</strong> catch eight haunted fish and earn Soul Embers from fishing. Visit Morrow the Lantern Keeper on the default island’s east shore to browse previews and buy 12 exclusive cosmetics. First discoveries give bonus Embers; collecting all eight grants 100 more. Event items stay owned after the event. Custom-map creators can place Morrow from the editor’s NPC list; his stall appears only during the event.</li>
+                    <li><strong>Toast notifications restored:</strong> catch messages and other gameplay notifications display again. The notification area now recreates itself if it is missing.</li>
+                    <li><strong>Blink visibility fix:</strong> closed-eye frames no longer repaint the open-eye overlay, so the eyes visibly close during a blink in both character renderers.</li>
+                    <li><strong>Tournament disconnect cleanup:</strong> leaving players are removed from the active standings and participant count, and their pending casts are cleared. Rejoining starts a fresh entry instead of leaving a duplicate behind; disconnected players no longer inflate podium eligibility.</li>
+                    <li><strong>Cleaner HUD and blinking:</strong> removed an orphaned menu close button that remained visible during gameplay. Characters now blink briefly at varied intervals every few seconds, including other players, while retaining their talking animation.</li>
+                    <li><strong>More recognizable 3D catches:</strong> improved species silhouettes, fin and tail details, trout and bass markings, koi patterns, and blind cavefish. Corrected several species that shared an unsuitable family model. Aquariums and catch plaques now show fitted 3D specimens; aquarium glass is transparent so the fish sits inside the tank.</li>
+                    <li><strong>3D bobbers and 20 new designs:</strong> fishing floats now use solid models in 3D mode, including other players’ bobbers. Added Toadstool, Cork Float, Pencil, Little Lantern, Acorn, Apple, Orange, Watermelon, Lemon, Lime, Strawberry Donut, Life Ring, Harbor Buoy, Message Bottle, Jellyfish, Little Octopus, Turtle, Koi Float, Rocket, and Flying Saucer to the shop, with matching icons.</li>
+                    <li><strong>Tool orientation:</strong> turned the 3D axe and pickaxe heads forward so they no longer stretch sideways across your face. Their corrected orientation is retained while swinging.</li>
+                    <li><strong>Solid tools and reliable equipment:</strong> axes, pickaxes, guitars, and boxing gloves now have 3D models. Held tools follow your hand while swinging and punching. Rod holding no longer repeatedly resets character poses during cosmetic refreshes or emotes, and joining players immediately see empty hands or the correct equipped item.</li>
+                    <li><strong>Sit anywhere:</strong> press X while standing to settle into a seated pose where you are. Press Space or X again to stand up. Sitting keeps you in place, and other players see your seated pose too.</li>
+                    <li><strong>20 more shop emotes:</strong> added Applause, Shrug, Point, Salute, Facepalm, Laugh, Sob, Shiver, Stretch, Yawn, Flex, Heart, Disco, Robot, Sway, Happy Hops, Stomp, Sneaky Steps, Peekaboo, and Airplane. Each has its own animated gesture, works in the five-slot wheel, and syncs to other players.</li>
+                    <li><strong>Emote wheel:</strong> buy Wave, Cheer, Bow, Spin, and Dance from the boutique’s Emotes tab. Open your wheel with C or the Emotes button, assign owned emotes to five slots, and click or press 1–5 to perform. Purchases and slots save; animations sync to other players and stop when you move or jump.</li>
+                    <li><strong>Snugger 3D collars:</strong> raised collars further so they sit directly beneath the head, with buckles and attachments moving together.</li>
+                    <li><strong>3D mode rollout:</strong> 2D selection is temporarily disabled, and existing characters now load in 3D. Your previous mode preference is retained for when 2D returns. Character artwork is rendered at a higher native resolution for clearer facial and clothing details.</li>
+                    <li><strong>Belly-slide refresh:</strong> double-tap dives follow your movement direction, including sideways and backward movement, rather than your camera. Slides use a flatter belly-down pose with outstretched 3D arms and ease to a stop. First-person camera turns no longer redirect the slide.</li>
+                    <li><strong>3D collar fit:</strong> collars sit slightly higher on the neck, with buckles, bells, and other attachments raised together.</li>
+                    <li><strong>3D walking:</strong> legs and feet now alternate steps while walking and settle back at rest, without the whole-character bounce. 2D characters keep their original walking bounce. 3D models are now the default for new players; saved model preferences are preserved.</li>
+                    <li><strong>Interactive 3D wardrobe preview:</strong> in 3D mode, the shop shows your current character as a rotatable model. Hold left click and drag to inspect your outfit, tail, and colors from any side; changes update the model while preserving your viewing angle.</li>
+                    <li><strong>3D catch-holding pose:</strong> show off a solid fish supported by your right hand, with gentle movement while held. The fish follows your character’s movement, and putting it away restores your resting pose. Other players see the pose in 3D mode too.</li>
+                    <li><strong>3D fishing rods:</strong> 3D mode now uses solid rods with grips, reels, and line guides, held in one hand when equipped. Rod colors and themed details carry over, casting pivots at the grip, and fishing line connects to the rod tip.</li>
+                    <li><strong>Tail accent control layout:</strong> Apply and Reset now fit side by side beneath the color picker without overflowing the character studio, including on small screens.</li>
+                    <li><strong>Tail accent update fix:</strong> refreshed cached game scripts so the tail controls and 3D models load together. Accent changes now apply while choosing a color; Apply also lets you use the displayed color without changing it first.</li>
+                    <li><strong>Two-tone 3D tails:</strong> choose a secondary tail color in the character studio for supported tails. Color dragon tips and ridges, fox tips, rings, spots, stripes, tufts, feathers, and aquatic fins while keeping the main tail color. Accent colors save with outfits and sync to other players; Reset restores natural accents.</li>
+                    <li><strong>3D style controls:</strong> customize hand and foot colors in the character studio when 3D models are on. Colors save with your character and outfits and sync to other players. One 3D Models button now switches both players and NPCs.</li>
+                    <li><strong>3D nose colors:</strong> custom nose colors now apply to dragon and other long snouts, hippo muzzles, rhino horns, and frog and axolotl nostrils.</li>
+                    <li><strong>A refreshed boutique:</strong> browse consistent category tabs and item cards, search within categories, filter owned items, and see your balance alongside your look and saved outfits. Character parts and colors now live in an expandable studio, and the wardrobe is available on small screens.</li>
+                    <li><strong>Species-shaped 3D faces:</strong> nose types now have distinct snouts, bills, beaks, nostrils, and muzzle details. Mouth outlines and talking proportions fit the selected nose type.</li>
+                    <li><strong>Ultra-rare golden fish:</strong> Golden Common Carp, Golden Rainbow Trout, Golden Largemouth Bass, and Golden Atlantic Salmon can be hooked in every fishing zone and weather condition. Each has a 1-in-10,000 chance per hook, with normal size and tier rolls.</li>
+                    <li><strong>More expressive talking:</strong> added five mouth shapes—open, wide/teeth, round, pursed, and smiling—to microphone and chat animation in both 2D and 3D. Speech varies the shapes automatically; silence restores the neutral mouth.</li>
+                    <li><strong>Microphone mouth animation:</strong> player mouths now react to live voice activity in both 2D and 3D, for the speaker and nearby listeners. Muting, leaving voice range, or being in another house stops the voice animation. Typed chat retains its talking animation.</li>
+                    <li><strong>Real fish in displays:</strong> depositing now removes that exact fish from your current inventory. Swapping or clearing returns the deposited specimen once, with its original value and stats. Displays show size, rarity, tier, zone, and value. Saved layouts cannot duplicate deposited fish; old copy-only displays need a fish deposited again.</li>
+                    <li><strong>YouTube picture clarity:</strong> the player now uses a 1920 × 1080 internal viewport while retaining its screen size. YouTube still chooses adaptive quality based on the video and viewing conditions.</li>
+                    <li><strong>Easier catch displays and wall mounting:</strong> catch displays now use the real 2D fish sprites. Walk up and press the interact key (E by default) to change a display; guests can view it. Press R or Rotate during placement to cycle any wall-mounted item across all four walls, without a wall dropdown.</li>
+                    <li><strong>Showcase your catches:</strong> choose an inventory fish for an aquarium or the new wall-mounted catch plaque. Deposited specimens and their catch details save and sync to visitors.</li>
+                    <li><strong>Furniture recoloring:</strong> select a placed item and choose Change color to change its main color. Colors persist through storage and house layouts.</li>
+                    <li><strong>Fishing collections:</strong> complete Lakeside Life, Pond Jewels, and Freshwater Angler sets using your fishing journal. Claim exclusive furniture and collector titles from House → Customize → Fishing collections. Titles can be equipped in the cosmetic shop.</li>
+                    <li><strong>Five house layout presets:</strong> save named layouts from House → Customize → Saved house layouts. Loading rearranges owned pieces and stores unused furniture without creating copies or restarting old TV sessions.</li>
+                    <li><strong>Cleaner no-HUD mode:</strong> house controls and the hourly tournament widget now hide with the rest of the HUD, including after live updates.</li>
+                    <li><strong>154 house items:</strong> added 72 pieces, including furniture, kitchen appliances, laundry equipment, decorative instruments, hobby items, plants, rugs, and coastal decorations.</li>
+                    <li><strong>Item previews and shop tabs:</strong> see 3D previews in the shop and storage, browse clickable categories, and use an improved scrolling layout.</li>
+                    <li><strong>Easier room building:</strong> draw a rectangle, choose a doorway side, and preview the price before building the complete room. Stored walls are reused first. Whole rooms can be stored together, and individual walls support adjustable lengths.</li>
+                    <li><strong>Bigger interiors:</strong> upgrade to 18 × 14 for $10,000, then 24 × 18 for $25,000. The outside of your house stays the same size.</li>
+                    <li><strong>More decorating space:</strong> Cozy houses allow 75 furniture items and 30 wall/doorway pieces; Spacious houses allow 125 and 50; Grand houses allow 200 and 80. Storage holds 300 pieces, with up to two placed TVs.</li>
+                    <li><strong>Furniture you can jump on:</strong> new seating, tables, counters, beds, benches, stools, trunks, and suitable cabinets and appliances have landing surfaces that match their shapes.</li>
+                    <li><strong>Better fit and appearance:</strong> walls and doorways use your house colors and snap together. Kitchen fixtures can sit flush against walls. Interior walls are taller, wall TVs are twice as wide and tall, and showers are taller and wider. Fixed overlapping model faces, trim joints, and rug flickering.</li>
+                    <li><strong>Improved house syncing:</strong> visitor updates send changed items, combine rapid edits, and retain unchanged furniture and TV players. House upgrades, layouts, and purchases save and sync to approved visitors.</li>
+                    <li><strong>Fresh TV sessions:</strong> house TVs start idle after loading a new session instead of restarting the previous video and queue.</li>
+                    <li><strong>Less HUD clutter:</strong> removed the right-side keyboard-controls panel. Key bindings remain available in Escape → Controls; touch controls are unchanged.</li>
+                    <li><strong>Cleaner Escape menu:</strong> unified settings into Audio, Display, Controls, Save data, and Session tabs, with consistent controls, contained scrolling, keyboard navigation, and an always-visible Resume button.</li>
+                    <li><strong>Tournament readability:</strong> switched the right-side tournament panel to a clear sans-serif font so letters are easier to distinguish.</li>
+                    <li><strong>Tournament podium bonuses:</strong> when at least 3 players record valid catches, 1st gains $5,000, 2nd $2,500, and 3rd $1,000 on top of $5 per fish. Solo and two-player rounds keep the base reward only.</li>
+                    <li><strong>Tournament balance:</strong> reduced rewards from $100 to $5 per valid fish to keep earnings modest.</li>
+                    <li><strong>Hourly fishing rewards:</strong> changed fixed podium prizes to $5 per valid catch for every participant. Solo play and groups of any size are supported, with no minimum catches or player count. The top 10 still show standings and projected rewards; payouts arrive at the hour boundary.</li>
+                    <li><strong>Player patch log:</strong> open Patch Notes from the main menu to follow updates.</li>
+                </ul>
+            </article>
+        </div>
+        <form method="dialog" class="patch-close"><button class="btn-lg" autofocus>CLOSE PATCH NOTES</button></form>
+    </dialog>
 
     <div id="journal-overlay" class="overlay-screen">
         <button class="close-x-btn" onclick="toggleJournal()">×</button>
@@ -2988,31 +3388,6 @@
         <button class="btn-lg" onclick="toggleInventory()" style="margin-top: 15px;">CLOSE INVENTORY</button>
     </div>
 
-    <div id="panel-tabbar" style="display:none; position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:10001; display:none; gap:6px; background:var(--p-face); border:2px solid var(--p-line); padding:4px 8px;">
-        <button class="btn-sm" onclick="switchPanel('journal')">Journal</button>
-        <button class="btn-sm" onclick="switchPanel('inventory')">Inventory</button>
-        <button class="btn-sm" onclick="switchPanel('progress')">Progress</button>
-        <button class="btn-sm" onclick="switchPanel('skills')">Skills</button>
-        <button class="btn-sm" onclick="switchPanel('cooking')">Cooking</button>
-        <button class="btn-sm" onclick="switchPanel('playerlist')">Players</button>
-        <button class="btn-sm" onclick="closeAllPanels()">Close</button>
-    </div>
-        <button class="close-x-btn" onclick="toggleTabMenu()">×</button>
-        <div class="overlay-header">
-            <h2>Menu</h2>
-            <div class="overlay-subtitle">Quick access to all panels</div>
-        </div>
-        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; max-width:420px; margin:20px auto;">
-            <button class="btn-lg" onclick="toggleTabMenu(); toggleJournal();">Journal</button>
-            <button class="btn-lg" onclick="toggleTabMenu(); toggleInventory();">Inventory</button>
-            <button class="btn-lg" onclick="toggleTabMenu(); toggleProgress();">Progress</button>
-            <button class="btn-lg" onclick="toggleTabMenu(); toggleSkillsUI();">Skills</button>
-            <button class="btn-lg" onclick="toggleTabMenu(); toggleCookingUI();">Cooking</button>
-            <button class="btn-lg" onclick="toggleTabMenu(); togglePlayerList();">Player List</button>
-        </div>
-        <button class="btn-lg" onclick="toggleTabMenu()" style="margin-top: 15px;">CLOSE (Tab)</button>
-    </div>
-
     <div id="panel-tabbar" style="display:none; position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:10001; gap:6px; background:var(--p-face); border:2px solid var(--p-line); padding:4px 8px; flex-wrap:wrap; justify-content:center;">
         <button class="btn-sm" onclick="switchPanel('journal')">Journal</button>
         <button class="btn-sm" onclick="switchPanel('inventory')">Inventory</button>
@@ -3020,6 +3395,7 @@
         <button class="btn-sm" onclick="switchPanel('skills')">Skills</button>
         <button class="btn-sm" onclick="switchPanel('cooking')">Cooking</button>
         <button class="btn-sm" onclick="switchPanel('playerlist')">Players</button>
+        <button class="btn-sm" onclick="switchPanel('tournament')">Tournament</button>
         <button class="btn-sm" onclick="closeAllPanels()">Close</button>
     </div>
 
@@ -3036,8 +3412,27 @@
             <button class="btn-lg" onclick="toggleTabMenu(); switchPanel('skills');">Skills</button>
             <button class="btn-lg" onclick="toggleTabMenu(); switchPanel('cooking');">Cooking</button>
             <button class="btn-lg" onclick="toggleTabMenu(); switchPanel('playerlist');">Players</button>
+            <button class="btn-lg" onclick="toggleTabMenu(); switchPanel('tournament');">Tournament</button>
         </div>
         <button class="btn-lg" onclick="toggleTabMenu()" style="margin-top: 15px;">CLOSE (Tab)</button>
+    </div>
+
+    <div id="tournament-overlay" class="overlay-screen">
+        <button class="close-x-btn" onclick="closeAllPanels()" aria-label="Close tournament">×</button>
+        <div class="overlay-header"><h2>Hourly Fishing Tournament</h2><div class="overlay-subtitle">Catch fish and earn rewards, solo or together!</div></div>
+        <div style="width:min(620px,92vw);overflow:auto;padding:12px;box-sizing:border-box;">
+            <p id="tournament-status" role="status">Start playing to join the hourly tournament.</p>
+            <p><strong>Every participant earns $5 per valid fish caught.</strong> Rewards are paid at the end of the hour.</p>
+            <h3>Top 10 standings</h3>
+            <table style="width:100%;text-align:left;border-collapse:collapse;"><thead><tr><th scope="col">Place</th><th scope="col">Player</th><th scope="col">Fish caught</th><th scope="col">Reward</th></tr></thead><tbody id="tournament-standings"></tbody></table>
+            <h3>How to compete</h3>
+            <p>Solo players and groups of any size can participate. There are no minimum-player or minimum-catch requirements. Catch 10 fish to earn $50; catch 50 to earn $250. With at least 3 participants who caught a valid fish, 1st place earns an extra $5,000, 2nd $2,500, and 3rd $1,000. With fewer participants, everyone receives only $5 per fish. Ties go to the first player to reach the score.</p>
+            <p>New rounds start every hour on the host's clock. Catch a fish to enter automatically. Each valid fish counts once; boots do not count. Ties go to the player who reached that score first.</p>
+            <p>Your cast and catch must finish in the same round. The host checks known fish, duplicate catches, and cast timing. Prizes are awarded automatically when the round ends.</p>
+            <p>Tournaments belong to this lobby and reset when the host closes it. Disconnected winners can collect pending prizes by returning with the same peer ID while the host session stays open.</p>
+            <h3>Previous round rewards</h3><p id="tournament-winners">No completed round yet.</p>
+        </div>
+        <button class="btn-lg" onclick="closeAllPanels()">CLOSE</button>
     </div>
 
     <div id="progress-overlay" class="overlay-screen">
@@ -3057,45 +3452,61 @@
         <button class="btn-lg" onclick="toggleProgress()" style="margin-top:15px;">CLOSE</button>
     </div>
 
+    <div id="halloween-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="halloween-heading" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+      <section id="halloween-panel"><header><div><div class="halloween-eyebrow">LIMITED EVENT · OCT 28 — NOV 8, 2026 · NEW YORK TIME</div><h2 id="halloween-heading">The Hollowtide Festival</h2><p>Morrow’s lantern is lit. Something strange is biting.</p></div><button class="btn-sm" onclick="Halloween.close()" aria-label="Close Halloween event">Close ×</button></header>
+      <div class="halloween-banner"><strong id="halloween-wallet">0 Soul Embers</strong><span>Earn 2 Embers per fish · haunted catches: 8–40 · first discoveries: +15</span></div>
+      <p class="halloween-intro">Fish in any water for a chance at eight haunted catches. Bring the Soul Embers you earn to Morrow. Event purchases equip immediately and stay yours after the festival. Boots give no Embers.</p>
+      <h3>THE LANTERN KEEPER’S COLLECTION</h3><div id="halloween-rewards"></div><h3>THE HAUNTED WATERS</h3><p id="halloween-progress"></p><div id="halloween-fish"></div><p class="halloween-intro">The stall closes at 11:59 PM on November 8 (America/New_York). Owned cosmetics and saved catches remain; earning and spending Soul Embers ends with the event.</p></section>
+    </div>
+    <div id="emote-overlay" onmousedown="event.stopPropagation()" onpointerdown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="event.stopPropagation()" hidden role="dialog" aria-modal="true" aria-labelledby="emote-heading">
+        <section id="emote-panel"><header class="emote-header"><h2 id="emote-heading">Emotes</h2><button type="button" class="emote-close" onclick="Emotes.close()" aria-label="Close emote wheel">Close ×</button></header><div id="emote-wheel"></div><div id="emote-choices" hidden></div><p class="emote-help">Choose a segment or press 1–5 · Moving or jumping stops your emote.</p></section>
+    </div>
+    <button type="button" id="emote-hud-toggle" class="btn" onclick="Emotes.toggle()" aria-label="Open emote wheel while HUD is hidden">Emotes</button>
     <div id="shop-overlay" class="overlay-screen">
         <button class="close-x-btn" onclick="toggleShop()">×</button>
 
         <div id="shop-wrapper">
             <div id="shop-main-panel">
                 <div class="overlay-header" style="margin-bottom: 12px;">
-                    <h2>Stylist &amp; Boutique</h2>
-                    <div class="overlay-subtitle">Express your style with custom gear, colors, and cosmetics</div>
+                    <div class="shop-heading"><div><div class="shop-eyebrow">LAKESIDE BOUTIQUE</div><h2>Make it yours</h2></div><div class="shop-wallet"><span>Your balance</span><strong id="shop-balance"></strong></div></div>
+                    <div class="overlay-subtitle">A fresh look for your next catch.</div>
                 </div>
 
-                <div id="color-picker-container">
+                <section id="shop-appearance" class="studio-launcher"><button id="studio-launch" type="button" onclick="CharacterStudio.open()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5a4 4 0 1 0 8 0M5 22v-5a7 7 0 0 1 14 0v5"/></svg><span><strong>Character studio</strong><small>Shape, color &amp; style. Make someone unmistakably you.</small></span><b aria-hidden="true">↗</b></button><div id="color-picker-container">
                     <!-- Character Parts Selectors with Color Pickers -->
-                    <div class="picker-row"><span>Ears:</span><select id="ears-select"
+                    <div class="picker-row"><label for="ears-select">Ears:</label><select id="ears-select"
                             onchange="changeEars(this.value)"></select><input type="color" id="ears-color-picker"
                             onchange="changeEarsColor(this.value)" title="Ear Color"></div>
-                    <div class="picker-row"><span>Hair:</span><select id="hair-select"
+                    <div class="picker-row"><label for="hair-select">Hair:</label><select id="hair-select"
                             onchange="changeHair(this.value)"></select><input type="color" id="hair-color-picker"
                             onchange="changeHairColor(this.value)" title="Hair Color"></div>
-                    <div class="picker-row"><span>Eyes:</span><select id="eyes-select"
+                    <div class="picker-row"><label for="eyes-select">Eyes:</label><select id="eyes-select"
                             onchange="changeEyes(this.value)"></select></div>
-                    <div class="picker-row"><span>Nose:</span><select id="nose-select"
+                    <div class="picker-row"><label for="nose-select">Nose:</label><select id="nose-select"
                             onchange="changeNose(this.value)"></select><input type="color" id="nose-color-picker"
                             onchange="changeNoseColor(this.value)" title="Nose Color"></div>
-                    <div class="picker-row"><span>Misc:</span><select id="misc-select"
+                    <div class="picker-row"><label for="misc-select">Extras:</label><select id="misc-select"
                             onchange="changeMisc(this.value)"></select><input type="color" id="misc-color-picker"
                             onchange="changeMiscColor(this.value)" title="Misc Color"></div>
-                    <div class="picker-row"><span>Tail:</span><select id="tail-select"
+                    <div id="protogen-logo-row" hidden><span>Protogen sign</span><button type="button" class="btn-sm" id="protogen-logo-button" onclick="ProtogenLogo.open()">Draw sign</button></div>
+                    <div class="picker-row"><label for="tail-select">Tail:</label><select id="tail-select"
                             onchange="changeTail(this.value)"></select><input type="color" id="tail-color-picker"
                             onchange="changeTailColor(this.value)" title="Tail Color"></div>
+                    <div class="picker-row" id="hand-color-row" hidden><label for="hand-color-picker">Hands:</label><input type="color" id="hand-color-picker" onchange="change3DLimbColor('hand',this.value)" title="3D Hand Color"></div>
+                    <div class="picker-row" id="foot-color-row" hidden><label for="foot-color-picker">Feet:</label><input type="color" id="foot-color-picker" onchange="change3DLimbColor('foot',this.value)" title="3D Foot Color"></div>
+                    <div class="picker-row" id="tail-accent-color-row" hidden><label for="tail-accent-color-picker">Tail accent (3D):</label><input type="color" id="tail-accent-color-picker" oninput="change3DTailAccent(this.value)" onchange="change3DTailAccent(this.value)" title="Secondary tail color for tips, markings, tufts, fins and ridges"><button type="button" class="btn-sm" onclick="change3DTailAccent(document.getElementById('tail-accent-color-picker').value)" title="Apply the displayed secondary color">Apply</button><button type="button" class="btn-sm" onclick="change3DTailAccent('')" title="Restore the tail's natural accent colors">Reset</button></div>
                     <!-- Base Colors -->
-                    <div class="picker-row"><span>Fur:</span><input type="color" id="fur-color-picker"
+                    <div class="picker-row"><label for="fur-color-picker">Body:</label><input type="color" id="fur-color-picker"
                             onchange="changeFurColor(this.value)"></div>
-                    <div class="picker-row"><span>Belly:</span><input type="color" id="belly-color-picker"
+                    <div class="picker-row"><label for="belly-color-picker">Belly:</label><input type="color" id="belly-color-picker"
                             onchange="changeBellyColor(this.value)"></div>
-                    <div class="picker-row"><span>Eye Color:</span><input type="color" id="eye-color-picker"
+                    <div class="picker-row"><label for="eye-color-picker">Eye Color:</label><input type="color" id="eye-color-picker"
                             onchange="changeEyeColor(this.value)"></div>
                 </div>
 
-                <div id="shop-container" class="grid-container" style="flex: 1; width: 100%;"></div>
+                </section><nav id="shop-categories" aria-label="Shop categories"></nav>
+                <div class="shop-toolbar"><label class="shop-search">Search items<input id="shop-search" type="search" placeholder="Find your next favorite…" oninput="filterShopItems()"></label><label class="shop-filter">Show<select id="shop-filter" onchange="filterShopItems()"><option value="all">All items</option><option value="owned">Owned</option><option value="available">Not owned</option></select></label></div>
+                <div id="shop-results" role="status" aria-live="polite"></div><div id="shop-container" class="grid-container" style="flex: 1; width: 100%;"></div><p id="shop-empty" hidden>No items match. Try another search or filter.</p>
                 <button class="btn-lg" onclick="toggleShop()" style="margin-top: 10px;">DONE</button>
             </div>
 
@@ -3104,22 +3515,14 @@
                 <div id="character-preview">
                     <h3
                         style="margin: 0 0 8px 0; font-family: var(--font-display); font-size: 10px; color: var(--p-sand); letter-spacing: 1px;">
-                        Live Preview</h3>
-                    <div style="display: flex; gap: 10px; justify-content: center;">
-                        <div style="text-align: center;">
-                            <canvas id="preview-front" width="96" height="96"></canvas>
-                            <div style="font-size: 14px; color: var(--p-text-dim); margin-top: 4px;">Front</div>
-                        </div>
-                        <div style="text-align: center;">
-                            <canvas id="preview-back" width="96" height="96"></canvas>
-                            <div style="font-size: 14px; color: var(--p-text-dim); margin-top: 4px;">Back</div>
-                        </div>
-                    </div>
+                        Your look</h3><p id="shop-preview-status" role="status" hidden></p><p id="shop-preview-title" hidden></p>
+                    <div id="preview-3d" hidden></div><p id="preview-3d-hint" hidden>Hold left click and drag to rotate</p>
                 </div>
 
-                <h3 style="margin: 5px 0; text-align: center; font-family: var(--font-display); font-size: 10px; color: var(--p-text); letter-spacing: 1px;">Wardrobe</h3>
+                <h3 style="margin: 5px 0; text-align: center; font-family: var(--font-display); font-size: 10px; color: var(--p-text); letter-spacing: 1px;">Saved outfits</h3>
                 <button class="btn-sm btn-green" onclick="saveCurrentOutfit()" style="width: 100%;">+ Save
                     Outfit</button>
+                <button class="btn-sm" onclick="importOutfitCode()" style="width: 100%;">Import outfit code</button>
                 <div id="outfit-list"
                     style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;"></div>
             </div>
@@ -3135,11 +3538,13 @@
     </div>
 
     <div id="scratch-overlay" class="overlay-screen">
-        <button class="close-x-btn" onclick="toggleScratchShop()">×</button>
         <div id="scratch-panel">
-            <div class="overlay-header" style="margin-bottom: 6px;">
-                <h2>Lucky Lou's Scratch Cards</h2>
-                <div class="overlay-subtitle">Scratch all 25 squares. Every number that matches a winning number at the top pays its prize — several can match.</div>
+            <div class="scratch-head">
+                <div class="overlay-header" style="margin-bottom: 6px;">
+                    <h2>Lucky Lou's Scratch Cards</h2>
+                    <div class="overlay-subtitle">Scratch all 25 squares. Every number that matches a winning number at the top pays its prize — several can match.</div>
+                </div>
+                <button id="scratch-close" class="btn-sm" onclick="toggleScratchShop()" type="button" aria-label="Close Lucky Lou's Scratch Cards">CLOSE</button>
             </div>
             <div id="scratch-balance">Balance: $0</div>
 
@@ -3170,79 +3575,44 @@
     </div>
 
     <div id="options-overlay" class="overlay-screen">
-        <div id="options-container">
-            <h2>Audio Mixer</h2>
-
-            <div style="text-align:left; width:100%; font-size:16px;">
-                <label>Master:</label>
-                <input type="range" id="volume-slider" min="0" max="1" step="0.05" style="width:100%"
-                    oninput="changeVolume(this.value)">
-
-                <label>SFX:</label>
-                <input type="range" id="sfx-slider" min="0" max="1" step="0.05" style="width:100%"
-                    oninput="changeSFXVolume(this.value)">
-
-                <label>MIDI / Guitar:</label>
-                <input type="range" id="midi-slider" min="0" max="1" step="0.05" style="width:100%"
-                    oninput="changeMidiVolume(this.value)">
-
-                <label>Voice Chat:</label>
-                <input type="range" id="voice-slider" min="0" max="1" step="0.05" style="width:100%"
-                    oninput="changeVoiceVolume(this.value)">
-
-                <label>Video Screens:</label>
-                <input type="range" id="screen-slider" min="0" max="1" step="0.05" style="width:100%"
-                    oninput="changeScreenVolume(this.value)">
+        <div id="options-container" role="dialog" aria-modal="true" aria-labelledby="options-title">
+            <header class="settings-header"><div><h2 id="options-title">Game menu</h2><p>Settings, controls, and your save</p></div><button class="btn-sm" onclick="toggleOptions()" aria-label="Close game menu">×</button></header>
+            <nav class="settings-tabs" role="tablist" aria-label="Settings categories"><button class="btn-sm" role="tab" id="options-tab-audio" aria-controls="options-section-audio" aria-selected="true" tabindex="0" onclick="setOptionsTab('audio')" onkeydown="handleOptionsTabKey(event)">Audio</button><button class="btn-sm" role="tab" id="options-tab-display" aria-controls="options-section-display" aria-selected="false" tabindex="-1" onclick="setOptionsTab('display')" onkeydown="handleOptionsTabKey(event)">Display</button><button class="btn-sm" role="tab" id="options-tab-controls" aria-controls="options-section-controls" aria-selected="false" tabindex="-1" onclick="setOptionsTab('controls')" onkeydown="handleOptionsTabKey(event)">Controls</button><button class="btn-sm" role="tab" id="options-tab-save" aria-controls="options-section-save" aria-selected="false" tabindex="-1" onclick="setOptionsTab('save')" onkeydown="handleOptionsTabKey(event)">Save data</button><button class="btn-sm" role="tab" id="options-tab-session" aria-controls="options-section-session" aria-selected="false" tabindex="-1" onclick="setOptionsTab('session')" onkeydown="handleOptionsTabKey(event)">Session</button></nav>
+            <div class="settings-content">
+                <section id="options-section-audio" role="tabpanel" aria-labelledby="options-tab-audio">
+                    <h3>Audio mixer</h3><p class="settings-description">Balance game sounds, music, and other players.</p>
+                    <div class="settings-card"><label class="setting-row" for="volume-slider"><span>Master volume</span><input type="range" id="volume-slider" min="0" max="1" step="0.05" oninput="changeVolume(this.value)"></label>
+<label class="setting-row" for="sfx-slider"><span>Sound effects</span><input type="range" id="sfx-slider" min="0" max="1" step="0.05" oninput="changeSFXVolume(this.value)"></label>
+<label class="setting-row" for="midi-slider"><span>MIDI / guitar</span><input type="range" id="midi-slider" min="0" max="1" step="0.05" oninput="changeMidiVolume(this.value)"></label>
+<label class="setting-row" for="voice-slider"><span>Voice chat</span><input type="range" id="voice-slider" min="0" max="1" step="0.05" oninput="changeVoiceVolume(this.value)"></label>
+<label class="setting-row" for="screen-slider"><span>Video screens</span><input type="range" id="screen-slider" min="0" max="1" step="0.05" oninput="changeScreenVolume(this.value)"></label></div>
+                    <div class="settings-card"><label class="setting-row" for="mic-select"><span>Microphone</span><select id="mic-select" onchange="changeAudioInput(this.value)"></select></label>
+                    <div class="settings-actions"><button id="btn-music-toggle" class="btn-lg" onclick="toggleMusic()">Music</button><button id="btn-midi-toggle" class="btn-lg" onclick="toggleMidiMute()">MIDI</button></div></div>
+                </section>
+                <section id="options-section-display" role="tabpanel" aria-labelledby="options-tab-display" hidden>
+                    <h3>Display &amp; performance</h3><p class="settings-description">Choose the look, detail and information you want on screen.</p>
+                    <div class="settings-card settings-actions"><button id="btn-fps-counter" class="btn-lg" onclick="toggleFPSCounter()" aria-pressed="true">FPS Counter: ON</button><button id="btn-titles-toggle" class="btn-lg" onclick="toggleShowTitles()">Titles</button></div>
+                    <div class="settings-card"><label class="setting-row" for="render-scale"><span>Render resolution</span><select id="render-scale" onchange="changeRenderScale(this.value)"><option value="1">Standard (1×)</option><option value="0.75">Performance (0.75×)</option><option value="0" selected>Native display</option></select></label></div>
+                    <div class="settings-card"><button id="btn-retro-shader" class="btn-lg" onclick="toggleRetroShader()" aria-pressed="false" style="width:100%;margin-bottom:10px;">Retro shader: OFF</button><label class="setting-row" for="retro-pixel-size"><span>Pixel size</span><select id="retro-pixel-size" onchange="changeRetroPixelSize(this.value)"><option value="2">Subtle (2×)</option><option value="3" selected>Retro (3×)</option><option value="4">Chunky (4×)</option></select></label><p class="settings-description" style="margin:10px 0 0;">Adds chunky pixels, richer colors and a soft vignette. Pixel size is disabled while the shader is off.</p></div>
+                </section>
+                <section id="options-section-controls" role="tabpanel" aria-labelledby="options-tab-controls" hidden>
+                    <h3>Controls</h3><p class="settings-description">Select a binding, then press the key you want to use.</p>
+                    <p id="mobile-controls-note" hidden>Use the on-screen movement and action buttons on touch devices.</p>
+                    <div id="keybinds-container" class="settings-card"></div><button id="btn-reset-keybinds" class="btn-lg" onclick="resetKeybinds()">Reset key bindings</button>
+                </section>
+                <section id="options-section-save" role="tabpanel" aria-labelledby="options-tab-save" hidden>
+                    <h3>Save data</h3><p class="settings-description">Your progress is saved in this browser. Export a copy to keep a backup.</p>
+                    <input type="file" id="import-file" hidden accept=".json" onchange="importSaveFile(this)">
+                    <div class="settings-card settings-actions"><button class="btn-lg btn-green" onclick="exportSaveFile()">Export save</button><button class="btn-lg" onclick="document.getElementById('import-file').click()">Import save</button></div>
+                    <div class="settings-card settings-danger"><h4>Delete saved progress</h4><p>This removes your saved game from this browser.</p><button class="btn-lg btn-danger" onclick="deleteSave()">Delete save data</button></div>
+                </section>
+                <section id="options-section-session" role="tabpanel" aria-labelledby="options-tab-session" hidden>
+                    <h3>Session</h3><p class="settings-description">Get help, catch up on updates, or return to the main menu.</p>
+                    <div class="settings-card settings-actions"><button class="btn-lg" onclick="startGuidedTour()">Start / resume tutorial</button><button class="btn-lg" onclick="GuidedTutorial.resume(true)">Restart tutorial</button><button class="btn-lg" onclick="document.getElementById('patch-notes-dialog').showModal()">Patch notes</button><button class="btn-lg" onclick="respawnPlayer()">Respawn</button><button class="btn-lg btn-danger" onclick="leaveGame()">Leave game</button></div>
+                    <div class="settings-card"><h4>Diagnostics</h4><button id="btn-debug-toggle" class="btn-lg" onclick="toggleDebugMode()">Debug</button></div>
+                </section>
             </div>
-
-            <br>
-            <label for="mic-select">Microphone:</label>
-            <select id="mic-select" onchange="changeAudioInput(this.value)"></select>
-
-            <br><br>
-            <div style="display: flex; gap: 10px; justify-content: center; width: 100%; flex-wrap: wrap;">
-                <button id="btn-music-toggle" class="btn-lg" onclick="toggleMusic()"
-                    style="flex:1; min-width: 80px;">Music</button>
-                <button id="btn-midi-toggle" class="btn-lg" onclick="toggleMidiMute()"
-                    style="flex:1; min-width: 80px;">MIDI</button>
-                <button id="btn-titles-toggle" class="btn-lg" onclick="toggleShowTitles()"
-                    style="flex:1; min-width: 80px;">Titles</button>
-                <button id="btn-debug-toggle" class="btn-lg" onclick="toggleDebugMode()"
-                    style="flex:1; min-width: 80px;">Debug</button>
-            </div>
-
-            <hr style="border: 0; border-top: 2px solid var(--p-line); margin: 20px 0;">
-
-            <button class="btn-lg" onclick="startGuidedTour()" style="width:100%; margin-bottom:10px;">Start Tutorial</button>
-
-            <!-- Hidden Input for Import -->
-            <input type="file" id="import-file" style="display: none;" accept=".json" onchange="importSaveFile(this)">
-
-            <div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
-
-                <!-- Row 1: File Operations -->
-                <div style="display: flex; gap: 10px; width: 100%;">
-                    <button class="btn-lg btn-green" onclick="exportSaveFile()" style="flex:1;">Export Save</button>
-                    <button class="btn-lg" onclick="document.getElementById('import-file').click()"
-                        style="flex:1;">Import Save</button>
-                </div>
-
-                <!-- Row 1.5: Delete Data -->
-                <div style="margin-top: 4px;">
-                    <button class="btn-lg btn-danger" onclick="deleteSave()" style="width: 100%;">Delete Save
-                        Data</button>
-                </div>
-
-                <!-- Row 2: Gameplay Actions -->
-                <div style="display: flex; gap: 10px; width: 100%;">
-                    <button class="btn-lg" onclick="respawnPlayer()" style="flex:1;">Respawn</button>
-                    <button class="btn-lg btn-danger" onclick="leaveGame()" style="flex:1;">Leave</button>
-                </div>
-
-            </div>
-
-            <br>
-            <button class="btn-lg" onclick="toggleOptions()">Close</button>
+            <footer class="settings-footer"><span>Settings save automatically</span><button class="btn-lg btn-green" onclick="toggleOptions()">Resume game</button></footer>
         </div>
     </div>
 
@@ -3251,13 +3621,6 @@
             <h2>Host Controls</h2>
             <div style="flex:1; overflow-y:auto;" id="host-player-list"></div>
             <button class="btn-lg" onclick="toggleHostPanel()">CLOSE</button>
-        </div>
-    </div>
-
-    <div id="patreon-container" style="display: none;">
-        <button id="btn-close-patreon" onclick="closePatreon()">×</button>
-        <div id="patreon-content" onclick="openPatreon()">
-            <img src="patreon_banner.png" alt="Support Us on Patreon!">
         </div>
     </div>
 
@@ -3278,7 +3641,8 @@
             <button class="close-x-btn" onclick="togglePropsUI()"
                 style="position: absolute; top: 10px; right: 10px;">×</button>
             <h2>Props</h2>
-            <p style="color: var(--p-text-dim); font-size: 16px; margin-bottom: 10px;">Click to place at your position</p>
+            <p style="color: var(--p-text-dim); font-size: 16px; margin-bottom: 10px;">Buy once to unlock, then place for free at your position.</p>
+            <p id="props-balance" style="margin:0 0 10px;color:var(--p-gold);" aria-live="polite"></p>
             <div id="props-list" class="grid-container" style="width:100%; flex:1; overflow-y: auto;">
                 <!-- Prop Items will be injected here -->
             </div>
@@ -3333,8 +3697,11 @@
                 <button class="tutorial-tab" onclick="showTutorialTab('fishing')">Fishing</button>
                 <button class="tutorial-tab" onclick="showTutorialTab('skills')">Skills</button>
                 <button class="tutorial-tab" onclick="showTutorialTab('exploration')">Exploration</button>
+                <button class="tutorial-tab" onclick="showTutorialTab('home')">Boats &amp; Home</button>
                 <button class="tutorial-tab" onclick="showTutorialTab('social')">Social</button>
                 <button class="tutorial-tab" onclick="showTutorialTab('progression')">Progression</button>
+                <button class="tutorial-tab" onclick="showTutorialTab('custommaps')">Custom Maps</button>
+                <button class="tutorial-tab" onclick="showTutorialTab('events')">Events</button>
             </div>
 
             <!-- Tab Content -->
@@ -3345,200 +3712,131 @@
                 <div id="tab-basics" class="tutorial-panel">
                     <h3>Getting Started</h3>
                     <div class="tutorial-section">
-                        <h4>Movement</h4>
-                        <div class="key-diagram">
-                            <div class="key-row"><span class="key">W</span></div>
-                            <div class="key-row"><span class="key">A</span><span class="key">S</span><span
-                                    class="key">D</span></div>
-                        </div>
-                        <p>Use <b>WASD</b> to move around the world.</p>
-                        <p>Press <b>SPACE</b> to jump over obstacles.</p>
-                    </div>
-                    <div class="tutorial-section">
-                        <h4>Camera</h4>
-                        <p><b>Right-Click + Drag</b> to rotate the camera</p>
-                        <p>Press <b>C</b> to toggle first-person view</p>
-                        <p>Press <b>H</b> to hide the HUD for screenshots</p>
+                        <h4>Controls</h4>
+                        <p><b>WASD</b> move · <b>Space</b> jump · <b>X</b> sit · <b>E</b> interact</p>
+                        <p>Double-tap <b>Space</b> to belly-slide. Right-drag to look; scroll in for first person.</p>
                     </div>
                     <div class="tutorial-section">
                         <h4>Hotbar</h4>
-                        <p>Press <b>1-6</b> to switch between tools:</p>
-                        <div class="hotbar-diagram">
-                            <span class="slot">1: <i data-px="rod"></i> Rod</span>
-                            <span class="slot">2: <i data-px="hand"></i> Hands</span>
-                            <span class="slot">3: <i data-px="axe"></i> Axe</span>
-                            <span class="slot">4: <i data-px="guitar"></i> Guitar</span>
-                            <span class="slot">5: <i data-px="glove"></i> Glove</span>
-                            <span class="slot">6: <i data-px="pickaxe"></i> Pickaxe</span>
-                        </div>
+                        <p>Ten slots: press <b>1–0</b>. Drag tools or fish from the inventory onto a slot.</p>
+                        <p><b>F</b> show fish · <b>C</b> emotes · <b>H</b> hide HUD · <b>Tab</b> menu · <b>Esc</b> settings</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Character</h4>
+                        <p>3D characters are active. Customize species, colors, hair, clothes, pants, and tails at the Stylist, and paint the head, torso, arms, and legs in the studio with custom brush colors and whole-body mirroring. Saved outfits can also be shared with codes.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Mobile</h4>
+                        <p>Use the thumbstick and Action/Jump buttons. Gear holds the hotbar and bait; Menu opens panels.</p>
                     </div>
                 </div>
 
                 <!-- FISHING TAB -->
                 <div id="tab-fishing" class="tutorial-panel" style="display:none;">
-                    <h3>Fishing Guide</h3>
+                    <h3>Fishing</h3>
                     <div class="tutorial-section">
-                        <h4>How to Cast</h4>
-                        <p>1. Equip your fishing rod (press <b>1</b>)</p>
-                        <p>2. <b>Hold Left-Click</b> to charge your cast</p>
-                        <p>3. <b>Release</b> to throw the line</p>
-                        <p>4. Wait for a fish to bite!</p>
+                        <h4>Casting &amp; Reeling</h4>
+                        <p>Equip a rod, hold <b>Left-Click</b> to charge, and release to cast. Hold to lift the catch bar and keep the fish in the green zone.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Reeling Minigame</h4>
-                        <p>When a fish bites, a minigame appears:</p>
-                        <div class="minigame-diagram">
-                            <div class="bar-example">
-                                <span class="fish-icon">🐟</span>
-                                <span class="capture-zone">▬▬▬</span>
-                            </div>
-                        </div>
-                        <p><b>Hold Left-Click</b> to move the capture bar UP</p>
-                        <p><b>Release</b> to let it fall DOWN</p>
-                        <p>Keep the fish inside the green zone to fill the progress bar!</p>
+                        <h4>Gear</h4>
+                        <p>Buy bait, rods, rod skins, and bobbers at the shops. Bait changes the fish pool.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Bait</h4>
-                        <p>Visit the <b>Bait Shop</b> NPC to buy better bait!</p>
-                        <p>Better bait = Higher chance of rare fish!</p>
-                        <p>Some bait unlocks exclusive fish species.</p>
+                        <h4>Zones</h4>
+                        <p>Lake · River · Light Pond · Dark Pond · Ocean · Cave · Lava · Void · Rain</p>
+                        <p>Custom levels tint tagged water so each zone is visible.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Fishing Zones</h4>
-                        <p><b>Lake</b> - Central area, common fish</p>
-                        <p><b>Dark Pond</b> - Night creatures, rare spawns</p>
-                        <p><b>Light Pond</b> - Sun-loving species</p>
-                        <p><b>Ocean</b> - Deep sea fish (access via dock)</p>
-                        <p><b>Lava World</b> - Volcanic fish (special access)</p>
+                        <h4>Rare Catches</h4>
+                        <p>Golden fish are ultra-rare in every zone. Show a fish with <b>F</b> or place it in a house display.</p>
                     </div>
                 </div>
 
                 <!-- SKILLS TAB -->
                 <div id="tab-skills" class="tutorial-panel" style="display:none;">
-                    <h3>Skills &amp; Gathering</h3>
+                    <h3>Skills</h3>
                     <div class="tutorial-section">
-                        <h4>Lumberjacking (Axe)</h4>
-                        <p>1. Equip the <b>Axe</b> (press <b>3</b>)</p>
-                        <p>2. Find a tree</p>
-                        <p>3. <b>Left-Click</b> near the tree to chop</p>
-                        <p>4. Collect <b>Wood</b> to sell at the Merchant!</p>
-                        <div class="wood-types">
-                            <span class="resource"><i data-px="tree"></i> Oak</span>
-                            <span class="resource"><i data-px="tree"></i> Willow</span>
-                            <span class="resource"><i data-px="tree"></i> Maple</span>
-                            <span class="resource"><i data-px="tree"></i> Yew</span>
-                            <span class="resource"><i data-px="tree"></i> Magic</span>
-                        </div>
-                        <p><i>Higher skill = Better wood types!</i></p>
+                        <h4>Gathering</h4>
+                        <p>The axe chops trees, the pickaxe mines rocks, and flowers are collected with <b>E</b>. Higher levels unlock better resources.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Mining (Pickaxe)</h4>
-                        <p>1. Equip the <b>Pickaxe</b> (press <b>6</b>)</p>
-                        <p>2. Find ore rocks</p>
-                        <p>3. <b>Left-Click</b> near the rock to mine</p>
-                        <p>4. Collect <b>Ore</b> to sell at the Merchant!</p>
-                        <div class="ore-types">
-                            <span class="resource"><i data-px="rock"></i> Copper</span>
-                            <span class="resource"><i data-px="rock"></i> Tin</span>
-                            <span class="resource"><i data-px="rock"></i> Iron</span>
-                            <span class="resource"><i data-px="rock"></i> Gold</span>
-                            <span class="resource"><i data-px="rock"></i> Mithril</span>
-                            <span class="resource"><i data-px="rock"></i> Adamant</span>
-                            <span class="resource"><i data-px="rock"></i> Runite</span>
-                        </div>
-                        <p><i>Higher skill = Access to rarer ores!</i></p>
+                        <h4>Fishing</h4>
+                        <p>Every catch earns Fishing XP and widens the reeling zone.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Floristry (Collecting)</h4>
-                        <p>Find flowers scattered around the world.</p>
-                        <p><b>Walk up to a flower</b> and refer to the prompt:</p>
-                        <p><b>"PRESS E TO COLLECT"</b></p>
-                        <p>Flowers give <b>Instant Money</b> and <b>Floristry XP</b>!</p>
-                        <div class="flower-types">
-                            <span class="resource"><i data-px="flower"></i> Daisy (Start)</span>
-                            <span class="resource"><i data-px="flower"></i> Dandelion (Lvl 10)</span>
-                            <span class="resource"><i data-px="flower"></i> Tulip (Lvl 20)</span>
-                            <span class="resource"><i data-px="flower"></i> Rose (Lvl 30)</span>
-                        </div>
-                        <p><i>New types unlock every 10 levels!</i></p>
-                    </div>
-                    <div class="tutorial-section">
-                        <h4>Viewing Your Skills</h4>
-                        <p>Click the <b>Skills</b> button in the top bar to see your levels!</p>
-                        <p>Skills use an XP system - keep gathering to level up!</p>
+                        <h4>Skills Menu</h4>
+                        <p>Open <b>Tab → Skills</b> to view Fishing, Lumberjacking, Mining, and Floristry.</p>
                     </div>
                 </div>
 
                 <!-- EXPLORATION TAB -->
                 <div id="tab-exploration" class="tutorial-panel" style="display:none;">
                     <h3>Exploration</h3>
+                    <p>Look for sparkling coin pouches, drift bottles, and treasure caches on land. Press <b>E</b> or tap <b>SEARCH</b> to collect money. Finds are shared, offshore rewards are larger, and new finds appear every 15 minutes.</p>
                     <div class="tutorial-section">
-                        <h4>Day &amp; Night Cycle</h4>
-                        <p><b>Daytime</b> - Brighter, some fish only appear now</p>
-                        <p><b>Nighttime</b> - Darker, rare nocturnal fish spawn</p>
-                        <p>The world has a full day/night cycle!</p>
+                        <h4>World</h4>
+                        <p>Day, night, and rain change which fish appear. Explore ocean islands and the cave summit.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Weather</h4>
-                        <p>Sometimes it rains! During rain:</p>
-                        <p>• Sky gets darker</p>
-                        <p>• <b>Rain-exclusive fish</b> can be caught!</p>
-                    </div>
-                    <div class="tutorial-section">
-                        <h4>Void Portals</h4>
-                        <p>Mysterious portals randomly appear!</p>
-                        <p>Walk into one to enter <b>The Void</b></p>
-                        <p>Catch rare <b>Void Fish</b> only found there!</p>
-                        <p>Portals disappear after 2 minutes!</p>
+                        <h4>Void</h4>
+                        <p>Timed portals lead to the Void and its exclusive fish.</p>
                     </div>
                     <div class="tutorial-section">
                         <h4>Lava World</h4>
-                        <p>Find the <b>Inferno Guard</b> NPC (lava icon)</p>
-                        <p>He guards the entrance to the Lava World!</p>
-                        <p>Catch fire-themed fish in molten lakes!</p>
+                        <p>Unlock access from the Inferno Guard and fish the volcanic arena.</p>
                     </div>
                     <div class="tutorial-section">
                         <h4>Ghost Cat</h4>
-                        <p>A mysterious black cat sometimes appears...</p>
-                        <p>Approach it if you dare!</p>
+                        <p>A rare wandering cat sometimes appears on the island.</p>
+                    </div>
+                </div>
+
+                <!-- BOATS & HOME TAB -->
+                <div id="tab-home" class="tutorial-panel" style="display:none;">
+                    <h3>Boats &amp; Home</h3>
+                    <div class="tutorial-section">
+                        <h4>Boats</h4>
+                        <p>Buy boats from Captain Finn and launch at the dock. Drive with WASD, carry passengers, and fish from the deck.</p>
+                        <p>Custom maps can include a Captain and boat dock.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>House</h4>
+                        <p>Press <b>E</b> at your house to enter. Customize or upgrade rooms, furniture, colors, walls, doors, and layouts.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Furniture &amp; TV</h4>
+                        <p>Buy and place furniture, jump on seats and tables, and set up house TVs with YouTube or Twitch stream queues.</p>
+                        <p>Display caught fish in aquariums and wall plaques; visitors can see them.</p>
                     </div>
                 </div>
 
                 <!-- SOCIAL TAB -->
                 <div id="tab-social" class="tutorial-panel" style="display:none;">
-                    <h3>Multiplayer &amp; Social</h3>
+                    <h3>Social</h3>
                     <div class="tutorial-section">
-                        <h4>Voice Chat</h4>
-                        <p><b>Hold V</b> to talk to nearby players!</p>
-                        <p>Voice is <b>proximity-based</b> - get closer to hear better!</p>
+                        <h4>Chat &amp; Voice</h4>
+                        <p><b>Enter</b> for text chat; hold <b>V</b> for proximity voice. Mute players in the Players panel.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Text Chat</h4>
-                        <p>Press <b>Enter</b> to open chat</p>
-                        <p>Type your message and press <b>Enter</b> again to send</p>
-                        <p>Chat bubbles appear above your head!</p>
+                        <h4>Emotes</h4>
+                        <p><b>C</b> opens the emote wheel. Buy and assign emotes to five slots.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Guitar</h4>
-                        <p>1. Press <b>4</b> or <b>G</b> to equip guitar</p>
-                        <p>2. Click <b>Load MIDI</b> to upload a .mid file</p>
-                        <p>3. <b>Other players hear your music!</b></p>
+                        <h4>Tools</h4>
+                        <p><b>G</b> guitar · <b>B</b> boxing glove · <b>Z</b> meow · <b>I</b> props · <b>O</b> undo prop</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Boxing Glove</h4>
-                        <p>Press <b>5</b> to equip the glove</p>
-                        <p><b>Left-Click</b> to punch nearby players!</p>
-                        <p>It's all in good fun!</p>
+                        <h4>Trading</h4>
+                        <p>Open the Players panel to trade fish with another player.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Props</h4>
-                        <p>Press <b>I</b> to open the Props menu</p>
-                        <p>Place items like campfires, tents, and more!</p>
-                        <p>Press <b>O</b> to undo your last prop</p>
+                        <h4>Houses &amp; Streams</h4>
+                        <p>Visit houses, decorate together, and watch the house TV. Owners control editing and stream playback.</p>
                     </div>
                     <div class="tutorial-section">
-                        <h4>Meow!</h4>
-                        <p>Press <b>Z</b> to meow at other players!</p>
+                        <h4>Lobbies</h4>
+                        <p>Host public or private lobbies, or browse Community Servers by players, newest, name, or tags.</p>
                     </div>
                 </div>
 
@@ -3546,40 +3844,68 @@
                 <div id="tab-progression" class="tutorial-panel" style="display:none;">
                     <h3>Progression</h3>
                     <div class="tutorial-section">
-                        <h4>Making Money</h4>
-                        <p>Find the <b>$ Merchant</b> NPC near the lake</p>
-                        <p>Press <b>E</b> to interact and sell:</p>
-                        <p>• <b>Fish</b> from your inventory</p>
-                        <p>• <b>Wood</b> from lumberjacking</p>
-                        <p>• <b>Ore</b> from mining</p>
+                        <h4>Money</h4>
+                        <p>Sell fish, wood, ore, and flowers to the Merchant. Lucky Lou sells scratch cards.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Journal &amp; Collections</h4>
+                        <p><b>Tab → Journal</b> tracks species and tiers. Complete collections for furniture and titles.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Gear</h4>
+                        <p>Upgrade rods, buy bait and bobbers, and unlock better catches.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Cooking</h4>
+                        <p><b>Tab → Cooking</b> turns owned fish into meals worth more than raw fish.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Progress</h4>
+                        <p><b>Tab → Progress</b> holds daily bounties, achievements, and the island quest chain.</p>
                     </div>
                     <div class="tutorial-section">
                         <h4>Customization</h4>
-                        <p>Find the <b>Stylist</b> NPC (stylist icon)</p>
-                        <p>Buy and customize:</p>
-                        <p>• Hats, Shirts, Patterns</p>
-                        <p>• Fur colors, Eye colors</p>
-                        <p>• Different species!</p>
-                    </div>
-                    <div class="tutorial-section">
-                        <h4>Fishing Journal</h4>
-                        <p>Click <b>Journal</b> in the top bar</p>
-                        <p>Track every fish species you've caught!</p>
-                        <p>Fish have different tiers: Normal → Glistening → Shining → Opalescent</p>
-                        <p>Can you catch them all?</p>
-                    </div>
-                    <div class="tutorial-section">
-                        <h4>Rod Upgrades</h4>
-                        <p>Better rods give bonuses:</p>
-                        <p>• Longer cast distance</p>
-                        <p>• Better catch rates</p>
-                        <p>Check the Stylist for rod cosmetics!</p>
+                        <p>The Stylist sells species, clothes, hair, pants, colors, tails, and outfits.</p>
                     </div>
                 </div>
 
+                <!-- CUSTOM MAPS TAB -->
+                <div id="tab-custommaps" class="tutorial-panel" style="display:none;">
+                    <h3>Custom Maps</h3>
+                    <div class="tutorial-section">
+                        <h4>Play</h4>
+                        <p>Load a custom island from the main menu and play or host it. Joining players download the level automatically.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Editor</h4>
+                        <p>Paint land, water, zones, and sea level. Place props, buildings, caves, NPCs, spawn points, Captain Finn, and boat docks.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Generated Ocean</h4>
+                        <p>Custom islands get generated offshore islands, ocean borders, and solid trees, rocks, flowers, and colliders.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Special Worlds</h4>
+                        <p>Lava World and the Void work on custom maps, including a reachable Inferno Guard and dry-land Void portals.</p>
+                    </div>
+                </div>
+
+                <!-- EVENTS TAB -->
+                <div id="tab-events" class="tutorial-panel" style="display:none;">
+                    <h3>Events</h3>
+                    <div class="tutorial-section">
+                        <h4>Hourly Tournament</h4>
+                        <p>Catch fish to enter automatically. Every valid fish earns cash; the top three earn podium bonuses with enough players. View standings under <b>Tab → Tournament</b>.</p>
+                    </div>
+                    <div class="tutorial-section">
+                        <h4>Hollowtide</h4>
+                        <p>During the festival, visit Morrow for event fish, Soul Embers, and limited cosmetics. The stall appears only during the event.</p>
+                    </div>
+                </div>
             </div>
 
-            <button class="btn-lg" onclick="toggleTutorial()" style="margin-top: 15px;">CLOSE GUIDE</button>
+            <button class="btn-lg" onclick="toggleTutorial();GuidedTutorial.resume()">ON-SCREEN WALKTHROUGH</button>
+        <button class="btn-lg" onclick="toggleTutorial()" style="margin-top: 15px;">CLOSE GUIDE</button>
         </div>
     </div>
 
@@ -3750,6 +4076,7 @@
     <div id="ui-layer">
         <div id="stats-ui">
             <div class="stat-row">
+                <button id="btn-emotes" onclick="Emotes.toggle()" title="Emote wheel (C)">Emotes</button>
                 <button id="btn-settings" onclick="toggleOptions()">⚙️</button>
                 <button id="btn-host-panel" onclick="toggleHostPanel()" style="display:none;">🛡️</button>
                 <button id="btn-players" onclick="togglePlayerList()">👥</button>
@@ -3757,6 +4084,7 @@
 
                 <div class="stat-box">
                     <span id="money-display">$0</span>
+                    <span id="halloween-hud" hidden title="Hollowtide Soul Embers · event ends November 8, New York time"></span>
 
                     <button class="btn-lg btn-danger" id="btn-admin-login"
                         style="font-size: 10px; padding: 4px 8px; margin-left: 5px;">ADMIN</button>
@@ -3784,31 +4112,7 @@
         </div>
 
         <div id="crosshair"></div>
-        <div id="instructions">
-            <div class="close-controls" onclick="this.parentElement.style.display='none'" title="Close Controls">✕</div>
-
-            <div class="title">CONTROLS</div>
-
-            <b>WASD</b> <span>Move</span>
-            <b>Space</b> <span>Jump</span>
-            <b>E</b> <span>Interact</span>
-            <b>L-Click</b> <span>Fish / Cast</span>
-            <b>R-Click</b> <span>Rotate Cam</span>
-            <b>Enter</b> <span>Chat</span>
-            <b>V</b> <span>Voice Chat</span>
-            <b>F</b> <span>Show Fish</span>
-            <b>Z</b> <span>Meow</span>
-            <b>I</b> <span>Props</span>
-            <b>O</b> <span>Undo Prop</span>
-            <b>H</b> <span>Hide HUD</span>
-        </div>
-        <div id="guided-tour" style="display:none; position:fixed; bottom:120px; left:50%; transform:translateX(-50%); z-index:10002; background:var(--p-face); border:2px solid var(--p-line); padding:12px 16px; max-width:420px; text-align:center; pointer-events:auto;">
-        <div id="guided-tour-text" style="margin-bottom:10px; font-size:14px;"></div>
-        <div style="display:flex; gap:8px; justify-content:center;">
-            <button class="btn-sm" onclick="guidedTourNext()">Next</button>
-            <button class="btn-sm" onclick="guidedTourSkip()">Skip</button>
-        </div>
-    </div>
+        <section id="guided-tour" hidden aria-label="Interactive tutorial"></section>
         <div id="npc-prompt">PRESS E TO INTERACT</div>
         <div id="chat-ui" style="display: none;">
             <div id="chat-messages"></div>
@@ -3824,7 +4128,7 @@
                 <div id="gif-attrib">Powered by GIPHY</div>
             </div>
             <div id="chat-input-row">
-                <input type="text" id="chat-input" placeholder="Chat here...">
+                <input type="text" id="chat-input" placeholder="Chat here..." title="Inline images: direct HTTPS images from Imgur, Reddit image CDNs and GIPHY. Other URLs stay text.">
                 <button type="button" id="gif-btn" title="Search GIFs">GIF</button>
             </div>
         </div>
@@ -3855,11 +4159,11 @@
         </div>
         <div id="mobile-controls">
             <div id="mobile-toggles">
-                <div id="mic-toggle-mobile" class="toggle-btn">🔇</div>
-                <div id="chat-toggle-mobile" class="toggle-btn">💬</div>
+                <button type="button" id="mic-toggle-mobile" class="toggle-btn">🔇</button>
+                <button type="button" id="chat-toggle-mobile" class="toggle-btn">💬</button>
             </div>
 
-            <div id="btn-fullscreen-mobile">⛶</div>
+            <button type="button" id="btn-fullscreen-mobile">⛶</button>
 
             <div id="joystick-zone" class="touch-zone">
                 <div id="joystick-base">
@@ -3869,23 +4173,23 @@
 
             <div id="touch-buttons" class="touch-zone">
                 <div class="touch-row">
-                    <div id="btn-mobile-meow" class="touch-btn-sm">🐱</div>
-                    <div id="btn-mobile-undo-prop" class="touch-btn-sm">🗑️</div>
+                    <button type="button" id="btn-mobile-meow" class="touch-btn-sm">🐱</button>
+                    <button type="button" id="btn-mobile-undo-prop" class="touch-btn-sm">🗑️</button>
                 </div>
 
                 <div class="touch-row">
-                    <div id="btn-mobile-guitar" class="touch-btn-sm">🎸</div>
-                    <div id="btn-mobile-glove" class="touch-btn-sm">🥊</div>
-                    <div id="btn-mobile-show-fish" class="touch-btn-sm">🐟</div>
+                    <button type="button" id="btn-mobile-guitar" class="touch-btn-sm">🎸</button>
+                    <button type="button" id="btn-mobile-glove" class="touch-btn-sm">🥊</button>
+                    <button type="button" id="btn-mobile-show-fish" class="touch-btn-sm">🐟</button>
                 </div>
 
                 <div class="touch-row">
-                    <div id="btn-mobile-place" class="touch-btn-sm">🪑</div>
-                    <div id="btn-mobile-empty" class="touch-btn-sm">✋</div>
+                    <button type="button" id="btn-mobile-place" class="touch-btn-sm">🪑</button>
+                    <button type="button" id="btn-mobile-empty" class="touch-btn-sm">✋</button>
                 </div>
 
-                <div id="btn-action" class="touch-btn">FISH</div>
-                <div id="btn-jump" class="touch-btn">JUMP</div>
+                <button type="button" id="btn-action" class="touch-btn">FISH</button>
+                <button type="button" id="btn-jump" class="touch-btn">JUMP</button>
             </div>
 
 
@@ -3942,18 +4246,38 @@
     </script>
 
     <script src="icons.js?v=109"></script>
-    <script src="worldgen.js?v=112"></script>
-    <script src="ocean.js?v=119"></script>
-    <script src="core.js?v=12.208"></script>
-    <script src="fish.js?v=12.157"></script>
-    <script src="character3d.js?v=106"></script>
-    <script src="networking.js?v=12.130"></script>
-    <script src="audio.js?v=12.139"></script>
+    <script src="worldgen.js?v=12.517"></script>
+    <script src="ocean.js?v=12.481"></script>
+    <script src="core.js?v=12.532"></script>
+    <script src="fish.js?v=12.515"></script>
+    <script src="protogen-logo.js?v=12.496"></script>
+    <script src="character3d.js?v=12.519"></script>
+    <script src="bobbers3d.js?v=12.437"></script>
+    <script src="networking.js?v=12.449"></script>
+    <script src="audio.js?v=12.484"></script>
+    <script src="reel-audio.js?v=12.441"></script>
     <script src="progression.js?v=107"></script>
-    <script src="ui.js?v=12.305"></script>
-    <script src="props.js?v=12.191"></script>
-    <script src="level-loader.js?v=103"></script>
+    <script src="performance.js?v=51"></script>
+    <script src="outdoor-props.js?v=12.488"></script>
+    <script src="rowboat.js?v=12.480"></script>
+    <script src="network-guard.js?v=12.516"></script>
+    <script src="ui.js?v=12.525"></script>
+    <script src="shop-preview.js?v=12.513"></script>
+    <script src="shop-try-on.js?v=12.498"></script>
+    <script src="character-thumbnails.js?v=12.510"></script>
+    <script src="character-studio.js?v=12.514"></script>
+    <script src="emotes.js?v=12.469"></script>
+    <script src="tournaments.js?v=12.478"></script>
+    <script src="furniture.js?v=12.459"></script>
+    <script src="housing.js?v=12.490"></script>
+    <script src="props.js?v=12.494"></script>
+    <script src="exploration.js?v=12.486"></script>
+    <script src="level-loader.js?v=104"></script>
     <script src="scratch.js?v=101"></script>
+    <script src="boats.js?v=12.486"></script>
+    <script src="halloween.js?v=12.510"></script>
+    <script src="mobile-ui.js?v=12.486"></script>
+    <script src="guided-tutorial.js?v=12.493"></script>
 
     <!-- Start Open Web Analytics Tracker -->
     <script type="text/javascript">
@@ -4011,8 +4335,9 @@
         </div>
         <div style="width:90%; max-width:560px; display:flex; gap:6px; margin:10px 0;">
             <input type="text" id="screen-queue-input" placeholder="Paste YouTube/Twitch URL" style="flex:1;">
-            <button class="btn-sm" onclick="addScreenQueueFromInput()">Add</button>
+            <button class="btn-sm" id="screen-queue-add" onclick="addScreenQueueFromInput()">Add</button>
         </div>
+        <div style="width:90%;max-width:560px;display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:4px 0 12px;"><button class="btn-sm" id="screen-pause-button" onclick="toggleScreenPause()" aria-pressed="false" hidden>Pause video</button><button class="btn-sm" id="screen-resync-live" onclick="resyncScreenToLive()" style="min-height:44px" hidden>Resume live for room</button><button class="btn-sm" id="screen-restart-live" onclick="restartTwitchAtLive()" style="min-height:44px" hidden>Restart at live (this device)</button><button class="btn-sm" id="screen-play-live" onclick="playTwitchHere()" style="min-height:44px" hidden>Play here</button><span id="screen-playback-status" role="status" style="color:var(--p-text-dim);"></span></div>
         <div id="screen-queue-list" style="width:90%; max-width:560px; max-height:50vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
         <button class="btn-lg" onclick="toggleScreenQueue()" style="margin-top:15px;">CLOSE</button>
     </div>

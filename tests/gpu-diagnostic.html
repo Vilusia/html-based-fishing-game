@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Graphics diagnostic</title><style>body{background:#171d24;color:#edf1f4;font:16px/1.7 monospace;padding:25px}pre{white-space:pre-wrap}canvas{display:none}</style></head><body><h2>Graphics diagnostic — no game running</h2><pre id="result">Measuring…</pre><canvas id="gpu" width="1" height="1"></canvas><script>
+const canvas=document.getElementById('gpu'),gl=canvas.getContext('webgl');
+let renderer='WebGL unavailable',vendor='',version='';
+if(gl){const extension=gl.getExtension('WEBGL_debug_renderer_info');renderer=gl.getParameter(extension?extension.UNMASKED_RENDERER_WEBGL:gl.RENDERER);vendor=gl.getParameter(extension?extension.UNMASKED_VENDOR_WEBGL:gl.VENDOR);version=gl.getParameter(gl.VERSION);}
+const software=/swiftshader|llvmpipe|software|basic render/i.test(renderer);
+let start=performance.now(),frames=0;function measure(now){frames++;if(now-start>=1000){document.getElementById('result').textContent='Renderer: '+renderer+'\nVendor: '+vendor+'\nWebGL: '+version+'\nSoftware renderer detected: '+software+'\nIdle browser FPS: '+Math.round(frames*1000/(now-start))+'\nDevice pixel ratio: '+devicePixelRatio+'\nPage visibility: '+document.visibilityState+'\nBrowser: '+navigator.userAgent;frames=0;start=now;}requestAnimationFrame(measure);}requestAnimationFrame(measure);
+</script></body></html>

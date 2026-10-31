@@ -1,7 +1,40 @@
 // --- PROP SYSTEM (Added by Antigravity) ---
 let myProps = []; // Local tracking if needed, but primarily server-authoritative
-let props = {}; // {id: mesh}
+let props = Object.create(null); // {id: mesh}; peer ids cannot touch Object.prototype.
 let activeProps = []; // HOST ONLY: Tracks props placed by remote clients
+const PROP_PLAYER_LIMIT=10,PROP_ROOM_LIMIT=100;
+const pendingPropRequests=new Map();
+function localPlacedProps(){
+    const device=String(typeof myDeviceID!=='undefined'&&myDeviceID||''),peer=typeof myPeerId!=='undefined'?myPeerId:null,ids=new Set(myProps.map(p=>p.id));
+    return Object.values(props).map(m=>m.userData.propData).filter(p=>p&&(ids.has(p.id)||(device&&p.placer===device)||(peer&&p.owner===peer)));
+}
+function pendingPlacements(){for(const [id,p] of pendingPropRequests)if(Date.now()-p.at>5000)pendingPropRequests.delete(id);return [...pendingPropRequests.values()];}
+function validateRemotePropPlacement(clientId,data){
+    const reject=(error,abuse=false)=>({ok:false,error,abuse});
+    if(data.propType!=='house'&&!outdoorPropDefinition(data.propType))return reject('Unknown prop type.',true);
+    if(data.propType!=='house'&&!normalizePropUnlocks(data.unlockedProps).includes(data.propType))return reject('Buy this prop before placing it.');
+    if(typeof data.propId!=='string'||!/^[A-Za-z0-9_-]{1,40}$/.test(data.propId)||['__proto__','constructor','prototype'].includes(data.propId))return reject('Invalid prop id.',true);
+    if(props[data.propId]||activeProps.some(p=>p.id===data.propId)||myProps.some(p=>p.id===data.propId))return reject('Duplicate prop id.',true);
+    if(!Number.isFinite(data.x)||!Number.isFinite(data.z)||!Number.isFinite(data.rot))return reject('Invalid prop coordinates.',true);
+    const main=window.Ocean.inBounds(data.x,data.z,-.01),special=(Math.abs(data.x-10000)<500&&Math.abs(data.z-10000)<500)||(Math.abs(data.x+20000)<500&&Math.abs(data.z)<500);
+    if(!main&&!special)return reject('Prop position is outside the world.',true);
+    const peer=otherPlayers[clientId]?.lastData,pos=peer?.pos;
+    if(!pos||![pos.x,pos.y,pos.z].every(Number.isFinite)||peer.houseOwner)return reject('Place outdoor props while outside.');
+    if(Math.hypot(data.x-pos.x,data.z-pos.z)>(data.propType==='house'?18:8))return reject('Props must be placed near your player.',true);
+    if(data.propType==='house'&&!window.Ocean.inBounds(data.x,data.z,2))return reject('Place your home on the main map.');
+    const owner=activeProps.filter(p=>p.owner===clientId),device=String(clientConns[clientId]?.deviceID||clientId);
+    if(data.propType==='house'&&Object.values(props).some(m=>m.userData.propData?.type==='house'&&(m.userData.propData.owner===clientId||m.userData.propData.placer===device)))return reject('You already placed a home. Undo it before placing another.');
+    if(owner.length>=PROP_PLAYER_LIMIT)return reject('You can place at most '+PROP_PLAYER_LIMIT+' props. Undo one first.');
+    if(Object.keys(props).length>=PROP_ROOM_LIMIT)return reject('The room has reached its prop limit.');
+    if(data.propType==='screen'&&Object.values(props).filter(m=>m.userData.propData?.type==='screen').length>=MAX_YT_SCREENS)return reject('The room has reached its screen limit.');
+    if(data.propType==='house'){const water=waterSurfaceAt(data.x,data.z);if(water!==null&&getTerrainHeight(data.x,data.z)<water)return reject('Place homes on dry land.');}
+    return {ok:true};
+}
+function removePropsOwnedBy(peer){
+    const doomed=activeProps.filter(p=>p.owner===peer);activeProps=activeProps.filter(p=>p.owner!==peer);
+    for(const p of doomed){removePropFromWorld(p.id);broadcastToClients({type:'propRemoved',id:p.id});}
+}
+window.propPlacementNotice=function(data){pendingPropRequests.delete(data.id);showToast(String(data.message||'Unable to place prop.').slice(0,180));};
 
 window.togglePropsUI = function () {
     const ui = document.getElementById('props-ui');
@@ -59,50 +92,30 @@ function renderPropsUI() {
     if (!list) return;
     list.innerHTML = '';
 
-    const items = [
-        { id: 'campfire', icon: 'campfire', name: 'Campfire' },
-        { id: 'tent', icon: 'tent', name: 'Tent' },
-        { id: 'blanket', icon: 'blanket', name: 'Picnic Mat' },
-        { id: 'chair', icon: 'chair', name: 'Chair' },
-        { id: 'couch', icon: 'couch', name: 'Couch' },
-        { id: 'table', icon: 'table', name: 'Picnic Table' },
-        { id: 'cooler', icon: 'cooler', name: 'Cooler' },
-        { id: 'basket', icon: 'basket', name: 'Basket' },
-        { id: 'radio', icon: 'radio', name: 'Radio' },
-        { id: 'lantern', icon: 'lantern', name: 'Lantern' },
-        // NEW PROPS
-        { id: 'umbrella', icon: 'umbrella', name: 'Beach Umbrella' },
-        { id: 'grill', icon: 'grill', name: 'BBQ Grill' },
-        { id: 'hammock', icon: 'hammock', name: 'Hammock' },
-        { id: 'logbench', icon: 'logbench', name: 'Log Bench' },
-        { id: 'fishsign', icon: 'fishsign', name: 'Fishing Sign' },
-        { id: 'crate', icon: 'crate', name: 'Dock Crate' },
-        { id: 'buoy', icon: 'buoy', name: 'Buoy' },
-        { id: 'anchor', icon: 'anchor', name: 'Anchor' },
-        { id: 'flowerpot', icon: 'flowerpot', name: 'Flower Pot' },
-        { id: 'torch', icon: 'torch', name: 'Tiki Torch' },
-        { id: 'boat', icon: 'boat', name: 'Rowboat' },
-        { id: 'tireswing', icon: 'tireswing', name: 'Tire Swing' },
-        { id: 'hotspring', icon: 'hotspring', name: 'Hot Spring' },
-        { id: 'windchime', icon: 'windchime', name: 'Wind Chime' },
-        { id: 'surfboard', icon: 'surfboard', name: 'Surfboard' },
-        { id: 'screen', icon: 'screen', name: 'Stream Player' }
-    ];
-
-    items.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'grid-entry';
-        const ic = window.PX ? PX.icon(item.icon, 30) : '';
-        div.innerHTML = `<div>${ic}</div><div>${item.name}</div>`;
-        div.onclick = () => {
-            placeProp(item.id);
-            togglePropsUI();
+    const balance=document.getElementById('props-balance');
+    if(balance)balance.textContent='$'+Number(saveState.money||0).toLocaleString()+' available';
+    const items=[...OUTDOOR_PROPS,{id:'house',name:'Player House',icon:'home'}];
+    items.forEach(item=>{
+        const owned=ownsOutdoorProp(item.id),button=document.createElement('button');
+        button.type='button';button.className='grid-entry prop-card'+(owned?' is-owned':' is-locked');
+        const icon=window.PX?PX.icon(item.icon,30):'';
+        button.innerHTML='<div>'+icon+'</div><div>'+item.name+'</div><span class="prop-ownership">'+(owned?'Unlocked':'$'+item.price.toLocaleString())+'</span><span class="prop-action">'+(owned?'Place':'Buy unlock')+'</span>';
+        button.setAttribute('aria-label',item.name+(owned?' — place':' — unlock for $'+item.price));
+        if(item.id==='house'&&(localPlacedProps().some(p=>p.type==='house')||pendingPlacements().some(p=>p.type==='house'))){button.disabled=true;button.querySelector?.('.prop-action')?.replaceChildren('Already placed');}
+        button.onclick=()=>{
+            if(!ownsOutdoorProp(item.id)){buyOutdoorProp(item.id);renderPropsUI();return;}
+            if(placeProp(item.id))togglePropsUI();
         };
-        list.appendChild(div);
+        list.appendChild(button);
     });
 }
-
 function placeProp(type) {
+    if(!ownsOutdoorProp(type)){showToast('Buy this prop in the Props menu first.');return false;}
+    if(window.Housing && Housing.inside){showToast('Use Customize > Furniture store & layout to furnish your house.');return;}
+    const placed=localPlacedProps(),pending=pendingPlacements();
+    if(type==='house'&&(placed.some(p=>p.type==='house')||pending.some(p=>p.type==='house'))){showToast('You already placed a home. Undo it before placing another.');return false;}
+    if(placed.length+pending.length>=PROP_PLAYER_LIMIT){showToast('You can place at most '+PROP_PLAYER_LIMIT+' props. Undo one first.');return false;}
+    if(Object.keys(props).length>=PROP_ROOM_LIMIT){showToast('The room has reached its prop limit.');return false;}
     // RATE LIMIT
     if (Date.now() - lastPropTime < PROP_COOLDOWN) {
         showToast("Slow down!", 'error');
@@ -114,7 +127,7 @@ function placeProp(type) {
     if (type === 'screen') {
         // Room-wide cap: each embed is its own iframe (heavy), so limit how
         // many screens a room may show at once.
-        const ytCount = Object.keys(ytPlayers).length;
+        const ytCount = Object.keys(ytPlayers).filter(id => ytPlayers[id] && !ytPlayers[id].inHouse).length;
         if (ytCount >= MAX_YT_SCREENS) {
             showToast('This room already has ' + MAX_YT_SCREENS + ' screens.', 'error');
             return;
@@ -124,9 +137,15 @@ function placeProp(type) {
 
     lastPropTime = Date.now();
 
-    const x = parseFloat(player.position.x.toFixed(2));
-    const z = parseFloat(player.position.z.toFixed(2));
-    const rot = parseFloat(player.rotation.y.toFixed(3)); // Add rotation
+    let x = parseFloat(player.position.x.toFixed(2));
+    let z = parseFloat(player.position.z.toFixed(2));
+    let rot = parseFloat(player.rotation.y.toFixed(3));
+    if(type==='house'){
+        if(isInVoid||isInLavaWorld){showToast('Place houses on the main island or a custom level.');return;}
+        x+=Math.sin(rot)*8;z+=Math.cos(rot)*8;rot+=Math.PI;
+        const surface=waterSurfaceAt(x,z),height=getTerrainHeight(x,z);
+        if(surface!==null&&height<surface){showToast('Place houses on dry land.');return;}
+    } // Add rotation
 
     // Wall-clock anchor for video sync: every client advances its own player
     // from startedAt, so no periodic timestamps are needed to stay in step.
@@ -147,6 +166,7 @@ function placeProp(type) {
         queueIndex: 0,
         startedAt: startedAt,
         placer: String(myDeviceID || ''),
+        owner: typeof myPeerId!=='undefined'&&myPeerId?myPeerId:'solo-player',
         timestamp: Date.now()
     };
 
@@ -156,9 +176,11 @@ function placeProp(type) {
         broadcastToClients({ type: 'propPlaced', prop: propData });
         if (src && src.provider === 'youtube') startYtSyncLoop(propData);
     } else if (hostConn && hostConn.open) {
+        pendingPropRequests.set(propData.id,{type,at:Date.now()});
         hostConn.send({
             type: 'placeProp',
             propType: type,
+            unlockedProps: normalizePropUnlocks(saveState.unlockedProps),
             // The host relays our id back in propPlaced so ALL records across
             // the room share one id (this keeps the sync key stable).
             propId: propData.id,
@@ -186,11 +208,12 @@ function placeProp(type) {
     // derived from the scene.
     saveState.propsPlaced = (Number(saveState.propsPlaced) || 0) + 1;
     if (typeof notifyPropPlaced === 'function') notifyPropPlaced();
+    return true;
 }
 
 
 function undoProp() {
-    if (isHost) {
+    if (isHost||!hostConn?.open) {
         // Host Undo
         if (myProps.length > 0) {
             const last = myProps.pop();
@@ -203,644 +226,25 @@ function undoProp() {
     }
 }
 
-// Helper to create a checkered texture on the fly
-function createCheckeredTexture(c1, c2) {
-    const size = 512;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = c1;
-    ctx.fillRect(0, 0, size, size);
-
-    ctx.fillStyle = c2;
-    const squares = 4; // 4x4 checkerboard
-    const step = size / squares;
-
-    for (let i = 0; i < squares; i++) {
-        for (let j = 0; j < squares; j++) {
-            if ((i + j) % 2 === 0) {
-                ctx.fillRect(i * step, j * step, step, step);
-            }
-        }
-    }
-
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.magFilter = THREE.NearestFilter; // Keep it pixelated/sharp
-    return tex;
-}
-
+// Placeable outdoor props share the same renderer in both character modes.
 function spawnPropMesh(data) {
+    if(!data||typeof data.id!=='string'||data.id.length>40||!Number.isFinite(data.x)||!Number.isFinite(data.z))return;
+    pendingPropRequests.delete(data.id);
     if (props[data.id]) return;
+    if(Object.keys(props).length>=PROP_ROOM_LIMIT)return;
 
     let mesh;
     const g = new THREE.Group();
 
-    // ... (Campfire logic remains the same) ...
-    if (data.type === 'campfire') {
-        const logGeo = new THREE.CylinderGeometry(0.15, 0.15, 1.2);
-        const logMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        [[Math.PI / 4, 0.1], [-Math.PI / 4, 0.1], [0, 0.1], [Math.PI / 2, 0.1]].forEach((rot) => {
-            const l = new THREE.Mesh(logGeo, logMat);
-            l.rotation.z = Math.PI / 2; l.rotation.y = rot[0]; l.position.y = rot[1];
-            g.add(l);
-        });
-        const fire = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.0, 8), new THREE.MeshBasicMaterial({ color: 0xff4500 }));
-        fire.position.y = 0.6; g.add(fire);
-        const light = new THREE.PointLight(0xffaa00, 2, 10);
-        light.position.y = 1.0; g.add(light);
-    }
-
-    // --- NEW TENT: A-FRAME WITH DOUBLE BED ---
-    else if (data.type === 'tent') {
-        // A-Frame tent: Two sloped roof panels meeting at a peak, touching the ground
-        const roofMat = new THREE.MeshStandardMaterial({ color: 0x556B2F, side: THREE.DoubleSide });
-
-        // Tent dimensions (bigger - fits 2 people)
-        const tentWidth = 6.0;   // Total width at base
-        const tentHeight = 3.5;  // Peak height
-        const tentDepth = 7.0;   // Length front to back
-
-        // Calculate slope dimensions using Pythagorean theorem
-        // Each slope goes from ground to peak (half the base width, full height)
-        const halfWidth = tentWidth / 2;
-        const slopeLength = Math.sqrt(halfWidth * halfWidth + tentHeight * tentHeight);
-        const slopeAngle = Math.atan2(tentHeight, halfWidth); // Angle from ground to peak
-
-        // Left Slope - pivots from left ground edge, rotates up to peak
-        const slope1 = new THREE.Mesh(new THREE.BoxGeometry(slopeLength, 0.1, tentDepth), roofMat);
-        // Position at left edge, halfway up the slope
-        slope1.position.set(-halfWidth / 2, tentHeight / 2, 0);
-        slope1.rotation.z = slopeAngle; // Rotate to meet at peak
-
-        // Right Slope - pivots from right ground edge, rotates up to peak
-        const slope2 = new THREE.Mesh(new THREE.BoxGeometry(slopeLength, 0.1, tentDepth), roofMat);
-        // Position at right edge, halfway up the slope
-        slope2.position.set(halfWidth / 2, tentHeight / 2, 0);
-        slope2.rotation.z = -slopeAngle; // Rotate opposite direction
-
-        // Ridge pole at the peak (optional visual element)
-        const ridgeMat = new THREE.MeshStandardMaterial({ color: 0x8B7355 });
-        const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, tentDepth + 0.3), ridgeMat);
-        ridge.position.set(0, tentHeight, 0);
-
-        // 2. The Double Bed Inside (scaled to fit larger tent)
-        const bedGrp = new THREE.Group();
-
-        // Mattress (White) - sized to fit inside tent
-        const mattress = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.35, 5.5), new THREE.MeshStandardMaterial({ color: 0xeeeeee }));
-        mattress.position.y = 0.175;
-
-        // Pillows (Two distinct pillows)
-        const pillowGeo = new THREE.BoxGeometry(1.4, 0.25, 0.6);
-        const pillowMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-
-        const p1 = new THREE.Mesh(pillowGeo, pillowMat);
-        p1.position.set(-1.0, 0.5, -2.2);
-
-        const p2 = new THREE.Mesh(pillowGeo, pillowMat);
-        p2.position.set(1.0, 0.5, -2.2);
-
-        // Duvet (Covering bottom half) - RED
-        const duvet = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.4, 3.0), new THREE.MeshStandardMaterial({ color: 0xcc3333 }));
-        duvet.position.set(0, 0.25, 0.8);
-
-        bedGrp.add(mattress, p1, p2, duvet);
-
-        g.add(slope1, slope2, ridge, bedGrp);
-    }
-
-    // --- NEW BLANKET: CHECKERED & BIGGER ---
-    else if (data.type === 'blanket') {
-        // Use the helper function to make a sharp Red/White checker texture
-        const tex = createCheckeredTexture('#cc3333', '#ffffff');
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
-        tex.repeat.set(2, 2); // Make the tiles smaller/more dense
-
-        const bMat = new THREE.MeshStandardMaterial({ map: tex });
-
-        // Size increased to 4x4 (was 3x3)
-        const blanket = new THREE.Mesh(new THREE.BoxGeometry(4, 0.05, 4), bMat);
-        g.add(blanket);
-    }
-
-    // --- NEW CHAIR: WOODEN SLAT STYLE ---
-    else if (data.type === 'chair') {
-        const woodMat = new THREE.MeshStandardMaterial({ color: 0x5D4037 }); // Dark Wood
-
-        // Legs (Angled slightly)
-        const legGeo = new THREE.BoxGeometry(0.15, 1.2, 0.15);
-        const l1 = new THREE.Mesh(legGeo, woodMat); l1.position.set(-0.6, 0.6, -0.6); l1.rotation.z = 0.1; l1.rotation.x = 0.1;
-        const l2 = new THREE.Mesh(legGeo, woodMat); l2.position.set(0.6, 0.6, -0.6); l2.rotation.z = -0.1; l2.rotation.x = 0.1;
-        const l3 = new THREE.Mesh(legGeo, woodMat); l3.position.set(-0.6, 0.6, 0.6); l3.rotation.z = 0.1; l3.rotation.x = -0.1;
-        const l4 = new THREE.Mesh(legGeo, woodMat); l4.position.set(0.6, 0.6, 0.6); l4.rotation.z = -0.1; l4.rotation.x = -0.1;
-
-        // Seat (Plank style)
-        const seat = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 1.6), woodMat);
-        seat.position.y = 1.2;
-
-        // Backrest (Vertical Slats)
-        const backGrp = new THREE.Group();
-        backGrp.position.set(0, 1.2, -0.7);
-        backGrp.rotation.x = -0.2; // Lean back slightly
-
-        // Frame posts
-        const postGeo = new THREE.BoxGeometry(0.15, 1.5, 0.1);
-        const pLeft = new THREE.Mesh(postGeo, woodMat); pLeft.position.x = -0.6; pLeft.position.y = 0.75;
-        const pRight = new THREE.Mesh(postGeo, woodMat); pRight.position.x = 0.6; pRight.position.y = 0.75;
-
-        // Top bar
-        const topBar = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.2, 0.1), woodMat);
-        topBar.position.y = 1.4;
-
-        // Inner Slats
-        const slatGeo = new THREE.BoxGeometry(0.1, 1.2, 0.05);
-        const s1 = new THREE.Mesh(slatGeo, woodMat); s1.position.set(-0.2, 0.6, 0);
-        const s2 = new THREE.Mesh(slatGeo, woodMat); s2.position.set(0.2, 0.6, 0);
-
-        backGrp.add(pLeft, pRight, topBar, s1, s2);
-
-        g.add(l1, l2, l3, l4, seat, backGrp);
-
-        // Scale it down slightly so it fits the player
-        g.scale.set(0.7, 0.7, 0.7);
-    }
-
-    // --- COUCH: LONG SEATED FURNITURE ---
-    else if (data.type === 'couch') {
-        const fabricMat = new THREE.MeshStandardMaterial({ color: 0x7B5B3A });
-
-        // Legs
-        const legGeo = new THREE.BoxGeometry(0.15, 0.6, 0.15);
-        const positions = [[-1.3, 0.3, -0.6], [1.3, 0.3, -0.6], [-1.3, 0.3, 0.6], [1.3, 0.3, 0.6]];
-        positions.forEach(p => {
-            const l = new THREE.Mesh(legGeo, fabricMat);
-            l.position.set(p[0], p[1], p[2]);
-            g.add(l);
-        });
-
-        // Seat (long)
-        const seat = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.3, 1.2), fabricMat);
-        seat.position.y = 0.75;
-        g.add(seat);
-
-        // Backrest
-        const back = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.0, 0.3), fabricMat);
-        back.position.set(0, 1.4, -0.45);
-        back.rotation.x = -0.15;
-        g.add(back);
-
-        // Armrests
-        const armGeo = new THREE.BoxGeometry(0.3, 0.8, 1.2);
-        const armL = new THREE.Mesh(armGeo, fabricMat); armL.position.set(-1.65, 1.1, 0);
-        const armR = new THREE.Mesh(armGeo, fabricMat); armR.position.set(1.65, 1.1, 0);
-        g.add(armL, armR);
-
-        // Cushions (visual)
-        const cushMat = new THREE.MeshStandardMaterial({ color: 0x9B7B5A });
-        for (let i = -1; i <= 1; i++) {
-            const c = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.15, 1.0), cushMat);
-            c.position.set(i * 1.0, 0.95, 0);
-            g.add(c);
-        }
-
-        g.scale.set(0.7, 0.7, 0.7);
-    }
-    else if (data.type === 'table') {
-        const wood = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        const top = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.1, 1.5), wood); top.position.y = 0.9;
-        const leg = new THREE.BoxGeometry(0.15, 0.9, 0.15);
-        const l1 = new THREE.Mesh(leg, wood); l1.position.set(-1, 0.45, 0.5);
-        const l2 = new THREE.Mesh(leg, wood); l2.position.set(1, 0.45, 0.5);
-        const l3 = new THREE.Mesh(leg, wood); l3.position.set(-1, 0.45, -0.5);
-        const l4 = new THREE.Mesh(leg, wood); l4.position.set(1, 0.45, -0.5);
-        g.add(top, l1, l2, l3, l4);
-    }
-    else if (data.type === 'cooler') {
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), new THREE.MeshStandardMaterial({ color: 0x1E90FF }));
-        body.position.y = 0.3;
-        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.15, 0.55), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-        lid.position.y = 0.65;
-        g.add(body, lid);
-    }
-    else if (data.type === 'basket') {
-        const weave = new THREE.MeshStandardMaterial({ color: 0xDEB887 });
-        const box = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.4), weave);
-        box.position.y = 0.2;
-        const handle = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.02, 4, 8, Math.PI), new THREE.MeshStandardMaterial({ color: 0x8B4513 }));
-        handle.position.set(0, 0.4, 0);
-        g.add(box, handle);
-    }
-    else if (data.type === 'radio') {
-        const rMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.2), rMat);
-        body.position.y = 0.2;
-        const spk = new THREE.Mesh(new THREE.CircleGeometry(0.15, 16), new THREE.MeshBasicMaterial({ color: 0x111111 }));
-        spk.position.set(0.15, 0.2, 0.11);
-        const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.6), new THREE.MeshStandardMaterial({ color: 0x999999 }));
-        ant.position.set(-0.25, 0.5, 0);
-        g.add(body, spk, ant);
-    }
-    else if (data.type === 'lantern') {
-        const frame = new THREE.MeshStandardMaterial({ color: 0x222222 });
-        const glass = new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0.8 });
-        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 0.1), frame); base.position.y = 0.05;
-        const globe = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.4), glass); globe.position.y = 0.3;
-        const light = new THREE.PointLight(0xffaa00, 1.5, 8); light.position.y = 0.3;
-        g.add(base, globe, light);
-    }
-    // --- NEW PROPS ---
-    else if (data.type === 'umbrella') {
-        // Beach Umbrella - colorful striped canopy on a pole
-        const poleMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.5), poleMat);
-        pole.position.y = 1.25;
-        const canopyMat = new THREE.MeshStandardMaterial({ color: 0xFF6B6B, side: THREE.DoubleSide });
-        const canopy = new THREE.Mesh(new THREE.ConeGeometry(1.5, 0.6, 8, 1, true), canopyMat);
-        canopy.position.y = 2.5;
-        g.add(pole, canopy);
-    }
-    else if (data.type === 'grill') {
-        // BBQ Grill - barrel style
-        const metalMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a });
-        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.8, 16), metalMat);
-        barrel.rotation.z = Math.PI / 2;
-        barrel.position.y = 0.8;
-        const leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.8, 0.08), metalMat);
-        leg1.position.set(-0.35, 0.4, 0.4);
-        const leg2 = leg1.clone(); leg2.position.set(0.35, 0.4, 0.4);
-        const leg3 = leg1.clone(); leg3.position.set(-0.35, 0.4, -0.4);
-        const leg4 = leg1.clone(); leg4.position.set(0.35, 0.4, -0.4);
-        const lidMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-        const lid = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), lidMat);
-        lid.position.y = 0.8;
-        lid.rotation.z = Math.PI / 2;
-        g.add(barrel, leg1, leg2, leg3, leg4, lid);
-    }
-    else if (data.type === 'hammock') {
-        // Hammock between two poles
-        const poleMat = new THREE.MeshStandardMaterial({ color: 0x654321 });
-        const pole1 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.5), poleMat);
-        pole1.position.set(-2, 1.25, 0);
-        pole1.rotation.z = 0.15;
-        const pole2 = pole1.clone();
-        pole2.position.set(2, 1.25, 0);
-        pole2.rotation.z = -0.15;
-        const fabricMat = new THREE.MeshStandardMaterial({ color: 0x4ECDC4, side: THREE.DoubleSide });
-        const fabric = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 1.2, 8, 4), fabricMat);
-        fabric.position.y = 1.0;
-        fabric.rotation.x = -Math.PI / 2;
-        // Sag the hammock
-        const pos = fabric.geometry.attributes.position;
-        for (let i = 0; i < pos.count; i++) {
-            const x = pos.getX(i);
-            pos.setZ(i, pos.getZ(i) - Math.cos(x * 0.8) * 0.3);
-        }
-        fabric.geometry.attributes.position.needsUpdate = true;
-        g.add(pole1, pole2, fabric);
-    }
-    else if (data.type === 'logbench') {
-        // Simple log bench
-        const logMat = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
-        const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 2.5, 12), logMat);
-        seat.rotation.z = Math.PI / 2;
-        seat.position.y = 0.5;
-        const stump1 = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, 0.5, 8), logMat);
-        stump1.position.set(-0.9, 0.25, 0);
-        const stump2 = stump1.clone();
-        stump2.position.set(0.9, 0.25, 0);
-        g.add(seat, stump1, stump2);
-    }
-    else if (data.type === 'fishsign') {
-        // Wooden sign with fish shape
-        const postMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        const post = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.0, 0.15), postMat);
-        post.position.y = 1.0;
-        const signMat = new THREE.MeshStandardMaterial({ color: 0xDEB887 });
-        const sign = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.1), signMat);
-        sign.position.set(0, 1.6, 0.1);
-        // Fish icon
-        const fishMat = new THREE.MeshStandardMaterial({ color: 0x4169E1 });
-        const fishBody = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 4), fishMat);
-        fishBody.scale.set(1.5, 0.8, 0.5);
-        fishBody.position.set(0, 1.6, 0.2);
-        g.add(post, sign, fishBody);
-    }
-    else if (data.type === 'crate') {
-        // Wooden dock crate
-        const crateMat = new THREE.MeshStandardMaterial({ color: 0xA0522D });
-        const box = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 0.8), crateMat);
-        box.position.y = 0.4;
-        // Add some plank lines
-        const plankMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        for (let i = -0.3; i <= 0.3; i += 0.15) {
-            const plank = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.02, 0.82), plankMat);
-            plank.position.set(0, 0.4 + i, 0);
-            g.add(plank);
-        }
-        g.add(box);
-    }
-    else if (data.type === 'buoy') {
-        // Red buoy floating marker
-        const buoyMat = new THREE.MeshStandardMaterial({ color: 0xDC143C });
-        const body = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12), buoyMat);
-        body.scale.y = 1.4;
-        body.position.y = 0.5;
-        const topMat = new THREE.MeshStandardMaterial({ color: 0xFFD700 });
-        const top = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.4, 8), topMat);
-        top.position.y = 1.2;
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.08, 8, 16), new THREE.MeshStandardMaterial({ color: 0xFFFFFF }));
-        ring.position.y = 0.5;
-        ring.rotation.x = Math.PI / 2;
-        g.add(body, top, ring);
-    }
-    else if (data.type === 'anchor') {
-        // Ship anchor - classic admiralty style
-        const anchorMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.7, roughness: 0.3 });
-
-        // Main vertical shaft (shank)
-        const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.6, 8), anchorMat);
-        shank.position.y = 0.8;
-
-        // Ring at top
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.035, 8, 16), anchorMat);
-        ring.position.y = 1.65;
-
-        // Stock (horizontal bar at top, perpendicular to arms)
-        const stock = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.9, 8), anchorMat);
-        stock.rotation.z = Math.PI / 2;
-        stock.position.y = 1.4;
-
-        // Arms going DOWN and outward from bottom of shank
-        const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8), anchorMat);
-        leftArm.position.set(-0.2, 0.15, 0);
-        leftArm.rotation.z = Math.PI / 3; // 60 degrees - pointing down-left
-
-        const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8), anchorMat);
-        rightArm.position.set(0.2, 0.15, 0);
-        rightArm.rotation.z = -Math.PI / 3; // 60 degrees - pointing down-right
-
-        // Flukes (arrow-shaped tips) pointing UP/inward
-        const flukeShape = new THREE.Shape();
-        flukeShape.moveTo(0, 0);
-        flukeShape.lineTo(-0.15, -0.25);
-        flukeShape.lineTo(0, -0.18);
-        flukeShape.lineTo(0.15, -0.25);
-        flukeShape.lineTo(0, 0);
-        const flukeGeo = new THREE.ExtrudeGeometry(flukeShape, { depth: 0.04, bevelEnabled: false });
-
-        const leftFluke = new THREE.Mesh(flukeGeo, anchorMat);
-        leftFluke.position.set(-0.42, 0.02, -0.02);
-        leftFluke.rotation.z = -Math.PI / 6;
-
-        const rightFluke = new THREE.Mesh(flukeGeo, anchorMat);
-        rightFluke.position.set(0.42, 0.02, -0.02);
-        rightFluke.rotation.z = Math.PI / 6;
-
-        g.add(shank, ring, stock, leftArm, rightArm, leftFluke, rightFluke);
-    }
-    else if (data.type === 'flowerpot') {
-        // Terracotta pot with simple flowers (no z-fighting)
-        const potMat = new THREE.MeshStandardMaterial({ color: 0xCD853F });
-        const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.25, 0.5, 12), potMat);
-        pot.position.y = 0.25;
-        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.05, 6, 16), potMat);
-        rim.position.y = 0.5; rim.rotation.x = Math.PI / 2;
-        const dirtMat = new THREE.MeshStandardMaterial({ color: 0x3E2723 });
-        const dirt = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.08, 12), dirtMat);
-        dirt.position.y = 0.48;
-
-        // Simple flowers on stems - no overlapping geometry
-        const stemMat = new THREE.MeshStandardMaterial({ color: 0x228B22 });
-        const flowerColors = [0xFF69B4, 0xFFD700, 0xFF6347, 0x9370DB, 0x00CED1];
-        flowerColors.forEach((c, i) => {
-            const angle = (i / flowerColors.length) * Math.PI * 2;
-            const radius = 0.15;
-            const stemHeight = 0.35 + (i % 3) * 0.12;
-
-            // Stem
-            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, stemHeight, 6), stemMat);
-            stem.position.set(Math.cos(angle) * radius, 0.5 + stemHeight / 2, Math.sin(angle) * radius);
-            g.add(stem);
-
-            // Flower head - single larger sphere
-            const flowerMat = new THREE.MeshStandardMaterial({ color: c });
-            const flower = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), flowerMat);
-            flower.position.set(Math.cos(angle) * radius, 0.52 + stemHeight, Math.sin(angle) * radius);
-            g.add(flower);
-
-            // Center of flower (yellow dot) - offset slightly up to avoid z-fighting
-            const centerMat = new THREE.MeshStandardMaterial({ color: 0xFFFF00 });
-            const center = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 4), centerMat);
-            center.position.set(Math.cos(angle) * radius, 0.55 + stemHeight, Math.sin(angle) * radius);
-            g.add(center);
-        });
-        g.add(pot, rim, dirt);
-    }
-    else if (data.type === 'torch') {
-        // Tiki torch with flame light
-        const bambooMat = new THREE.MeshStandardMaterial({ color: 0xD2691E });
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 2.0, 8), bambooMat);
-        pole.position.y = 1.0;
-        const holderMat = new THREE.MeshStandardMaterial({ color: 0x4a3728 });
-        const holder = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.08, 0.3, 8), holderMat);
-        holder.position.y = 2.0;
-        const flameMat = new THREE.MeshBasicMaterial({ color: 0xFF4500 });
-        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.3, 6), flameMat);
-        flame.position.y = 2.3;
-        const light = new THREE.PointLight(0xFF6600, 1.5, 6);
-        light.position.y = 2.3;
-        g.add(pole, holder, flame, light);
-    }
-    else if (data.type === 'boat') {
-        // Small rowboat - using box-based construction
-        const woodMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        const darkWood = new THREE.MeshStandardMaterial({ color: 0x654321 });
-        // Bottom of hull
-        const bottom = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 2.5), woodMat);
-        bottom.position.y = 0.15;
-        // Left side
-        const leftSide = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 2.4), woodMat);
-        leftSide.position.set(-0.4, 0.35, 0);
-        leftSide.rotation.z = -0.15;
-        // Right side
-        const rightSide = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 2.4), woodMat);
-        rightSide.position.set(0.4, 0.35, 0);
-        rightSide.rotation.z = 0.15;
-        // Front (bow)
-        const bow = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.1), woodMat);
-        bow.position.set(0, 0.3, 1.2);
-        // Back (stern)
-        const stern = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.1), woodMat);
-        stern.position.set(0, 0.3, -1.2);
-        // Seats
-        const seat1 = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.25), darkWood);
-        seat1.position.set(0, 0.4, 0.4);
-        const seat2 = seat1.clone();
-        seat2.position.set(0, 0.4, -0.4);
-        // Oars resting on sides
-        const oarMat = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
-        const oar1 = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.04, 0.1), oarMat);
-        oar1.position.set(0.1, 0.5, 0); oar1.rotation.y = 0.2;
-        const oar2 = oar1.clone();
-        oar2.position.set(-0.1, 0.5, 0); oar2.rotation.y = -0.2;
-        // Oar blades
-        const bladeMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        const blade1 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 0.2), bladeMat);
-        blade1.position.set(1.1, 0.5, 0.22);
-        const blade2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 0.2), bladeMat);
-        blade2.position.set(-1.1, 0.5, -0.22);
-        g.add(bottom, leftSide, rightSide, bow, stern, seat1, seat2, oar1, oar2, blade1, blade2);
-    }
-    else if (data.type === 'tireswing') {
-        // Tire swing hanging from a frame
-        const frameMat = new THREE.MeshStandardMaterial({ color: 0x654321 });
-        const post1 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 3.5), frameMat);
-        post1.position.set(-1.2, 1.75, 0); post1.rotation.z = 0.1;
-        const post2 = post1.clone();
-        post2.position.set(1.2, 1.75, 0); post2.rotation.z = -0.1;
-        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.8), frameMat);
-        beam.rotation.z = Math.PI / 2; beam.position.y = 3.3;
-        const tireMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
-        const tire = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.15, 8, 16), tireMat);
-        tire.position.y = 1.5; tire.rotation.x = Math.PI / 2;
-        const ropeMat = new THREE.MeshStandardMaterial({ color: 0xD2B48C });
-        const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.8), ropeMat);
-        rope.position.y = 2.4;
-        g.add(post1, post2, beam, tire, rope);
-    }
-    else if (data.type === 'hotspring') {
-        // Hot spring pool with steam effect
-        const rockMat = new THREE.MeshStandardMaterial({ color: 0x696969 });
-        const waterMat = new THREE.MeshStandardMaterial({ color: 0x40E0D0, transparent: true, opacity: 0.7 });
-        // Rocks around the edge
-        for (let i = 0; i < 10; i++) {
-            const angle = (i / 10) * Math.PI * 2;
-            const rock = new THREE.Mesh(new THREE.SphereGeometry(0.3 + Math.random() * 0.2, 6, 4), rockMat);
-            rock.position.set(Math.cos(angle) * 1.3, 0.2, Math.sin(angle) * 1.3);
-            rock.scale.y = 0.6;
-            g.add(rock);
-        }
-        const water = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.0, 0.3, 16), waterMat);
-        water.position.y = 0.15;
-        const steamLight = new THREE.PointLight(0x87CEEB, 0.5, 4);
-        steamLight.position.y = 0.5;
-        g.add(water, steamLight);
-    }
-    else if (data.type === 'windchime') {
-        // Wind chime with hanging rods
-        const frameMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        const top = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 12), frameMat);
-        top.position.y = 1.8;
-        const stringMat = new THREE.MeshStandardMaterial({ color: 0xD2B48C });
-        const chimeMat = new THREE.MeshStandardMaterial({ color: 0xC0C0C0, metalness: 0.8, roughness: 0.2 });
-        const lengths = [0.5, 0.6, 0.7, 0.55, 0.65];
-        lengths.forEach((len, i) => {
-            const angle = (i / lengths.length) * Math.PI * 2;
-            const string = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.3), stringMat);
-            string.position.set(Math.cos(angle) * 0.15, 1.65, Math.sin(angle) * 0.15);
-            const chime = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, len), chimeMat);
-            chime.position.set(Math.cos(angle) * 0.15, 1.5 - len / 2, Math.sin(angle) * 0.15);
-            g.add(string, chime);
-        });
-        const hangString = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.5), stringMat);
-        hangString.position.y = 2.05;
-        g.add(top, hangString);
-    }
-    else if (data.type === 'surfboard') {
-        // Surfboard leaning against something (touching ground)
-        const boardMat = new THREE.MeshStandardMaterial({ color: 0x00CED1 });
-        // Main board - positioned to lean with bottom touching ground
-        const board = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 2.2), boardMat);
-        // Lean angle - bottom on ground, top elevated
-        board.rotation.x = 1.1; // More aggressive lean
-        board.position.set(0, 0.55, -0.4);
-        // Stripe across the board
-        const stripeMat = new THREE.MeshStandardMaterial({ color: 0xFF6347 });
-        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.01, 0.15), stripeMat);
-        stripe.rotation.x = 1.1;
-        stripe.position.set(0, 0.55, -0.4);
-        // Fin underneath
-        const finMat = new THREE.MeshStandardMaterial({ color: 0x1E90FF });
-        const fin = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.12, 0.2), finMat);
-        fin.rotation.x = 1.1;
-        fin.position.set(0, 0.25, 0.35);
-        // Small stand/prop to lean against
-        const standMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.8, 6), standMat);
-        stand.position.set(0, 0.4, -0.7);
-        stand.rotation.x = 0.3;
-        g.add(board, stripe, fin, stand);
-    }
-
-    else if (data.type === 'screen') {
-        // YouTube Screen: a chunky jumbotron on legs. The actual video is a
-        // real DOM iframe rendered by CSS3DRenderer (attachYtVideo below), so
-        // the WebGL mesh is the housing, bezel, stand and speaker towers.
-        // Shared geometry constants (also used by the video overlay so the
-        // picture sits exactly inside the bezel):
-        //   panel centre y = SCREEN_Y, visible video = SCREEN_W x SCREEN_H.
-        const SCREEN_Y = 3.55, SCREEN_W = 6.3, SCREEN_H = 3.545;
-
-        const housing = new THREE.MeshStandardMaterial({ color: 0x1d2027, roughness: 0.75 });
-        const bezelMat = new THREE.MeshStandardMaterial({ color: 0x3b4152, roughness: 0.45, metalness: 0.25 });
-        const metalMat = new THREE.MeshStandardMaterial({ color: 0x4a5062, roughness: 0.4, metalness: 0.4 });
-        const speakerMat = new THREE.MeshStandardMaterial({ color: 0x24272f, roughness: 0.8 });
-        const coneMat = new THREE.MeshStandardMaterial({ color: 0x101216, roughness: 0.9 });
-
-        // Outer bezel (slightly larger, lighter trim) with the dark panel inset.
-        const bezel = new THREE.Mesh(new THREE.BoxGeometry(SCREEN_W + 0.5, SCREEN_H + 0.5, 0.18), bezelMat);
-        bezel.position.set(0, SCREEN_Y, 0.02);
-        const panel = new THREE.Mesh(new THREE.BoxGeometry(SCREEN_W + 0.16, SCREEN_H + 0.16, 0.24), housing);
-        panel.position.set(0, SCREEN_Y, 0);
-
-        // Dark backing where the video sits (the iframe draws over this).
-        const screenPlane = new THREE.Mesh(
-            new THREE.PlaneGeometry(SCREEN_W, SCREEN_H),
-            new THREE.MeshBasicMaterial({ color: 0x050608 })
-        );
-        screenPlane.position.set(0, SCREEN_Y, 0.14);
-
-        g.add(bezel, panel, screenPlane);
-
-        // Floor-standing speaker towers, flush with the panel's lower corners.
-        for (const s of [-1, 1]) {
-            const tower = new THREE.Mesh(new THREE.BoxGeometry(0.78, 2.35, 0.62), speakerMat);
-            tower.position.set(s * (SCREEN_W / 2 + 0.62), 1.175, 0);
-            const cap = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.1, 0.68), bezelMat);
-            cap.position.set(tower.position.x, 2.36, 0);
-            const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 12), coneMat);
-            cone.rotation.x = Math.PI / 2;
-            cone.position.set(tower.position.x, 1.6, 0.34);
-            const cone2 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 10), coneMat);
-            cone2.rotation.x = Math.PI / 2;
-            cone2.position.set(tower.position.x, 0.95, 0.34);
-            g.add(tower, cap, cone, cone2);
-        }
-
-        // Central stand: two legs plus a crossbar, meeting the panel's bottom.
-        const legH = SCREEN_Y - SCREEN_H / 2 + 0.25;   // reaches into the panel
-        for (const s of [-1, 1]) {
-            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.26, legH, 0.26), metalMat);
-            leg.position.set(s * 1.55, legH / 2, 0);
-            g.add(leg);
-        }
-        const cross = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.14, 0.18), metalMat);
-        cross.position.set(0, 0.34, 0);
-        g.add(cross);
-
-        // Bezel accent strip along the bottom (reads well at night).
-        const strip = new THREE.Mesh(
-            new THREE.BoxGeometry(SCREEN_W + 0.3, 0.07, 0.04),
-            new THREE.MeshBasicMaterial({ color: 0x8b5cf6 })
-        );
-        strip.position.set(0, SCREEN_Y - SCREEN_H / 2 - 0.2, 0.16);
-        g.add(strip);
-
-        // Wire up the video (no-op if CSS3DRenderer/YouTube API unavailable).
-        attachYtVideo(data, g);
+    if(data.type==='house'){
+        g.add(WorldGen.makeBuilding({type:'house',scale:1,rot:0}));
+        g.userData.isPlayerHouse=true;
+    }else{
+        const model=buildOutdoorProp(data.type);
+        if(!model)return;
+        g.add(model);
+        Object.assign(g.userData,model.userData);
+        if(data.type==='screen')attachYtVideo(data,g);
     }
     // Ensure a queue record exists even when no video is mounted yet, so the
     // queue panel can manage screens placed without an initial URL.
@@ -871,43 +275,52 @@ function spawnPropMesh(data) {
 
     scene.add(mesh);
     props[data.id] = mesh;
+    let fireSeed=0;for(const ch of String(data.id))fireSeed=(fireSeed*31+ch.charCodeAt(0))>>>0;
+    mesh.userData.fireSeed=(fireSeed%10000)/100;
+    if(data.type==='house' && window.Housing)Housing.registerExterior(mesh);
     // Keep the authoritative record on the mesh so interactions (e.g. changing
     // a YouTube Screen's video) can find the prop's data and its placer.
     mesh.userData.propData = data;
-
-    // Furniture the player can jump onto. All values are in the prop's LOCAL
-    // space: the chair group is scaled down after it is built, so the physics
-    // multiplies these by the mesh's scale (seat plank top = 1.25 local).
-    if (data.type === 'chair') {
-        mesh.userData.standTop = 1.25;
-        mesh.userData.standHalf = 0.8;
-    }
-    if (data.type === 'couch') {
-        mesh.userData.standTop = 0.9;
-        mesh.userData.standHalf = 1.5;
-    }
 
     if (typeof broadcastSound === 'function') {
         broadcastSound('footstep', 0);
     }
 }
 
+window.tickPropAnimations=function(seconds=Date.now()/1000){
+    for(const id in props){const prop=props[id];if(prop.userData.fireAnimation)animateOutdoorPropFire(prop,seconds,prop.userData.fireSeed);}
+};
+
+function removeScreenEntry(id) {
+    const e = ytPlayers[id];
+    if (!e) return;
+    destroyTwitchControl(e);
+    try { if (e.player && e.player.destroy) e.player.destroy(); } catch (err) { }
+    if (e.twFrame) { e.twFrame.remove(); e.twFrame = null; }
+    if (e.soundChip) { e.soundChip.remove(); e.soundChip = null; }
+    if (e.cssObj && e.cssObj.parent) e.cssObj.parent.remove(e.cssObj);
+    if (e.shell && e.shell.parentNode) e.shell.parentNode.removeChild(e.shell);
+    delete ytPlayers[id];
+}
+window.removeScreenById = removeScreenEntry;
+
 function removePropFromWorld(id) {
+    pendingPropRequests.delete(id);myProps=myProps.filter(p=>p.id!==id);
     if (props[id]) {
         const p = props[id];
-        // Cleanup lights
+        // Outdoor placements own their resources; house assets have a separate lifecycle.
+        if(p.userData.outdoorProp){
+            const geometries=new Set(),materials=new Set();
+            p.traverse(c=>{if(c.geometry)geometries.add(c.geometry);if(c.material)(Array.isArray(c.material)?c.material:[c.material]).forEach(m=>materials.add(m));});
+            geometries.forEach(v=>v.dispose());materials.forEach(v=>v.dispose());
+        }
         p.traverse(c => { if (c.isLight) c.dispose && c.dispose(); });
         scene.remove(p);
         delete props[id];
     }
     // Video cleanup: destroy the YouTube player, drop the CSS3D object and
     // stop the placer's sync heartbeat.
-    if (ytPlayers[id]) {
-        try { if (ytPlayers[id].player && ytPlayers[id].player.destroy) ytPlayers[id].player.destroy(); } catch (e) { }
-        if (ytPlayers[id].twFrame) ytPlayers[id].twFrame.remove();
-        if (ytPlayers[id].cssObj && cssScene) cssScene.remove(ytPlayers[id].cssObj);
-        delete ytPlayers[id];
-    }
+    removeScreenEntry(id);
     if (ytSyncLoops[id]) { clearInterval(ytSyncLoops[id]); delete ytSyncLoops[id]; }
 }
 
@@ -945,6 +358,8 @@ let ytApiReady = false;
 const ytPlayerQueue = [];
 let cssRenderer = null;
 let cssScene = null;
+let houseCssRenderer = null;
+let houseCssScene = null;
 let ytOverlay = null;
 // Twitch players live OUTSIDE the CSS3D tree. Twitch's autoplay gate uses
 // IntersectionObserver v2 (trackVisibility) from inside the iframe; an element
@@ -1091,6 +506,7 @@ function parseScreenSource(input) {
     if (tw) return { provider: 'twitch', id: tw.id, twitchKind: tw.kind };
     return null;
 }
+window.parseScreenSource = parseScreenSource;
 
 // Canonicalise source fields that arrived over the network. Prop records can
 // come from older clients, so the renderer validates them too instead of
@@ -1120,27 +536,63 @@ function screenSourceFromData(data) {
 // One-time renderer init, called from setupThreeJS() when the game world is
 // built. No-op when the example renderer did not load (offline CDN etc).
 window.initCssScene = function () {
-    if (cssRenderer || typeof THREE === 'undefined' || typeof THREE.CSS3DRenderer === 'undefined') return;
-    cssRenderer = new THREE.CSS3DRenderer();
-    cssRenderer.setSize(window.innerWidth, window.innerHeight);
-    const el = cssRenderer.domElement;
-    el.style.position = 'absolute';
-    el.style.top = '0';
-    el.style.left = '0';
-    // The whole CSS3D overlay must not eat game input.
-    el.style.pointerEvents = 'none';
-    el.style.zIndex = '2';
-    const gc = document.getElementById('game-container');
-    if (gc) gc.appendChild(el);
-    cssScene = new THREE.Scene();
+    if (typeof THREE === 'undefined' || typeof THREE.CSS3DRenderer === 'undefined') return;
+    if (!cssRenderer) {
+        cssRenderer = new THREE.CSS3DRenderer();
+        cssRenderer.setSize(window.innerWidth, window.innerHeight);
+        const el = cssRenderer.domElement;
+        el.style.position = 'absolute';
+        el.style.top = '0';
+        el.style.left = '0';
+        // The whole CSS3D overlay must not eat game input.
+        el.style.pointerEvents = 'none';
+        el.style.zIndex = '2';
+        const gc = document.getElementById('game-container');
+        if (gc) gc.appendChild(el);
+        cssScene = new THREE.Scene();
+    }
+    if (!houseCssRenderer) {
+        houseCssRenderer = new THREE.CSS3DRenderer();
+        houseCssRenderer.setSize(window.innerWidth, window.innerHeight);
+        const el = houseCssRenderer.domElement;
+        el.style.position = 'absolute';
+        el.style.top = '0';
+        el.style.left = '0';
+        el.style.pointerEvents = 'none';
+        el.style.zIndex = '2';
+        el.style.display = 'none';
+        const gc = document.getElementById('game-container');
+        if (gc) gc.appendChild(el);
+        houseCssScene = new THREE.Scene();
+    }
+};
+window.setHouseCssVisible = function (visible) {
+    if (!houseCssRenderer) return;
+    houseCssRenderer.domElement.style.display = visible ? '' : 'none';
+};
+window.renderHouseCss = function (camera, force) {
+    if (!houseCssRenderer || !houseCssScene || !camera) return;
+    if (!force && !(window.Housing && Housing.inside)) return;
+    houseCssRenderer.setSize(window.innerWidth, window.innerHeight);
+    houseCssRenderer.render(houseCssScene, camera);
 };
 
 // Wire the video element + CSS3D object for a screen prop.
-function attachYtVideo(data, group) {
+function attachYtVideo(data, group, options) {
+    options = options || {};
+    const inHouse = !!options.inHouse;
+    const panelY = options.panelY !== undefined ? options.panelY : PANEL_Y;
+    const panelW = options.panelW !== undefined ? options.panelW : PANEL_W;
+    const panelH = options.panelH !== undefined ? options.panelH : PANEL_H;
+    const forward = options.forward !== undefined ? options.forward : VIDEO_FORWARD;
+    const videoScale = options.scale !== undefined ? options.scale : (inHouse ? panelW / 640 : 0.009844);
+    const yawOffset = options.yawOffset !== undefined ? options.yawOffset : Math.PI;
     const src = screenSourceFromData(data);
 
     // Make sure the CSS3D overlay exists BEFORE creating the element.
-    if (!cssRenderer && window.initCssScene) window.initCssScene();
+    if ((!cssRenderer || (inHouse && !houseCssRenderer)) && window.initCssScene) window.initCssScene();
+    const targetScene = inHouse ? houseCssScene : cssScene;
+    const meta = { inHouse, isHouse: inHouse, houseOwnerLocal: !!options.houseOwner, panelY, panelW, panelH, forward, yawOffset, scene: targetScene };
 
     // No source yet: create a shell + entry so the queue panel works, but
     // don't mount a player.
@@ -1151,9 +603,9 @@ function attachYtVideo(data, group) {
         shell.style.background = '#050505';
         shell.style.pointerEvents = 'none';
         shell.style.overflow = 'hidden';
-        if (ytOverlay) ytOverlay.appendChild(shell);
+        if (ytOverlay && !inHouse) ytOverlay.appendChild(shell);
         const cssObj = (typeof THREE !== 'undefined' && THREE.CSS3DObject) ? new THREE.CSS3DObject(shell) : null;
-        if (cssObj) { cssObj.scale.set(0.009844, 0.009844, 1); if (cssScene) cssScene.add(cssObj); }
+        if (cssObj) { cssObj.scale.set(videoScale, videoScale, 1); if (targetScene) targetScene.add(cssObj); }
         const entry = {
             data: data,
             provider: null,
@@ -1167,7 +619,8 @@ function attachYtVideo(data, group) {
             syncRecvAt: null,
             retried: false,
             ended: false,
-            queue: Array.isArray(data.queue) ? data.queue.slice() : []
+            queue: Array.isArray(data.queue) ? data.queue.slice() : [],
+            ...meta
         };
         if (!Array.isArray(data.queue)) data.queue = entry.queue;
         ytPlayers[data.id] = entry;
@@ -1208,10 +661,10 @@ function attachYtVideo(data, group) {
     }
 
     const cssObj = new THREE.CSS3DObject(shell);
-    // 640px wide shell mapped to SCREEN_W (6.3) world units.
-    cssObj.scale.set(0.009844, 0.009844, 1);
-    if (cssScene) cssScene.add(cssObj);
-    else ytOverlay.appendChild(shell); // fallback: at least keep it mountable
+    // 640px wide shell mapped to the panel's world width.
+    cssObj.scale.set(videoScale, videoScale, 1);
+    if (targetScene) targetScene.add(cssObj);
+    else if (!inHouse) ytOverlay.appendChild(shell); // fallback: at least keep it mountable
 
     const entry = {
         data: {
@@ -1224,6 +677,7 @@ function attachYtVideo(data, group) {
             twitchKind: provider === 'twitch' ? src.twitchKind : null,
             queue: Array.isArray(data.queue) ? data.queue.slice() : [],
             startedAt: data.startedAt || Date.now(),
+            paused:data.paused===true,pausedAt:Math.max(0,Number(data.pausedAt)||0),
             placer: data.placer || ''
         },
         player: null,
@@ -1240,18 +694,45 @@ function attachYtVideo(data, group) {
         placed: true,
         syncAt: null,
         syncRecvAt: null,
-        retried: false
+        retried: false,
+        ...meta
     };
     ytPlayers[data.id] = entry;
     if (!Array.isArray(data.queue)) data.queue = entry.data.queue;
     mountScreenContent(entry);
 }
 
+// Mount (or remount) the Flat-screen TV inside a player house. The furniture
+// item carries the validated stream queue/source; guests receive it in
+// house:update, and only the local house owner gets queue controls.
+window.attachHouseTv = function (id, item, mesh, owner, isOwner, onChange) {
+    if (!item || !mesh || !window.Furniture) return;
+    const info = Furniture.byId[item.type];
+    if (!info || (item.type !== 'stream_tv' && item.type !== 'wall_tv')) return;
+    const screen = info.screen || { w: info.w * .9, h: (info.w * .9) * 9 / 16, y: info.h * .62, forward: info.d * .36 };
+    const stream = item.stream || null;
+    const data = {
+        id: id,
+        provider: stream ? stream.provider : null,
+        videoId: stream ? stream.videoId : null,
+        twitchId: stream ? stream.twitchId : null,
+        twitchKind: stream ? stream.twitchKind : null,
+        queue: stream && Array.isArray(stream.queue) ? stream.queue.slice() : [],
+        startedAt: stream ? stream.startedAt : Date.now(),
+        paused:stream?.paused===true,pausedAt:Math.max(0,Number(stream?.pausedAt)||0),
+        placer: owner || ''
+    };
+    attachYtVideo(data, mesh, { inHouse: true, houseOwner: !!isOwner, panelY: screen.y, panelW: screen.w, panelH: screen.h, forward: screen.forward, scale: screen.w / 640, yawOffset: 0 });
+    const entry = ytPlayers[id];
+    if (entry && typeof onChange === 'function') entry.houseSync = onChange;
+};
+
 // (Re)build the player inside an existing shell. Used on placement, on a
 // video change, and whenever the provider differs (YouTube <-> Twitch).
 function mountScreenContent(entry) {
     const shell = entry && entry.shell;
     if (!shell) return;
+    destroyTwitchControl(entry);
 
     // Tear down whatever was mounted before.
     try { if (entry.player && entry.player.destroy) entry.player.destroy(); } catch (e) { }
@@ -1290,7 +771,11 @@ function mountScreenContent(entry) {
         twFrame.style.width = '640px';
         twFrame.style.height = '360px';
         twFrame.style.overflow = 'hidden';
-        twFrame.style.background = '#050505';
+        // The shell behind this layer is already the dark panel. Keep the
+        // bounding box transparent: the screen-space Twitch layer paints above
+        // every CSS3D YouTube screen, so an opaque rectangle here used to black
+        // out a nearby/overlapping YouTube screen.
+        twFrame.style.background = 'transparent';
         twFrame.style.pointerEvents = 'none';
         twFrame.style.display = 'none';
         // Inner 640x360 layout, uniformly scaled to cover the projected box.
@@ -1357,15 +842,19 @@ function twitchEmbedUrl(entry, mutedOverride) {
 // but if anything ever swallows them we still catch the click here.
 window.twitchScreenAt = function (clientX, clientY) {
     if (typeof camera === 'undefined' || !camera || typeof ytPlayers === 'undefined') return null;
+    const indoor = !!(window.Housing && Housing.inside);
     for (const id in ytPlayers) {
         const e = ytPlayers[id];
-        if (!e || e.provider !== 'twitch' || !e.__shown || !e.mesh) continue;
-        const ry = e.mesh.rotation.y + Math.PI;
-        const cx = e.mesh.position.x + Math.sin(ry) * VIDEO_FORWARD;
-        const cy = e.mesh.position.y + PANEL_Y;
-        const cz = e.mesh.position.z + Math.cos(ry) * VIDEO_FORWARD;
+        if (!e || e.provider !== 'twitch' || !e.__shown || !e.mesh || !!e.inHouse !== indoor) continue;
+        const p = screenWorld(e);
+        const ry = screenYaw(e);
+        const forward = e.forward !== undefined ? e.forward : VIDEO_FORWARD;
+        const panelY = e.panelY !== undefined ? e.panelY : PANEL_Y;
+        const cx = p.x + Math.sin(ry) * forward;
+        const cy = p.y + panelY;
+        const cz = p.z + Math.cos(ry) * forward;
         const rx = Math.cos(ry), rz = -Math.sin(ry);
-        const hw = PANEL_W / 2, hh = PANEL_H / 2;
+        const hw = (e.panelW || PANEL_W) / 2, hh = (e.panelH || PANEL_H) / 2;
         // Ignore panels behind (or practically on) the camera: their projected
         // corners mirror across the screen and would match everything.
         if (new THREE.Vector3(cx, cy, cz).applyMatrix4(camera.matrixWorldInverse).z > -0.2) continue;
@@ -1417,13 +906,16 @@ function ensureTwitchLayer() {
 function positionTwitchFrame(e) {
     const frame = e && e.twFrame;
     if (!frame || !e.mesh || typeof camera === 'undefined' || !camera) return false;
-    const ry = e.mesh.rotation.y + Math.PI;
-    const cx = e.mesh.position.x + Math.sin(ry) * VIDEO_FORWARD;
-    const cy = e.mesh.position.y + PANEL_Y;
-    const cz = e.mesh.position.z + Math.cos(ry) * VIDEO_FORWARD;
+    const p = screenWorld(e);
+    const ry = screenYaw(e);
+    const forward = e.forward !== undefined ? e.forward : VIDEO_FORWARD;
+    const panelY = e.panelY !== undefined ? e.panelY : PANEL_Y;
+    const cx = p.x + Math.sin(ry) * forward;
+    const cy = p.y + panelY;
+    const cz = p.z + Math.cos(ry) * forward;
     if (new THREE.Vector3(cx, cy, cz).applyMatrix4(camera.matrixWorldInverse).z > -0.2) return false;
     const rx = Math.cos(ry), rz = -Math.sin(ry);
-    const hw = PANEL_W / 2, hh = PANEL_H / 2;
+    const hw = (e.panelW || PANEL_W) / 2, hh = (e.panelH || PANEL_H) / 2;
     const corners = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([sx, sy]) => {
         const v = new THREE.Vector3(
             cx + rx * sx * hw, cy + sy * hh, cz + rz * sx * hw
@@ -1484,19 +976,100 @@ function positionTwitchFrame(e) {
     return true;
 }
 
+let twitchControlApi = null, twitchControlSerial = 0;
+function loadTwitchControlApi(){
+    if(window.Twitch?.Player)return Promise.resolve(window.Twitch);
+    if(twitchControlApi)return twitchControlApi;
+    twitchControlApi=new Promise((resolve,reject)=>{
+        const script=document.createElement('script');script.src='https://player.twitch.tv/js/embed/v1.js';script.async=true;
+        script.onload=()=>window.Twitch?.Player?resolve(window.Twitch):reject(Error('Twitch controls unavailable'));
+        script.onerror=()=>reject(Error('Twitch controls failed to load'));document.head.appendChild(script);
+    }).catch(error=>{twitchControlApi=null;throw error;});
+    return twitchControlApi;
+}
+function destroyTwitchControl(entry){
+    entry.twitchControlMount=null;
+    try{entry.twitchPlayer?.destroy?.();}catch(error){}
+    entry.twitchPlayer=null;entry.twitchControlReady=false;entry.twitchResyncPending=false;
+}
+function resyncExistingTwitch(entry){
+    // No supported live seek/rate control exists. Pause and same-channel reset
+    // can revoke playback permission; leave playing/buffering viewers alone.
+    if(!entry.twitchPlayer||!entry.twitchControlReady){entry.twitchResyncPending=true;return false;}
+    try{
+        if(entry.twitchPlayer.isPaused?.()===true)entry.twitchPlayer.play();
+        entry.twitchResyncPending=false;return true;
+    }catch(error){return false;}
+}
+window.playTwitchHere=function(propId=activeScreenId){
+    const entry=getScreenEntry(propId);
+    if(!entry?.twitchPlayer||!entry.twitchControlReady){showToast('Twitch is still loading. Try Play here once the player is ready.');return false;}
+    // A direct local button gesture, rather than a delayed room relay.
+    try{entry.twitchPlayer.play();return true;}catch(error){showToast('Use Play in the Twitch player to allow playback on this device.');return false;}
+};
+window.restartTwitchAtLive=function(propId=activeScreenId){
+    const entry=getScreenEntry(propId);
+    if(entry?.provider!=='twitch'||entry.data?.twitchKind!=='channel')return false;
+    const now=Date.now();
+    if(now-(entry.localLiveRestartAt??-Infinity)<5000){showToast('Wait a few seconds before restarting again.');return false;}
+    entry.localLiveRestartAt=now;entry.restartLiveRequested=true;
+    // Local only: a fresh channel player discards this viewer's DVR session.
+    // Do not change the shared source, queue, timestamps, or anyone else's player.
+    mountScreenContent(entry);
+    showToast('Restarting this device at live. If Twitch blocks sound, playback will retry muted.');
+    return true;
+};
+window.updateHouseLiveStream=function(id,stream){
+    const entry=ytPlayers[id],src=screenSourceFromData(stream);
+    if(!entry||entry.provider!=='twitch'||src?.provider!=='twitch'||src.twitchKind!=='channel'||entry.data.twitchKind!=='channel'||entry.data.twitchId!==src.id)return false;
+    const changed=entry.data.startedAt!==stream.startedAt;
+    Object.assign(entry.data,{startedAt:stream.startedAt,queue:Array.isArray(stream.queue)?stream.queue.slice():[]});
+    if(changed)resyncExistingTwitch(entry);
+    return true;
+};
 function mountTwitch(entry) {
     if (!entry || !entry.twVideoWrap) return;
+    const restarting=entry.restartLiveRequested===true;entry.restartLiveRequested=false;
     // Only start with sound if the listener is already within earshot. A screen
     // seen from far away (or mounted after a deferred sound opt-in) must stay
     // muted; the proximity loop unmutes it on approach.
     const near = twitchListenerDistance(entry) <= TWITCH_AUDIO_OUT;
-    const ifr = buildTwitchIframe(entry, !entry.twitchUnmuted || !near);
-    entry.twVideoWrap.appendChild(ifr);
     entry.twFrame.style.display = 'block';
-    entry.iframe = ifr;
     entry.twitchAudioOn = !!entry.twitchUnmuted && near;
     entry.twitchFarMuted = !near;
     if (near) entry.twitchWasNear = true;
+    const wrap=entry.twVideoWrap,token={};entry.twitchControlMount=token;
+    loadTwitchControlApi().then(Twitch=>{
+        if(entry.twitchControlMount!==token||entry.twVideoWrap!==wrap||!wrap.isConnected)return;
+        const host=document.createElement('div');host.id='twitch-control-'+(++twitchControlSerial);host.style.pointerEvents='auto';wrap.appendChild(host);
+        const options={width:640,height:360,parent:twitchParents(),autoplay:true,muted:!entry.twitchAudioOn};
+        if(entry.data.twitchKind==='video')options.video='v'+entry.data.twitchId;else options.channel=entry.data.twitchId;
+        const control=new Twitch.Player(host.id,options);entry.twitchPlayer=control;
+        control.addEventListener(Twitch.Player.READY,()=>{
+            if(entry.twitchControlMount!==token)return;
+            entry.twitchControlReady=true;entry.iframe=host.querySelector('iframe');
+            try{control.setMuted(!entry.twitchAudioOn);}catch(error){}
+            if(restarting)try{control.play();}catch(error){}
+            if(entry.twitchResyncPending)resyncExistingTwitch(entry);
+        });
+        if(restarting&&Twitch.Player.PLAYBACK_BLOCKED){
+            let retried=false;
+            control.addEventListener(Twitch.Player.PLAYBACK_BLOCKED,()=>{
+                if(retried||entry.twitchControlMount!==token)return;retried=true;
+                // Autoplay with sound can be denied on the replacement frame.
+                // Retry muted once instead of leaving the tiny Play gate up.
+                entry.twitchAudioOn=false;entry.twitchUnmuted=false;
+                try{control.setMuted(true);control.play();}catch(error){}
+                if(!entry.soundChip)addSoundChip(entry.twFrame,entry);
+            });
+        }
+    }).catch(error=>{
+        if(entry.twitchControlMount!==token||entry.twVideoWrap!==wrap)return;
+        // Playback fallback only. Never replace an already playing fallback
+        // iframe as part of a shared resync.
+        const ifr=buildTwitchIframe(entry,!entry.twitchAudioOn);wrap.appendChild(ifr);entry.iframe=ifr;
+        console.warn('Twitch interactive controls unavailable:',error);
+    });
 }
 
 // Shared iframe construction so the unmute reload keeps every attribute.
@@ -1521,6 +1094,10 @@ function buildTwitchIframe(entry, mutedOverride) {
 // unmuted embed is the only way to follow the listener's distance.
 function swapTwitchIframe(entry) {
     if (!entry || !entry.twVideoWrap) return;
+    if(entry.twitchPlayer){
+        if(entry.twitchControlReady)try{entry.twitchPlayer.setMuted(!entry.twitchAudioOn);}catch(error){}
+        entry.twitchSwapAt=Date.now();return;
+    }
     const old = entry.iframe;
     const ifr = buildTwitchIframe(entry, !entry.twitchAudioOn);
     entry.twVideoWrap.appendChild(ifr);
@@ -1534,15 +1111,15 @@ function swapTwitchIframe(entry) {
 function twitchListenerDistance(e) {
     if (!e || !e.mesh) return 999;
     if (typeof player !== 'undefined' && player && player.position) {
-        return player.position.distanceTo(e.mesh.position);
+        return player.position.distanceTo(screenWorld(e));
     }
     if (typeof camera !== 'undefined' && camera && camera.position) {
-        return camera.position.distanceTo(e.mesh.position);
+        return camera.position.distanceTo(screenWorld(e));
     }
     return 999;
 }
 
-// Reload the embed with sound. Triggered by a click on our own chip (a click in
+// Enable sound through the player API (or the legacy fallback). A click in
 // the top document), which is what browsers require before unmuted playback.
 // If the listener is currently out of earshot we remember the opt-in but leave
 // the embed muted; the proximity loop reloads it with sound on approach.
@@ -1554,6 +1131,10 @@ function unmuteTwitch(entry) {
     entry.twitchFarMuted = !near;
     if (near) entry.twitchWasNear = true;
     if (entry.soundChip) { entry.soundChip.remove(); entry.soundChip = null; }
+    if(entry.twitchPlayer){
+        if(entry.twitchControlReady)try{entry.twitchPlayer.setMuted(!entry.twitchAudioOn);if(near)entry.twitchPlayer.play();}catch(error){}
+        return;
+    }
     if (!entry.iframe || !near) return;
     entry.iframe.remove();
     const ifr = buildTwitchIframe(entry);
@@ -1570,7 +1151,7 @@ function mountPendingTwitch(entry) {
 }
 
 // Twitch audio lives inside the cross-origin embed, so distance has to be
-// enforced by swapping embeds: muted once the listener is past the voice range,
+// enforced through player controls: muted once past the voice range,
 // unmuted again (if the player opted in with the SOUND chip) once they return.
 // Separate in/out distances plus a short minimum interval stop it flapping when
 // someone hovers at the boundary.
@@ -1646,11 +1227,11 @@ function createYtPlayer(entry) {
         return;
     }
     try {
-        const startSec = Math.max(0, Math.floor((Date.now() - entry.data.startedAt) / 1000));
+        const startSec = entry.data.paused?Math.max(0,Number(entry.data.pausedAt)||0):Math.max(0, Math.floor((Date.now() - entry.data.startedAt) / 1000));
         entry.player = new YT.Player(entry.frameEl, {
             videoId: entry.data.videoId,
-            width: '640',
-            height: '360',
+            width: '1920',
+            height: '1080',
             playerVars: {
                 autoplay: 1,
                 // Browsers block UNMUTED autoplay in cross-origin iframes, which
@@ -1673,6 +1254,9 @@ function createYtPlayer(entry) {
             events: {
                 onReady: (e) => {
                     try {
+                        // Keep a 1080p iframe viewport, visually scaled to the
+                        // existing 640×360 shell. YouTube controls adaptive quality.
+                        const frame=e.target.getIframe();frame.style.width='1920px';frame.style.height='1080px';frame.style.transformOrigin='0 0';frame.style.transform='scale(0.3333333333)';
                         e.target.mute();
                         // Live streams report duration 0; never seek those.
                         // VODs seek to the shared wall-clock anchor so every
@@ -1681,13 +1265,14 @@ function createYtPlayer(entry) {
                         try { dur = e.target.getDuration(); } catch (err) { }
                         if (dur && isFinite(dur) && dur > 0) {
                             entry.isLive = false;
-                            if (startSec > 1) e.target.seekTo(startSec, true);
+                            const seekSec=entry.data.paused?Math.max(0,Number(entry.data.pausedAt)||0):Math.max(0,(Date.now()-entry.data.startedAt)/1000);
+                            if (seekSec > 1||entry.data.paused) e.target.seekTo(seekSec, true);
                         } else {
                             entry.isLive = true;
                             entry.syncAt = null;   // anchor sync is meaningless live
                             entry.syncRecvAt = null;
                         }
-                        e.target.playVideo();
+                        if(entry.data.paused)e.target.pauseVideo();else e.target.playVideo();
                     } catch (err) { }
                 },
                 onError: () => {
@@ -1699,7 +1284,7 @@ function createYtPlayer(entry) {
                     // host (or a single player) decides inside
                     // advanceScreenQueue; everyone else follows the ytChange
                     // broadcast that playScreenQueueIndex sends out.
-                    if (e && e.data === 0) {
+                    if (e && e.data === 0 && !entry.data.paused) {
                         entry.ended = true;
                         try { entry.player.pauseVideo(); } catch (err) { }
                         const lid = entry.data && entry.data.id;
@@ -1715,7 +1300,7 @@ function createYtPlayer(entry) {
         // VOD as live only means "no seek", which is harmless.
         setTimeout(() => {
             try {
-                if (entry.ended) return;
+                if (entry.ended||entry.data.paused) return;
                 if (!entry.player || !entry.player.getPlayerState) return;
                 const st = entry.player.getPlayerState();
                 if (st === -1 || st === 2 || st === 5) entry.player.playVideo();
@@ -1736,12 +1321,12 @@ function startYtSyncLoop(propData) {
     ytSyncLoops[propData.id] = setInterval(() => {
         if (typeof isHost === 'undefined' && typeof player === 'undefined') return;
         const e = ytPlayers[propData.id];
-        if (e && e.ended) return;   // video finished: play once, no more sync
+        if (e && (e.ended||e.data.paused)) return;   // video finished: play once, no more sync
         // Detect end from player state too (onStateChange can be missed).
         if (e && e.player && typeof e.player.getPlayerState === 'function') {
             try { if (e.player.getPlayerState() === 0) { e.ended = true; try { e.player.pauseVideo(); } catch (err) {} if (ytSyncLoops[propData.id]) { clearInterval(ytSyncLoops[propData.id]); delete ytSyncLoops[propData.id]; } return; } } catch (err) { }
         }
-        let at = (Date.now() - propData.startedAt) / 1000;
+        let at = (Date.now() - (e?.data?.startedAt??propData.startedAt)) / 1000;
         if (e && e.player && e.player.getCurrentTime) {
             try { at = e.player.getCurrentTime(); } catch (err) { }
         }
@@ -1750,6 +1335,7 @@ function startYtSyncLoop(propData) {
         if (e && e.isLive) return;
         const msg = {
             type: 'ytSync',
+            videoId:e?.data?.videoId||propData.videoId,
             propId: propData.id,
             at: Math.round((at || 0) * 10) / 10,
             ts: Date.now(),
@@ -1771,6 +1357,7 @@ function applyYtSync(data) {
     if (String(data.placer) === String(myDeviceID || '')) return;
     const e = ytPlayers[data.propId];
     if (!e) return;
+    if(e.data?.paused)return;
     if (e.ended) return;   // already finished: don't seek/replay
     // Detect end from player state.
     if (e.player && typeof e.player.getPlayerState === 'function') {
@@ -1789,25 +1376,56 @@ function applyYtSync(data) {
 // Per-frame tick, called from animate(). Position the DOM overlay on the
 // screen mesh, resync drifted players (>=1.2s), and lace audio volume to
 // proximity (same falloff as proximity voice).
+const _screenWorld = new THREE.Vector3();
+function screenWorld(e, out) {
+    const v = out || _screenWorld;
+    if (e && e.mesh) e.mesh.getWorldPosition(v);
+    else v.set(0, 0, 0);
+    return v;
+}
+// World screens put their picture on the mesh's -Z side (yawOffset PI); the
+// house TV's screen faces +Z like the rest of the furniture (yawOffset 0).
+function screenYaw(e) {
+    const base = e && e.mesh ? e.mesh.rotation.y : 0;
+    return base + (e && e.yawOffset !== undefined ? e.yawOffset : Math.PI);
+}
+
 window.tickYtScreens = function () {
+    const indoor = !!(window.Housing && Housing.inside);
     for (const id in ytPlayers) {
         const e = ytPlayers[id];
         if (!e.mesh) continue;
+        // Only the screens in the scene currently being rendered may be on
+        // screen. The inactive environment's Twitch iframe is hidden so it
+        // cannot float over the other scene.
+        if (!!e.inHouse !== indoor) {
+            if (e.twFrame) e.twFrame.style.display = 'none';
+            // Silence the inactive environment. YouTube can be muted directly;
+            // Twitch's embed owns its audio, so the proximity swap mutes it.
+            if (e.provider === 'twitch') { try { updateTwitchAudioRange(e); } catch (err) { } }
+            else { try { if (window.updateYtAudio) window.updateYtAudio(e); } catch (err) { } }
+            e.__shown = false;
+            continue;
+        }
+        if (e.twFrame) e.twFrame.style.display = '';
         if (e.cssObj) {
             // Panel sits relative to the housing mesh's world transform. The
-            // video is nudged toward its readable side by VIDEO_FORWARD so it
-            // sits just in front of the housing's face; punchScreens() stamps
+            // video is nudged toward its readable side by its forward offset so
+            // it sits just in front of the housing's face; punchScreens() stamps
             // the same plane out of the canvas alpha, and both must match.
-            const ry = e.mesh.rotation.y + Math.PI;
+            const p = screenWorld(e);
+            const ry = screenYaw(e);
+            const forward = e.forward !== undefined ? e.forward : VIDEO_FORWARD;
+            const panelY = e.panelY !== undefined ? e.panelY : PANEL_Y;
             e.cssObj.position.set(
-                e.mesh.position.x + Math.sin(ry) * VIDEO_FORWARD,
-                e.mesh.position.y + PANEL_Y,
-                e.mesh.position.z + Math.cos(ry) * VIDEO_FORWARD
+                p.x + Math.sin(ry) * forward,
+                p.y + panelY,
+                p.z + Math.cos(ry) * forward
             );
             e.cssObj.rotation.y = ry;
         }
         // Auto-advance queue when the current YouTube video has ended.
-        if (!e.ended && e.player && typeof e.player.getPlayerState === 'function') {
+        if (!e.ended && !e.data.paused && e.player && typeof e.player.getPlayerState === 'function') {
             try {
                 if (e.player.getPlayerState() === 0) {
                     e.ended = true;
@@ -1820,20 +1438,22 @@ window.tickYtScreens = function () {
         }
         // One-sided panel: the picture only exists on the placer's side.
         if (e.provider === 'twitch') {
-            const onScreen = positionTwitchFrame(e);
-            updateScreenFacing(e);
-            if (e.twFrame) {
-                // Never fade this layer: Chrome reports opacity:0 elements as
-                // not visible (IntersectionObserver v2), and Twitch latches its
-                // autoplay decision from that. When the camera is behind the
-                // panel the WebGL canvas simply isn't punched, so the housing
-                // covers the video anyway.
-                e.twFrame.style.opacity = '1';
-                const clickable = onScreen && !!e.__shown;
-                e.twFrame.style.pointerEvents = clickable ? 'auto' : 'none';
-            }
-            if (onScreen && e.__shown) mountPendingTwitch(e);
-            updateTwitchAudioRange(e);
+            try {
+                const onScreen = positionTwitchFrame(e);
+                updateScreenFacing(e);
+                if (e.twFrame) {
+                    // Never fade this layer: Chrome reports opacity:0 elements as
+                    // not visible (IntersectionObserver v2), and Twitch latches its
+                    // autoplay decision from that. When the camera is behind the
+                    // panel the WebGL canvas simply isn't punched, so the housing
+                    // covers the video anyway.
+                    e.twFrame.style.opacity = '1';
+                    const clickable = onScreen && !!e.__shown;
+                    e.twFrame.style.pointerEvents = clickable ? 'auto' : 'none';
+                }
+                if (onScreen && e.__shown) mountPendingTwitch(e);
+                updateTwitchAudioRange(e);
+            } catch (err) { console.warn('[screen] Twitch update failed', err); }
             continue;   // no JS API: Twitch owns its audio
         }
         updateScreenFacing(e);
@@ -1859,10 +1479,11 @@ const VIDEO_FORWARD = 0.22;
 function updateScreenFacing(e) {
     if (!e || !e.shell || !e.mesh) return;
     if (typeof camera === 'undefined' || !camera || !camera.position) return;
-    const rot = e.mesh.rotation.y || 0;
-    const dx = camera.position.x - e.mesh.position.x;
-    const dz = camera.position.z - e.mesh.position.z;
-    const dot = -(dx * Math.sin(rot) + dz * Math.cos(rot));
+    const yaw = screenYaw(e);
+    const p = screenWorld(e);
+    const dx = camera.position.x - p.x;
+    const dz = camera.position.z - p.z;
+    const dot = dx * Math.sin(yaw) + dz * Math.cos(yaw);
     if (e.__facing === undefined) e.__facing = dot >= 0;
     if (e.__facing && dot < -0.25) e.__facing = false;
     else if (!e.__facing && dot > 0.25) e.__facing = true;
@@ -1916,9 +1537,11 @@ function ensurePunchRig() {
 // Called from animate() right after renderer.render(scene, camera).
 window.punchScreens = function () {
     if (typeof renderer === 'undefined' || !renderer || !camera) return;
+    const indoor = !!(window.Housing && Housing.inside);
     let anyVisible = false;
     for (const id in ytPlayers) {
-        if (ytPlayers[id] && ytPlayers[id].__shown) { anyVisible = true; break; }
+        const e = ytPlayers[id];
+        if (e && !!e.inHouse === indoor && e.__shown) { anyVisible = true; break; }
     }
     if (!anyVisible) return;
     ensurePunchRig();
@@ -1928,16 +1551,22 @@ window.punchScreens = function () {
     try {
         for (const id in ytPlayers) {
             const e = ytPlayers[id];
-            if (!e || !e.mesh || !e.__shown) continue;
-            const ry = e.mesh.rotation.y + Math.PI;
-            punchMesh.position.set(
-                e.mesh.position.x + Math.sin(ry) * VIDEO_FORWARD,
-                e.mesh.position.y + PANEL_Y,
-                e.mesh.position.z + Math.cos(ry) * VIDEO_FORWARD
-            );
-            punchMesh.rotation.y = ry;
-            punchMesh.updateMatrixWorld(true);
-            renderer.render(punchScene, camera);
+            if (!e || !e.mesh || !e.__shown || !!e.inHouse !== indoor) continue;
+            try {
+                const p = screenWorld(e);
+                const ry = screenYaw(e);
+                const panelY = e.panelY !== undefined ? e.panelY : PANEL_Y;
+                const forward = e.forward !== undefined ? e.forward : VIDEO_FORWARD;
+                punchMesh.scale.set((e.panelW || PANEL_W) / PANEL_W, (e.panelH || PANEL_H) / PANEL_H, 1);
+                punchMesh.position.set(
+                    p.x + Math.sin(ry) * forward,
+                    p.y + panelY,
+                    p.z + Math.cos(ry) * forward
+                );
+                punchMesh.rotation.y = ry;
+                punchMesh.updateMatrixWorld(true);
+                renderer.render(punchScene, camera);
+            } catch (err) { console.warn('[screen] punch failed', id, err); }
         }
     } finally {
         renderer.autoClear = prevAutoClear;
@@ -1952,9 +1581,9 @@ window.punchScreens = function () {
 function ytTargetVolume(e) {
     let dist = 999;
     if (typeof player !== 'undefined' && player && player.position && e.mesh) {
-        dist = player.position.distanceTo(e.mesh.position);
+        dist = player.position.distanceTo(screenWorld(e));
     } else if (typeof camera !== 'undefined' && camera && e.mesh) {
-        dist = camera.position.distanceTo(e.mesh.position);
+        dist = camera.position.distanceTo(screenWorld(e));
     }
     const vol = Math.pow(Math.max(0, 1 - dist / MAX_VOICE_DISTANCE), 1.5);
     const num = (v, d) => (typeof v === 'number' && isFinite(v)) ? v : d;
@@ -2001,6 +1630,10 @@ window.updateYtAudio = function (e) {
 // their timeline is the DVR window, so any seek would jump into the past.
 window.tickYtSync = function (e, id) {
     if (!e.player || typeof camera === 'undefined') return;
+    if(e.data?.paused){
+        try{if(!e.isLive&&e.player.getCurrentTime&&Math.abs(e.player.getCurrentTime()-e.data.pausedAt)>.4)e.player.seekTo(e.data.pausedAt,true);if(e.player.getPlayerState?.()!==2)e.player.pauseVideo();}catch(error){}
+        return;
+    }
 
     if (e.isLive) {
         try {
@@ -2103,6 +1736,8 @@ window.applyYtChange = function (data) {
     const src = screenSourceFromData(data);
     if (!src) return;
 
+    const keepLivePlayer=e.provider==='twitch'&&src.provider==='twitch'&&src.twitchKind==='channel'&&e.data?.twitchKind==='channel'&&e.data?.twitchId===src.id;
+
     e.provider = src.provider;
     // Keep the prop id and the queue: dropping them here used to blank every
     // receiver's queue panel after a video change and desync index-based
@@ -2117,15 +1752,18 @@ window.applyYtChange = function (data) {
         twitchKind: src.provider === 'twitch' ? src.twitchKind : null,
         queue: Array.isArray(data.queue) ? data.queue.slice() : prevQueue,
         startedAt: data.startedAt || Date.now(),
+        paused:false,pausedAt:0,
         placer: data.placer || (e.data && e.data.placer) || ''
     };
+    for(const list of [typeof myProps!=='undefined'?myProps:[],typeof activeProps!=='undefined'?activeProps:[]]){const record=list.find(p=>p.id===id);if(record){record.paused=false;record.pausedAt=0;}}
+    if(typeof props!=='undefined'&&props[id]?.userData?.propData){props[id].userData.propData.paused=false;props[id].userData.propData.pausedAt=0;}
     e.syncAt = null;
     e.syncRecvAt = null;
     e.isLive = undefined;   // re-detect for the new video
     e.ended = false;
     e.__advAt = 0;
     // Rebuilds the shell contents for whichever provider is now active.
-    mountScreenContent(e);
+    if(keepLivePlayer)resyncExistingTwitch(e);else mountScreenContent(e);
     if (activeScreenId === id && typeof renderScreenQueue === 'function') renderScreenQueue();
 };
 
@@ -2148,13 +1786,107 @@ function getScreenEntry(propId) {
     return (typeof ytPlayers !== 'undefined' && ytPlayers[propId]) || null;
 }
 
+function validateScreenPlaybackRequest(data,clientId,records){
+    if(!data||typeof clientId!=='string'||!clientId||typeof data.paused!=='boolean'||!Number.isFinite(data.at)||data.at<0||data.at>1e7)return null;
+    const record=records.find(p=>p.id===data.propId);
+    if(!record||record.type!=='screen'||record.owner!==clientId||record.provider!=='youtube'||record.videoId!==data.videoId)return null;
+    const clean={type:'ytPlayback',propId:record.id,videoId:record.videoId,paused:data.paused,at:data.at,startedAt:Date.now()-data.at*1000};
+    Object.assign(record,{paused:clean.paused,pausedAt:clean.at,startedAt:clean.startedAt});return clean;
+}
+function canPauseScreen(entry){
+    if(!entry?.data||entry.data.provider!=='youtube'||!entry.data.videoId)return false;
+    if(entry.isHouse)return entry.houseOwnerLocal===true;
+    const device=typeof myDeviceID!=='undefined'?String(myDeviceID||''):'';
+    return !!device&&String(entry.data.placer||'')===device;
+}
+function applyScreenPlayback(data){
+    if(!data||typeof data.paused!=='boolean'||!Number.isFinite(data.at)||data.at<0||data.at>1e7)return false;
+    const entry=getScreenEntry(data.propId);
+    if(!entry?.data||entry.data.provider!=='youtube'||entry.data.videoId!==data.videoId)return false;
+    const state={paused:data.paused,pausedAt:data.at,startedAt:Number.isFinite(data.startedAt)?data.startedAt:Date.now()-data.at*1000};
+    Object.assign(entry.data,state);entry.syncAt=data.at;entry.syncRecvAt=Date.now();entry.ended=false;
+    if(typeof props!=='undefined'&&props[data.propId]?.userData?.propData)Object.assign(props[data.propId].userData.propData,state);
+    for(const list of [typeof myProps!=='undefined'?myProps:[],typeof activeProps!=='undefined'?activeProps:[]]){
+        const record=list.find(p=>p.id===data.propId);if(record)Object.assign(record,state);
+    }
+    try{if(entry.player){if(!entry.isLive&&entry.player.seekTo)entry.player.seekTo(data.at,true);if(data.paused)entry.player.pauseVideo();else entry.player.playVideo();}}catch(error){}
+    if(typeof activeScreenId!=='undefined'&&activeScreenId===data.propId&&typeof renderScreenQueue==='function')renderScreenQueue();
+    return true;
+}
+window.toggleScreenPause=function(propId=activeScreenId){
+    const entry=getScreenEntry(propId);
+    if(!canPauseScreen(entry)){showToast('Only the owner can pause or resume this screen.','error');return false;}
+    const paused=entry.data.paused!==true;let at=entry.data.paused===true?entry.data.pausedAt:Math.max(0,(Date.now()-entry.data.startedAt)/1000);
+    if(entry.data.paused!==true)try{if(entry.player?.getCurrentTime)at=entry.player.getCurrentTime();}catch(error){}
+    at=Math.max(0,Math.min(1e7,Number(at)||0));
+    const message={type:'ytPlayback',propId,videoId:entry.data.videoId,paused,at,startedAt:Date.now()-at*1000};
+    if(!applyScreenPlayback(message))return false;
+    if(entry.isHouse){if(typeof entry.houseSync==='function')entry.houseSync(entry.data);}
+    else if(typeof isHost!=='undefined'&&isHost)broadcastToClients(message);
+    else if(typeof hostConn!=='undefined'&&hostConn?.open)hostConn.send(message);
+    return true;
+};
+function canResyncLiveScreen(entry){
+    if(entry?.data?.provider!=='twitch'||entry.data.twitchKind!=='channel'||!entry.data.twitchId)return false;
+    return entry.isHouse?entry.houseOwnerLocal===true:!!String(typeof myDeviceID!=='undefined'?myDeviceID||'':'')&&String(entry.data.placer||'')===String(myDeviceID);
+}
+window.resyncScreenToLive=function(propId=activeScreenId){
+    const entry=getScreenEntry(propId);
+    if(!canResyncLiveScreen(entry)){showToast('Only the owner can resync a Twitch live screen.','error');return false;}
+    const now=Date.now();
+    if(now-(entry.liveResyncRequestedAt??-Infinity)<10000){showToast('Wait a few seconds before resyncing again.');return false;}
+    const hosting=typeof isHost!=='undefined'&&isHost;
+    if(!entry.isHouse&&!hosting&&!(typeof hostConn!=='undefined'&&hostConn?.open)){showToast('Reconnect to the lobby before resyncing.','error');return false;}
+    if(entry.isHouse&&typeof entry.houseSync!=='function')return false;
+    entry.liveResyncRequestedAt=now;
+    // The validated owner-only path resumes paused viewers on the same channel.
+    // It cannot align live timestamps and must never reset a playing viewer.
+    const message={type:'ytChange',propId,provider:'twitch',videoId:null,twitchId:entry.data.twitchId,twitchKind:'channel',startedAt:now,placer:entry.data.placer};
+    if(entry.isHouse){
+        entry.data.startedAt=now;entry.data.paused=false;entry.data.pausedAt=0;
+        resyncExistingTwitch(entry);entry.houseSync(entry.data);
+    }else if(hosting){
+        window.applyYtChange(message);
+        for(const list of [typeof myProps!=='undefined'?myProps:[],typeof activeProps!=='undefined'?activeProps:[]]){
+            const record=list.find(p=>p.id===propId);if(record)record.startedAt=now;
+        }
+        broadcastToClients(message);
+    }else{
+        // Wait for the host relay so the owner does not reload twice.
+        hostConn.send(message);
+    }
+    showToast('Requested live playback recovery. Playing viewers are unchanged; Twitch controls live delay.');
+    return true;
+};
+function renderScreenPauseControl(entry){
+    const button=document.getElementById('screen-pause-button'),status=document.getElementById('screen-playback-status');
+    if(!button)return;const available=entry?.data?.provider==='youtube'&&!!entry.data.videoId,owner=canPauseScreen(entry);
+    button.hidden=!available;button.disabled=!owner;button.textContent=entry?.data?.paused?'Resume video':'Pause video';button.setAttribute('aria-pressed',String(entry?.data?.paused===true));
+    if(status)status.textContent=available?((entry.data.paused?'Paused':'Playing')+(owner?'':' · Only the owner can pause or resume.')):'';
+    const resync=document.getElementById('screen-resync-live');
+    const live=entry?.data?.provider==='twitch'&&entry.data.twitchKind==='channel';
+    if(resync){resync.hidden=!live;resync.disabled=!canResyncLiveScreen(entry);resync.textContent='Resume live for room';}
+    const localPlay=document.getElementById('screen-play-live');
+    if(localPlay)localPlay.hidden=!live;
+    const restart=document.getElementById('screen-restart-live');
+    if(restart)restart.hidden=!live;
+    if(live&&status)status.textContent='Restart at live opens a fresh stream on this device only, discarding your rewind position. Play here only resumes. Live buffering can differ.';
+}
+
 function renderScreenQueue() {
     const list = document.getElementById('screen-queue-list');
     if (!list || !activeScreenId) return;
     const entry = getScreenEntry(activeScreenId);
     const pd = entry ? entry.data : null;
+    renderScreenPauseControl(entry);
     const queue = (pd && Array.isArray(pd.queue)) ? pd.queue : [];
-    const isOwner = pd && (String(pd.placer || '') === String(myDeviceID || '') || (typeof isHost !== 'undefined' && isHost));
+    const isOwner = entry ? (entry.isHouse ? !!entry.houseOwnerLocal : (!!pd && (String(pd.placer || '') === String(myDeviceID || '') || (typeof isHost !== 'undefined' && isHost)))) : false;
+    const input = document.getElementById('screen-queue-input');
+    const addBtn = document.getElementById('screen-queue-add');
+    if (input) { input.disabled = false; input.placeholder = 'Paste YouTube/Twitch URL'; }
+    if (addBtn) { addBtn.disabled = false; addBtn.style.opacity = '1'; }
+    const subtitle = document.querySelector('#screen-queue-overlay .overlay-subtitle');
+    if (subtitle) subtitle.textContent = entry && entry.isHouse ? 'Add videos; the house owner controls playback.' : "Add videos; the screen's owner controls playback.";
     list.innerHTML = '';
     if (queue.length === 0) {
         const empty = document.createElement('div');
@@ -2202,6 +1934,11 @@ function renderScreenQueue() {
         list.appendChild(row);
     });
 }
+window.refreshScreenQueue = renderScreenQueue;
+window.closeScreenQueue = function () {
+    const ui = document.getElementById('screen-queue-overlay');
+    if (ui && ui.style.display === 'flex') window.toggleScreenQueue();
+};
 
 window.addScreenQueueFromInput = async function () {
     const src = (typeof parseScreenSource === 'function') ? parseScreenSource(String((document.getElementById('screen-queue-input') || {}).value || '').trim()) : null;
@@ -2223,8 +1960,25 @@ async function addToScreenQueue(propId, src) {
     // is what used to show up as a row of numbers in the queue panel).
     const myName = (typeof saveState !== 'undefined' && saveState && saveState.displayName)
         ? String(saveState.displayName) : 'Fisher';
-    const item = { provider: src.provider, id: src.id, twitchKind: src.twitchKind || null, title: title, addedBy: myName };
+    if(entry.data.queue.length>=50){showToast('A screen queue can hold at most 50 videos.');return;}
+    const item = { provider: src.provider, id: src.id, twitchKind: src.twitchKind || null, title: typeof title==='string'?title.slice(0,500):null, addedBy: myName };
     entry.data.queue.push(item);
+    if (entry.isHouse) {
+        if (entry.houseOwnerLocal) {
+            const idle = !entry.data.provider && !entry.data.videoId && !entry.data.twitchId;
+            if (idle) playScreenQueueIndex(propId, entry.data.queue.length - 1);
+            else if (typeof entry.houseSync === 'function') entry.houseSync(entry.data);
+        } else {
+            // Guests may queue videos, exactly like the outdoor stream player.
+            // Only the owner can start playback; the owner's house:update then
+            // brings the authoritative queue back to everyone.
+            const msg = { type: 'screenQueueAdd', propId: propId, item: item, placer: String(myDeviceID || '') };
+            if (typeof isHost !== 'undefined' && isHost) broadcastToClients(msg);
+            else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) hostConn.send(msg);
+        }
+        renderScreenQueue();
+        return;
+    }
     const msg = { type: 'screenQueueAdd', propId: propId, item: item, placer: String(myDeviceID || '') };
     if (typeof isHost !== 'undefined' && isHost) {
         broadcastToClients(msg);
@@ -2252,10 +2006,16 @@ function fetchYtTitle(id) {
 function moveScreenQueue(propId, idx, dir) {
     const entry = getScreenEntry(propId);
     if (!entry || !entry.data || !Array.isArray(entry.data.queue)) return;
+    if (entry.isHouse && !entry.houseOwnerLocal) return;
     const q = entry.data.queue;
     const ni = idx + dir;
     if (ni < 0 || ni >= q.length) return;
     const tmp = q[idx]; q[idx] = q[ni]; q[ni] = tmp;
+    if (entry.isHouse) {
+        if (typeof entry.houseSync === 'function') entry.houseSync(entry.data);
+        renderScreenQueue();
+        return;
+    }
     const msg = { type: 'screenQueueMove', propId: propId, from: idx, to: ni, placer: String(myDeviceID || '') };
     if (typeof isHost !== 'undefined' && isHost) broadcastToClients(msg);
     else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) hostConn.send(msg);
@@ -2265,8 +2025,15 @@ function moveScreenQueue(propId, idx, dir) {
 function removeFromScreenQueue(propId, idx) {
     const entry = getScreenEntry(propId);
     if (!entry || !entry.data || !Array.isArray(entry.data.queue)) return;
+    if (entry.isHouse && !entry.houseOwnerLocal) return;
     if (idx < 0 || idx >= entry.data.queue.length) return;
     entry.data.queue.splice(idx, 1);
+    entry.data.paused=false;entry.data.pausedAt=0;
+    if (entry.isHouse) {
+        if (typeof entry.houseSync === 'function') entry.houseSync(entry.data);
+        renderScreenQueue();
+        return;
+    }
     const msg = { type: 'screenQueueRemove', propId: propId, idx: idx, placer: String(myDeviceID || '') };
     if (typeof isHost !== 'undefined' && isHost) {
         broadcastToClients(msg);
@@ -2282,14 +2049,19 @@ function playScreenQueueIndex(propId, idx) {
     if (idx < 0 || idx >= entry.data.queue.length) return;
     // Playback control is owner-only: the screen's placer, the host (room
     // authority — its auto-advance and idle-start also come through here), or
-    // anyone in single-player. Other clients only ever start a video by
-    // receiving the owner's ytChange broadcast; letting them run this locally
-    // would desync their player from the room.
-    const singlePlayer = (typeof isHost === 'undefined' || (!isHost && !hostConn));
-    const isPlacer = String(entry.data.placer || '') === String(myDeviceID || '');
-    if (!singlePlayer && !(typeof isHost !== 'undefined' && isHost) && !isPlacer) {
-        showToast('Only the player who placed this screen can play from its queue.', 'error');
-        return;
+    // anyone in single-player. House TVs use the local house owner instead.
+    if (entry.isHouse) {
+        if (!entry.houseOwnerLocal) {
+            showToast('Only the house owner can control this TV.', 'error');
+            return;
+        }
+    } else {
+        const singlePlayer = (typeof isHost === 'undefined' || (!isHost && !hostConn));
+        const isPlacer = String(entry.data.placer || '') === String(myDeviceID || '');
+        if (!singlePlayer && !(typeof isHost !== 'undefined' && isHost) && !isPlacer) {
+            showToast('Only the player who placed this screen can play from its queue.', 'error');
+            return;
+        }
     }
     const q = entry.data.queue[idx];
     const src = { provider: q.provider, id: q.id, twitchKind: q.twitchKind };
@@ -2305,6 +2077,11 @@ function playScreenQueueIndex(propId, idx) {
     entry.ended = false;
     entry.__advAt = 0;
     if (typeof mountScreenContent === 'function') mountScreenContent(entry);
+    if (entry.isHouse) {
+        if (typeof entry.houseSync === 'function') entry.houseSync(entry.data);
+        renderScreenQueue();
+        return;
+    }
     // The post-splice queue rides along so receivers splice the same item out
     // (their local queues would otherwise keep it and index-based removes
     // would drift out of alignment).
@@ -2323,6 +2100,7 @@ function playScreenQueueIndex(propId, idx) {
             rec.twitchKind = entry.data.twitchKind;
             rec.startedAt = entry.data.startedAt;
             rec.queue = entry.data.queue.slice();
+            rec.paused=false;rec.pausedAt=0;
         });
     } else if (typeof hostConn !== 'undefined' && hostConn && hostConn.open) {
         hostConn.send(msg);
@@ -2346,10 +2124,14 @@ function playScreenQueueIndex(propId, idx) {
 // follows the ytChange broadcast that playScreenQueueIndex sends.
 function advanceScreenQueue(propId) {
     const entry = getScreenEntry(propId);
-    if (!entry || !entry.data || !Array.isArray(entry.data.queue) || entry.data.queue.length === 0) return;
-    // Allow advancement in single-player (no host) too.
-    const singlePlayer = (typeof isHost === 'undefined' || (!isHost && !hostConn));
-    if (typeof isHost !== 'undefined' && !isHost && !singlePlayer) return;
+    if (!entry || !entry.data || entry.data.paused || !Array.isArray(entry.data.queue) || entry.data.queue.length === 0) return;
+    if (entry.isHouse) {
+        if (!entry.houseOwnerLocal) return;
+    } else {
+        // Allow advancement in single-player (no host) too.
+        const singlePlayer = (typeof isHost === 'undefined' || (!isHost && !hostConn));
+        if (typeof isHost !== 'undefined' && !isHost && !singlePlayer) return;
+    }
     const now = Date.now();
     if (entry.__advAt && now - entry.__advAt < 4000) return;
     entry.__advAt = now;

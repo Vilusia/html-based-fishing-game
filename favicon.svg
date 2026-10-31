@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges" role="img" aria-labelledby="favicon-title">
+    <title id="favicon-title">HTML Fishing</title>
+    <!-- rounded pixel frame -->
+    <rect x="2" y="0" width="12" height="1" fill="#3f4968"/>
+    <rect x="1" y="1" width="14" height="1" fill="#3f4968"/>
+    <rect x="0" y="2" width="16" height="12" fill="#3f4968"/>
+    <rect x="1" y="14" width="14" height="1" fill="#3f4968"/>
+    <rect x="2" y="15" width="12" height="1" fill="#3f4968"/>
+    <rect x="2" y="1" width="12" height="1" fill="#1b1f2e"/>
+    <rect x="1" y="2" width="14" height="12" fill="#1b1f2e"/>
+    <rect x="2" y="14" width="12" height="1" fill="#1b1f2e"/>
+
+    <!-- bubbles -->
+    <rect x="12" y="2" width="2" height="2" fill="#8fd8e8"/>
+    <rect x="14" y="4" width="1" height="1" fill="#8fd8e8"/>
+
+    <!-- tail -->
+    <rect x="4" y="4" width="2" height="3" fill="#e08a2b"/>
+    <rect x="4" y="9" width="2" height="3" fill="#e08a2b"/>
+
+    <!-- body and fins -->
+    <rect x="6" y="6" width="9" height="4" fill="#f2c14e"/>
+    <rect x="10" y="4" width="3" height="2" fill="#e08a2b"/>
+    <rect x="10" y="10" width="3" height="2" fill="#e08a2b"/>
+    <rect x="7" y="8" width="6" height="1" fill="#f6dfb0"/>
+    <rect x="6" y="7" width="1" height="2" fill="#e0a22f"/>
+    <rect x="10" y="7" width="1" height="2" fill="#e0a22f"/>
+
+    <!-- face -->
+    <rect x="11" y="6" width="2" height="2" fill="#f7fbff"/>
+    <rect x="12" y="6" width="1" height="1" fill="#10131c"/>
+    <rect x="14" y="8" width="1" height="1" fill="#10131c"/>
+</svg>

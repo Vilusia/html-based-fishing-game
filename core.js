@@ -1,4 +1,4 @@
-﻿
+
 (function () {
     // Play domains. Substring matching covers every subdomain of both roots.
     // The game is served at https://htmlfishing.com (root); the lobby
@@ -18,7 +18,9 @@
     }
 })();
 // --- CORE GAME CONFIGURATION ---
-const GAME_VERSION = "v12.329";
+const GAME_VERSION = "v12.519";
+// Temporary rollout switch: retain both renderers while 2D selection is disabled.
+const TWO_D_MODE_AVAILABLE = false;
 
 // Save-file schema version. Bump whenever a change can't be read by older
 // code, and add a matching step in migrateSave() (ui.js). Kept separate from
@@ -192,7 +194,7 @@ const MISC_TYPES = [
     { id: 'raccoon_mask', name: 'Raccoon Mask' },
     { id: 'lion_mane', name: 'Lion Mane' },
     { id: 'penguin_belly', name: 'Penguin Belly' },
-    { id: 'protogen_visor', name: 'Protogen Visor' },
+    { id: 'protogen_visor', name: 'Protogen Side Circles & Fins' },
     // --- NEW MISC TYPES ---
     { id: 'wolf_ruff', name: 'Wolf Neck Ruff' },
     { id: 'deer_spots', name: 'Deer Spots' },
@@ -284,6 +286,26 @@ const BOBBER_TYPES = [
     { id: 'pumpkin', name: 'Pumpkin', price: 1500, color: 0xffa500, model: 'sphere' },
     { id: 'bomb', name: 'Bomb', price: 2500, color: 0x333333, model: 'sphere' },
     { id: 'gold', name: 'Golden Orb', price: 10000, color: 0xffd700, model: 'sphere', metallic: true },
+    {"id":"mushroom","name":"Toadstool","price":2500,"color":14241109,"model":"mushroom"},
+    {"id":"cork","name":"Cork Float","price":600,"color":12161634,"model":"cork"},
+    {"id":"pencil","name":"Pencil","price":1200,"color":16042562,"model":"pencil"},
+    {"id":"lantern","name":"Little Lantern","price":4500,"color":16765803,"model":"lantern"},
+    {"id":"acorn","name":"Acorn","price":1800,"color":12288329,"model":"acorn"},
+    {"id":"apple","name":"Apple","price":1200,"color":14634314,"model":"apple"},
+    {"id":"orange_fruit","name":"Orange","price":1200,"color":16030258,"model":"orange_fruit"},
+    {"id":"watermelon","name":"Watermelon","price":2000,"color":6532436,"model":"watermelon"},
+    {"id":"lemon","name":"Lemon","price":1200,"color":15915597,"model":"lemon"},
+    {"id":"lime","name":"Lime","price":1200,"color":9553740,"model":"lime"},
+    {"id":"donut","name":"Strawberry Donut","price":3000,"color":13209944,"model":"donut"},
+    {"id":"lifering","name":"Life Ring","price":2000,"color":15294031,"model":"lifering"},
+    {"id":"buoy","name":"Harbor Buoy","price":2500,"color":14512193,"model":"buoy"},
+    {"id":"bottle","name":"Message Bottle","price":3500,"color":7716018,"model":"bottle"},
+    {"id":"jellyfish","name":"Jellyfish","price":4500,"color":11832287,"model":"jellyfish"},
+    {"id":"octopus","name":"Little Octopus","price":4000,"color":15041187,"model":"octopus"},
+    {"id":"turtle","name":"Turtle","price":4000,"color":5409609,"model":"turtle"},
+    {"id":"koi","name":"Koi Float","price":5000,"color":15895619,"model":"koi"},
+    {"id":"rocket","name":"Rocket","price":6000,"color":13851220,"model":"rocket"},
+    {"id":"ufo","name":"Flying Saucer","price":7500,"color":10857660,"model":"ufo"},
 ];
 
 // --- TOOLS DEFINITION ---
@@ -453,10 +475,45 @@ const DEFAULT_KEYBINDS = {
     sail: 'KeyR',
     chat: 'Enter',
     menu: 'Escape',
+    emote: 'KeyC',
+    sit: 'KeyX',
     hideHud: 'KeyH'
 };
 
+// Body paint is a compact 24x23 indexed bitmap. Each character is one palette
+// index (0-f) and "." is transparent, so a full design stays under 600 bytes
+// and can travel in the normal player-update packet.
+const BODY_PAINT_WIDTH = 24;
+const BODY_PAINT_HEIGHT = 23;
+const BODY_PAINT_SIZE = BODY_PAINT_WIDTH * BODY_PAINT_HEIGHT;
+const BODY_PAINT_PALETTE = [
+    '#ffffff', '#f5dfb3', '#c69b6e', '#80563d',
+    '#73869c', '#282d38', '#101019', '#e887a8',
+    '#ef765c', '#f3c650', '#74ed43', '#79d6b0',
+    '#72c7ef', '#4078c8', '#b79bea', '#8059b8'
+];
+function normalizeBodyPaint(value) {
+    if (typeof value !== 'string') return '';
+    const clean = value.trim().toLowerCase();
+    if (!clean) return '';
+    if (clean.length !== BODY_PAINT_SIZE) return '';
+    return /^[.0-9a-fx]+$/.test(clean) ? clean : '';
+}
+function normalizeBodyPaintColor(value) {
+    return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : '#ffffff';
+}
+if (typeof window !== 'undefined') window.BodyPaint = { width: BODY_PAINT_WIDTH, height: BODY_PAINT_HEIGHT, size: BODY_PAINT_SIZE, palette: BODY_PAINT_PALETTE, customIndex: 'x', normalize: normalizeBodyPaint, normalizeColor: normalizeBodyPaintColor };
+
 const DEFAULT_SAVE_STATE = {
+    tutorialDone: false,
+    tutorialProgress: null,
+    hollowtide2026: {embers:0,catches:0,discovered:[],collectionClaimed:false},
+    unlockedEmotes: [],
+    unlockedProps: [], // One-time outdoor prop purchases
+    tournamentAwards: [], // Persist paid receipts to reject retransmitted prizes.
+    explorationReceipts: [],
+    explorationStats: {finds:0,money:0},
+    emoteWheel: [null,null,null,null,null],
     money: 0,
     inventory: [],
     wood: 0, // Resource
@@ -478,17 +535,22 @@ const DEFAULT_SAVE_STATE = {
     micId: 'default',
     musicMuted: false,
     hasGlove: false,
+    unlockedBoats: [],      // Permanent shared boat purchases
     hasBoat: false,         // Sailing: own a rowboat (bought from the Merchant)
     species: 'cat', // Legacy
     currentEars: 'cat',
     currentEyes: 'standard',
     currentNose: 'cat',
     currentMisc: 'none',
+    protogenLogo: '',
     currentTail: 'cat',
     earsColor: '',
     noseColor: '',
     miscColor: '',
     tailColor: '',
+    tailAccentColor: '',
+    handColor: '',
+    footColor: '',
     unlockedHair: ['none'],
     currentHair: 'none',
     hairColor: '',
@@ -507,14 +569,37 @@ const DEFAULT_SAVE_STATE = {
     currentRod: 'bamboo',
     unlockedShirts: ['none'],
     currentShirt: 'none',
+    unlockedPants: ['none'],
+    currentPants: 'none',
     unlockedCollars: ['none'],
     currentCollar: 'none',
     currentTitle: 'none',
     showTitles: true,
+
+    house: {version:1,name:'My house',wall:'#eadac4',floor:'#b0825e',trim:'#714933',furniture:[],inventory:[]},
+    showFPS: true,
+    renderScale: 0,
+    retroShader: true,
+    retroShaderDefaultRevision: 1,
+    retroPixelSize: 3,
+    characterQualityRevision: 1,
     savedOutfits: [],
     lavaUnlocked: false,
-    unlockedPatterns: ['none'],
-    currentPattern: 'none',
+    bodyPaint: '',
+    bodyPaintBack: '',
+    bodyPaintLeft: '',
+    bodyPaintRight: '',
+    bodyPaintHeadFront: '',
+    bodyPaintHeadBack: '',
+    bodyPaintHeadLeft: '',
+    bodyPaintHeadRight: '',
+    bodyPaintHeadTop: '',
+    bodyPaintHeadBottom: '',
+    bodyPaintArmLeft: '',
+    bodyPaintArmRight: '',
+    bodyPaintLegLeft: '',
+    bodyPaintLegRight: '',
+    bodyPaintColor: '#ffffff',
 
     // Tools
     // NOTE: the PvP Glove is NOT free — it is only added here once the player
@@ -552,7 +637,7 @@ const DEFAULT_SAVE_STATE = {
     debugMode: false,
 
     // Character models: false = 2D billboards, true = 3D boxes
-    model3D: false,
+    model3D: true,
 
     keybinds: { ...DEFAULT_KEYBINDS }
 };
