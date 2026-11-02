@@ -16,14 +16,6 @@ let isMicMuted = true;
 // --- ANTI-SPAM / RATE LIMITING ---
 // Tracks the last timestamp of actions per Peer ID
 const rateLimits = {};
-const SPAM_THRESHOLDS = {
-    chat: 500,      // 500ms between chat messages
-    sound: 200,     // 200ms between sounds (meows)
-
-    anim: 300,      // 300ms between punches
-    general: 50     // 50ms min between ANY packet (prevents DOS)
-};
-
 const createOscGain = (freq, type = 'sine') => {
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
@@ -410,6 +402,8 @@ const SailAudio = {
 
 // --- DYNAMIC MUSIC SYSTEM ---
 // --- FILE-BASED MUSIC SYSTEM ---
+// Track folder: "music/", retried once as "Music/" on case-sensitive hosts.
+let musicBasePath = 'music/';
 const Music = {
     audio: new Audio(),
     playlist: [
@@ -461,7 +455,7 @@ const Music = {
         Music.lastSongIndex = nextIndex;
         const songName = Music.playlist[nextIndex];
 
-        Music.audio.src = `music/${songName}`;
+        Music.audio.src = musicBasePath + songName;
         Music.audio.volume = 0.2; // Default music volume
         Music.audio.play().catch(e => console.warn("Auto-play blocked or error:", e));
         console.log(`Now Playing: ${songName}`);
@@ -471,17 +465,18 @@ const Music = {
         Music.isPlaying = false;
         Music.audio.pause();
         Music.audio.currentTime = 0;
-    },
-
-    // Resume function called when unmuting
-    resume: () => {
-        if (Music.isPlaying && Music.audio.paused && !saveState.musicMuted) {
-            Music.audio.play();
-        } else if (!Music.isPlaying && !saveState.musicMuted) {
-            Music.init();
-        }
     }
 };
+
+// The track folder is "Music/" on disk but requested as "music/". Windows
+// ignores the difference; case-sensitive hosts are saved by this one retry.
+Music.audio.addEventListener('error', () => {
+    const src = Music.audio.getAttribute('src') || '';
+    if (src.startsWith('music/')) {
+        musicBasePath = 'Music/';
+        Music.audio.src = musicBasePath + src.slice(6);
+    }
+});
 
 // --- PROCEDURAL RAIN AUDIO ENGINE ---
 // Real rain is broadband: a soft low/mid body plus a high, airy hiss. The old

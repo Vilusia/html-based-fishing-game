@@ -50,19 +50,36 @@ try {
     if ($Scp) {
         Write-Host "== Copying files to ${SshTarget}:$RemotePath ==" -ForegroundColor Cyan
         # Ship only what the site needs (no .git, no master-server code).
+        # Keep this list in step with the <script>/<link> tags in index.html and
+        # editor.html — the regression tests fail when a page script is missing.
         $files = @(
-            'index.html', 'editor.html', 'favicon.ico', 'favicon.svg', 'favicon-16.png', 'favicon-32.png', 'favicon-48.png', 'apple-touch-icon.png',
-            'core.js', 'ui.js', 'character-studio.js', 'character-studio.css', 'character-thumbnails.js', 'shop-try-on.js', 'protogen-logo.js', 'protogen-logo.css', 'guided-tutorial.js', 'guided-tutorial.css', 'performance.js', 'housing.js', 'furniture.js', 'outdoor-props.js', 'network-guard.js', 'exploration.js', 'rowboat.js', 'props.js', 'fish.js',
-            'ocean.js', 'worldgen.js', 'character3d.js', 'bobbers3d.js', 'shop-preview.js', 'emotes.js', 'halloween.js', 'boats.js', 'mobile-ui.js', 'mobile-ui.css', 'networking.js', 'audio.js', 'reel-audio.js',
-            'progression.js', 'tournaments.js', 'level-loader.js', 'icons.js', 'editor.js'
+            'index.html', 'editor.html', 'ads.txt', '.htaccess',
+            'favicon.ico', 'favicon.svg', 'favicon-16.png', 'favicon-32.png', 'favicon-48.png',
+            'apple-touch-icon.png', 'patreon_banner.png',
+            'vendor/Midi.js', 'vendor/three.min.js', 'vendor/CSS3DRenderer.js', 'vendor/peerjs.min.js',
+            'mobile-ui.css', 'guided-tutorial.css', 'protogen-logo.css', 'character-studio.css',
+            'icons.js', 'worldgen.js', 'ocean.js', 'core.js', 'fish.js', 'protogen-logo.js',
+            'character3d.js', 'bobbers3d.js', 'networking.js', 'audio.js', 'reel-audio.js',
+            'progression.js', 'performance.js', 'outdoor-props.js', 'rowboat.js', 'network-guard.js',
+            'ui.js', 'shop-preview.js', 'shop-try-on.js', 'character-thumbnails.js',
+            'character-studio.js', 'emotes.js', 'tournaments.js', 'furniture.js', 'housing.js',
+            'props.js', 'exploration.js', 'level-loader.js', 'scratch.js', 'boats.js',
+            'halloween.js', 'mobile-ui.js', 'guided-tutorial.js', 'editor.js'
         ) | Where-Object { Test-Path (Join-Path $repo $_) }
 
-        ssh $SshTarget "mkdir -p '$RemotePath'"
+        ssh $SshTarget "mkdir -p '$RemotePath' '$RemotePath/vendor'"
         foreach ($f in $files) {
             scp (Join-Path $repo $f) "${SshTarget}:$RemotePath/$f"
         }
-        # Music + any asset folders, if present.
-        foreach ($dir in @('music', 'sfx', 'assets')) {
+        # Music: the game requests "music/", but the repo folder is "Music/".
+        # Upload it under the lowercase name so case-sensitive hosts find it.
+        if (Test-Path (Join-Path $repo 'Music')) {
+            $staging = '/tmp/html-fishing-music'
+            ssh $SshTarget "rm -rf '$staging' && mkdir -p '$staging'"
+            scp -r (Join-Path $repo 'Music') "${SshTarget}:$staging/"
+            ssh $SshTarget "rm -rf '$RemotePath/music' && mv '$staging/Music' '$RemotePath/music' && rmdir '$staging'"
+        }
+        foreach ($dir in @('sfx', 'assets')) {
             if (Test-Path (Join-Path $repo $dir)) {
                 scp -r (Join-Path $repo $dir) "${SshTarget}:$RemotePath/"
             }

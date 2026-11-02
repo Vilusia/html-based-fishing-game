@@ -299,10 +299,6 @@ TITLE_TYPES.push(
     {id:'angler_collector',text:'Freshwater Collector',price:0,color:'#a6c77b',collection:'angler'}
 );
 const TITLE_MAP = new Map(TITLE_TYPES.map(t => [t.id, t]));
-function getTitleById(id) {
-    return TITLE_MAP.get(id) || TITLE_MAP.get('none');
-}
-
 
 // Golden color variants of real species. They use a separate universal roll,
 // never ordinary bait/zone weights, so rarity stays the same everywhere.
@@ -389,11 +385,6 @@ const TIERS = [
     { id: 'shining', name: 'Shining', chance: 9, priceMult: 2.5, drainMult: 1.4, color: '#c0c0c0' },
     { id: 'opalescent', name: 'Opalescent', chance: 3, priceMult: 5.0, drainMult: 1.6, color: '#ffd700' }
 ];
-
-const TIER_MAP = new Map(TIERS.map(t => [t.id, t]));
-function getTierById(id) {
-    return TIER_MAP.get(id) || TIER_MAP.get('normal');
-}
 
 // --- COSMETIC ITEM DEFINITIONS ---
 
@@ -822,8 +813,6 @@ let hemiLight = null, fillLight = null;
 let player, playerVelocity = new THREE.Vector3();
 let isDiving = false, isProne = false, isSitting = false, diveTimer = 0;
 let diveDir = new THREE.Vector3();
-let lastSpacePress = 0;
-let pendingJump = false, pendingJumpTime = 0;
 let controls = { forward: false, backward: false, left: false, right: false, jump: false };
 let isRightMouseDown = false;
 let isGloveActive = false;
@@ -831,7 +820,6 @@ let knockbackVelocity = new THREE.Vector3();
 let localHeldFish = null;
 let fishHoldTimer = null;
 
-let lastPunchTime = 0;
 let isFirstPerson = false; // New FP State
 let cameraFrozen = false; // Freezes camera when menus are open
 let inputBlocked = false; // Blocks player movement when menus are open
@@ -853,7 +841,6 @@ let lavaColliders = []; // Stores rock positions for physics
 
 // --- CAMERA ---
 let cameraDistance = 6;
-const MIN_ZOOM = 2;
 const MAX_ZOOM = 20;
 
 // --- GAME STATE & WORLD ---
@@ -904,7 +891,6 @@ let voidPortalArmed = true;
 let isInVoid = false;
 let voidFloorMesh = null;
 let lastIslandPos = new THREE.Vector3(25, 0, 0);
-let nextPortalSpawn = Date.now() + 600000;
 let portalDespawnTime = 0;
 let portalCooldown = 0;
 let portalSpawnTimer = 0;
@@ -943,10 +929,8 @@ function fishingBarSize(upgradeLevel,skillLevel){
 let chargeStart = 0, castMarker, lastCastPos = new THREE.Vector3();
 const MAX_CHARGE_TIME = 1500, MAX_CAST_DISTANCE = 18, MIN_CAST_DISTANCE = 3;
 let lastFootstepTime = 0;
-let lastOarTime = 0;      // throttle for the rowing stroke sound while sailing
 let sailDrySince = 0;     // timestamp the player in a boat first stood on dry land
 
 let minigame = { active: false, progress: 15, targetFish: null, drainRate: 0 };
 let cameraRotationX = 0, cameraRotationY = 0;
-const cameraOffset = new THREE.Vector3(0, 3, 6);
 

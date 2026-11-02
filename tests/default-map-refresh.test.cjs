@@ -26,5 +26,5 @@ test('clearing a custom level evicts stored level state and cache-busts the defa
  assert(loader.includes('sessionStorage.removeItem("htmlfishing.level.hash")'));
  assert(loader.includes('function reloadDefault() { location.replace("index.html?default=" + Date.now()); }'));
  assert(loader.includes('setTimeout(reloadDefault, 300)'));
- assert(html.includes('level-loader.js?v=104'));
+ assert(/level-loader\.js\?v=\d+/.test(html));
 });

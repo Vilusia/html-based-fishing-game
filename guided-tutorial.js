@@ -3,7 +3,7 @@
     'use strict';
     const steps = [];
     const add = (id, chapter, title, text, goal = 'read', target = null, panel = null) => steps.push({id, chapter, title, text, goal, target, panel});
-    add('welcome','Getting started','Your lakeside adventure','Follow the objectives and the blue direction arrow. Complete an action, then Continue. You can pause, revisit a chapter, or skip a task you cannot do yet. Purchases and optional activities are never required.');
+    add('welcome','Getting started','Your lakeside adventure','Follow the blue arrow to the current objective. Each goal checks itself off and moves on automatically. Open ? for the full tip or to jump chapters, or skip anything you cannot do yet.');
     add('move','Getting started','Take a walk','Walk a few steps. Desktop: use your movement keys (WASD by default). Mobile: drag the bottom-left joystick.', 'move');
     add('look','Getting started','Look around','Desktop: drag the world / use your camera controls. Mobile: drag the world away from the buttons; pinch to zoom. Turn your view a little.', 'look');
     add('jump','Getting started','Jump and slide','Jump once (Space, or Jump on mobile). Double-tap Jump while airborne for a belly slide. Jump again to get up.', 'jump');
@@ -52,7 +52,7 @@
     add('events','Events','Seasonal adventures','Seasonal events run on their advertised dates. Visit Morrow for event progress and rewards, catch seasonal fish, and use the event collection to track discoveries. Seasonal content is optional and may be unavailable outside the event.');
     add('maps','Maps & settings','Find your next lake','The main menu lets you host or join public or private rooms and filter the server browser by tags. Hosts can load custom maps. The level editor builds terrain, fishing zones, NPC placements, caves and docks; generated oceans surround custom islands.');
     add('settings','Maps & settings','Make yourself comfortable','Settings has key bindings, audio, graphics, camera and character options. Mobile has Gear and Menu sheets, joystick movement, drag-to-look and pinch zoom in either orientation. The written guide covers every chapter here and can be reopened anytime.');
-    add('finish','Maps & settings','Ready for your own adventure','You have reached the end! Continue to finish, or revisit any chapter. Skipped activities can be practiced later by restarting the walkthrough from Settings, the written guide, or the mobile Menu.');
+    add('finish','Maps & settings','Ready for your own adventure','You have reached the end! This last goal finishes on its own, and you can revisit any chapter from ? or the written guide. Skipped activities can be practiced later by restarting the walkthrough from Settings, the written guide, or the mobile Menu.');
 
     const chapters = [...new Set(steps.map(s => s.chapter))];
     function normalize(p) {
@@ -70,21 +70,11 @@
     if(typeof module==='object'&&module.exports)module.exports=rules;
     if(typeof window==='undefined'||typeof document==='undefined')return;
     window.GuidedTutorialRules=rules;
-    let progress=null, box=null, brief=null, arrow=null, baseline=null, shore=null, shoreKey='', last=0, ready=false, stepReadyAt=0, minimized=false, detailsOpen=false, wasActive=false, stepItems=[], chapterGroups=[];
+    let progress=null, box=null, arrow=null, baseline=null, shore=null, shoreKey='', last=0, ready=false, stepReadyAt=0, minimized=false, detailsOpen=false, wasActive=false;
     const $=id=>document.getElementById(id);
     function shortText(text){
         const match=String(text||'').match(/^.*?[.!?](?=\s|$)/);
         return (match?match[0]:String(text||'')).trim();
-    }
-    function syncBrief(s){
-        if(!brief)return;
-        const show=!!s&&s.goal==='read';
-        brief.hidden=!show;
-        if(box)box.classList.toggle('tour-briefing',show);
-        if(!show)return;
-        $('tutorial-brief-kicker').textContent=s.chapter+' · Auto continues';
-        $('tutorial-brief-title').textContent=s.title;
-        $('tutorial-brief-text').textContent=s.text;
     }
     function positionTour(){
         if(!box||box.hidden)return;
@@ -162,98 +152,61 @@
         if(step.goal==='sail')return (isSailing||window.Boats?.isAboard())&&player.position.distanceTo(baseline.pos)>5;
         return false;
     }
-    function buildStepList(){
-        const list=$('tour-steps');if(!list)return;
-        stepItems=[];chapterGroups=[];
-        let chapter='',groupList=null,group=null;
-        for(let i=0;i<steps.length;i++){
-            const s=steps[i];
-            if(s.chapter!==chapter){
-                chapter=s.chapter;
-                group=document.createElement('li');group.className='tour-chapter-group';group._chapter=chapter;
-                const heading=document.createElement('div');heading.className='tour-chapter-name';heading.textContent=chapter;group.append(heading);
-                groupList=document.createElement('ol');groupList.className='tour-chapter-list';group.append(groupList);list.append(group);
-                chapterGroups.push(group);
-            }
-            const item=document.createElement('li');item.className='tour-step';
-            const mark=document.createElement('span');mark.className='tour-mark';mark.textContent='○';
-            const body=document.createElement('div');body.className='tour-step-body';
-            const title=document.createElement('span');title.className='tour-step-title';title.textContent=s.title;
-            body.append(title);item.append(mark,body);
-            item._mark=mark;item._chapter=chapter;
-            stepItems.push(item);groupList.append(item);
-        }
-    }
-    function syncStepList(){
-        if(!stepItems.length||!progress)return;
-        const chapter=steps[progress.index].chapter;
-        for(const group of chapterGroups)group.hidden=group._chapter!==chapter;
-        for(let i=0;i<stepItems.length;i++){
-            const item=stepItems[i],done=i<progress.index,current=i===progress.index;
-            item.classList.toggle('tour-step-done',done);
-            item.classList.toggle('tour-step-current',current);
-            item.classList.toggle('tour-step-ready',current&&ready);
-            item.classList.toggle('tour-step-future',i>progress.index);
-            item._mark.textContent=done?'✓':current?(ready?'✓':'●'):'○';
-            if(current)item.setAttribute('aria-current','step');else item.removeAttribute('aria-current');
-        }
-        const current=stepItems[progress.index];
-        if(current&&typeof current.scrollIntoView==='function')current.scrollIntoView({block:'nearest'});
-    }
     function init(){
         if(box)return;box=$('guided-tour');if(!box)return;document.body.append(box);box.removeAttribute('style');box.hidden=true;
         box.onclick=e=>e.target.closest?.('button')?.blur();
-        box.innerHTML='<header class="tour-head"><div class="tour-heading"><span class="tour-kicker" id="tour-counter"></span><strong id="tour-title"></strong></div><div class="tour-actions"><button type="button" class="tour-icon" id="tour-details-toggle" aria-label="Show step details" aria-expanded="false">?</button><button type="button" class="tour-icon" id="tour-pause" aria-label="Pause tutorial">Ⅱ</button><button type="button" class="tour-icon" id="tour-minimize" aria-label="Collapse tutorial" aria-expanded="true">−</button></div></header><div class="tour-progress" aria-hidden="true"><span id="tour-progress-bar"></span></div><div id="tour-body"><div class="tour-now"><span class="tour-now-label">Do this</span><p id="guided-tour-text"></p></div><p id="tour-objective" role="status" aria-live="polite"></p><button type="button" class="tour-link" id="tour-face" hidden>Face water</button><div id="tour-details" hidden><p id="tour-detail-text"></p><label class="tour-chapter">Chapter <select id="tour-chapter" aria-label="Tutorial chapter"></select></label></div><ol id="tour-steps" class="tour-steps" aria-label="Tutorial steps"></ol><footer><span id="tour-auto-status">Auto-advances when complete</span><button type="button" class="tour-link" id="tour-skip">Skip</button></footer></div>';
+        box.innerHTML='<header class="tour-head"><div class="tour-heading"><span class="tour-kicker" id="tour-counter"></span><strong id="tour-title"></strong></div><div class="tour-actions"><button type="button" class="tour-icon" id="tour-details-toggle" aria-label="Show quest details" aria-expanded="false">?</button><button type="button" class="tour-icon" id="tour-pause" aria-label="Pause tutorial">Ⅱ</button><button type="button" class="tour-icon" id="tour-minimize" aria-label="Collapse quest" aria-expanded="true">−</button></div></header><div class="tour-progress" aria-hidden="true"><span id="tour-progress-bar"></span></div><div id="tour-body"><p id="guided-tour-text"></p><button type="button" class="tour-link" id="tour-face" hidden>Face water</button><div id="tour-details" hidden><p id="tour-detail-text"></p><label class="tour-chapter">Chapter <select id="tour-chapter" aria-label="Tutorial chapter"></select></label></div><footer><span id="tour-auto-status" role="status" aria-live="polite"></span><button type="button" class="tour-link" id="tour-skip">Skip</button></footer></div>';
         const select=$('tour-chapter');chapters.forEach(c=>{const o=document.createElement('option');o.textContent=c;o.value=c;select.append(o);});select.onchange=()=>enter(steps.findIndex(s=>s.chapter===select.value));
         function syncDetails(){
             $('tour-details').hidden=!detailsOpen;
             $('tour-details-toggle').setAttribute('aria-expanded',String(detailsOpen));
-            $('tour-details-toggle').setAttribute('aria-label',detailsOpen?'Hide step details':'Show step details');
+            $('tour-details-toggle').setAttribute('aria-label',detailsOpen?'Hide quest details':'Show quest details');
         }
         $('tour-minimize').onclick=()=>{minimized=!minimized;$('tour-body').hidden=minimized;box.classList.toggle('tour-min',minimized);$('tour-minimize').textContent=minimized?'+':'−';$('tour-minimize').setAttribute('aria-expanded',String(!minimized));};
         $('tour-details-toggle').onclick=()=>{detailsOpen=!detailsOpen;syncDetails();};
         $('tour-pause').onclick=pause;
-        $('tour-skip').onclick=()=>{progress.skipped.push(steps[progress.index].id);advance();};
+        $('tour-skip').onclick=()=>{if(ready){advance();return;}progress.skipped.push(steps[progress.index].id);advance();};
         $('tour-face').onclick=()=>{const s=findShore();if(s){const h=Math.atan2(s.water.x-player.position.x,s.water.z-player.position.z);player.rotation.y=h;cameraRotationY=h+Math.PI;}};
-        buildStepList();
         arrow=document.createElement('div');arrow.id='tutorial-arrow';arrow.hidden=true;arrow.innerHTML='<span>▲</span><small></small>';document.body.append(arrow);
-        brief=document.createElement('div');brief.id='tutorial-brief';brief.hidden=true;brief.setAttribute('role','status');brief.setAttribute('aria-live','polite');
-        brief.innerHTML='<span class="tutorial-brief-kicker" id="tutorial-brief-kicker"></span><h3 id="tutorial-brief-title"></h3><p id="tutorial-brief-text"></p><span class="tutorial-brief-note">Continuing automatically</span>';
-        document.body.append(brief);
     }
     function enter(index){progress.index=index;baseline=snapshot();ready=false;stepReadyAt=0;shoreKey='';persist();render();}
     function render(){
-        const s=steps[progress.index],position=progress.index+1;
+        const s=steps[progress.index];
+        const inChapter=steps.filter(x=>x.chapter===s.chapter);
+        const chapterPos=inChapter.indexOf(s)+1;
+        const overall=progress.index+1;
+        const read=s.goal==='read';
         box.classList.remove('tour-ready');
         box.dataset.ready='false';
-        $('tour-objective').textContent='Complete the objective and the guide advances automatically.';
-        $('tour-auto-status').textContent='Auto-advances when complete';
-        $('tour-counter').textContent=s.chapter+' · '+position+' / '+steps.length;
+        $('tour-auto-status').textContent='';
+        $('tour-skip').textContent='Skip';
+        $('tour-counter').textContent=s.chapter+' · '+chapterPos+' of '+inChapter.length;
         $('tour-title').textContent=s.title;
-        $('guided-tour-text').textContent=shortText(s.text);
+        const text=$('guided-tour-text');
+        text.textContent=read?s.text:shortText(s.text);
+        text.classList.toggle('tour-read',read);
         $('tour-detail-text').textContent=s.text;
-        $('tour-progress-bar').style.width=((position/steps.length)*100).toFixed(2)+'%';
+        $('tour-progress-bar').style.width=((overall/steps.length)*100).toFixed(2)+'%';
         $('tour-chapter').value=s.chapter;
         $('tour-face').hidden=!['shore','water'].includes(s.target);
-        syncBrief(s);
-        syncStepList();
         positionTour();
+        if(!box.hidden){box.classList.remove('tour-updated');void box.offsetWidth;box.classList.add('tour-updated');}
     }
-    function advance(){if(progress.index===steps.length-1){saveState.tutorialDone=true;progress.paused=true;persist();box.hidden=arrow.hidden=true;if(brief)brief.hidden=true;showToast('Tutorial complete! Replay it anytime from Settings or the guide.');return;}enter(progress.index+1);}
+    function advance(){if(progress.index===steps.length-1){saveState.tutorialDone=true;progress.paused=true;persist();box.hidden=arrow.hidden=true;showToast('Tutorial complete! Replay it anytime from Settings or the guide.');return;}enter(progress.index+1);}
     function next(){if(ready)advance();}
-    function pause(){if(!progress)return;progress.paused=true;persist();box.hidden=arrow.hidden=true;if(brief)brief.hidden=true;showToast('Tutorial paused. Resume from Settings, the written guide, or the mobile Menu.');}
+    function pause(){if(!progress)return;progress.paused=true;persist();box.hidden=arrow.hidden=true;showToast('Tutorial paused. Resume from Settings, the written guide, or the mobile Menu.');}
     function resume(restart=false){
         init();if(!box||!active())return;
         if(restart||saveState.tutorialDone){progress=normalize(null);saveState.tutorialDone=false;}else progress=normalize(saveState.tutorialProgress);
         progress.paused=false;minimized=false;detailsOpen=false;stepReadyAt=0;
         $('tour-body').hidden=false;$('tour-details').hidden=true;
         $('tour-minimize').textContent='−';$('tour-minimize').setAttribute('aria-expanded','true');
-        $('tour-details-toggle').setAttribute('aria-expanded','false');$('tour-details-toggle').setAttribute('aria-label','Show step details');
+        $('tour-details-toggle').setAttribute('aria-expanded','false');$('tour-details-toggle').setAttribute('aria-label','Show quest details');
         box.classList.remove('tour-min','tour-ready');
-        window.MobileUI?.close();if(visible('options-overlay'))window.toggleOptions?.();document.exitPointerLock?.();enter(progress.index);box.hidden=false;syncStepList();positionTour();
+        window.MobileUI?.close();if(visible('options-overlay'))window.toggleOptions?.();document.exitPointerLock?.();enter(progress.index);box.hidden=false;positionTour();
     }
     function tick(){
-        if(!active()){if(box)box.hidden=true;if(arrow)arrow.hidden=true;if(brief)brief.hidden=true;wasActive=false;return;}
+        if(!active()){if(box)box.hidden=true;if(arrow)arrow.hidden=true;wasActive=false;return;}
         if(!wasActive){wasActive=true;progress=normalize(saveState.tutorialProgress);if(!saveState.tutorialDone&&!progress.paused)resume();}
         if(!box||!progress||progress.paused||saveState.tutorialDone)return;box.hidden=false;
         const now=performance.now();if(now-last<100)return;last=now;
@@ -262,14 +215,17 @@
         const complete=done(s,t)||unavailable;
         if(!ready&&complete){
             ready=true;
-            stepReadyAt=now+(unavailable?1600:s.goal==='read'?Math.min(8000,2800+shortText(s.text).length*42):900);
+            stepReadyAt=now+(unavailable?1600:s.goal==='read'?Math.min(12000,2600+s.text.length*45):900);
             box.classList.add('tour-ready');
             box.dataset.ready='true';
-            syncStepList();
         }
         if(ready&&stepReadyAt&&!detailsOpen&&now>=stepReadyAt){stepReadyAt=0;advance();return;}
-        $('tour-objective').textContent=complete?(unavailable?'Not available on this map. Moving on automatically.':'Step complete. Moving on automatically.'):'Complete the objective and the guide advances automatically.';
-        $('tour-auto-status').textContent=ready?(detailsOpen?'Complete — close Details to continue.':'Complete — moving on…'):'Auto-advances when complete';
+        const waiting=s.goal==='read'&&ready&&!unavailable;
+        const status=ready?(unavailable?'Not available here — moving on':(detailsOpen?'Complete — close details to continue':(waiting?'Continuing automatically…':'Objective complete'))):'';
+        const statusEl=$('tour-auto-status');
+        if(statusEl.textContent!==status)statusEl.textContent=status;
+        const actionLabel=ready?'Continue':'Skip';
+        if($('tour-skip').textContent!==actionLabel)$('tour-skip').textContent=actionLabel;
         arrow.hidden=!t||minimized||visible('tutorial-overlay')||window.Housing?.inside;
         if(!arrow.hidden){const world=t.clone();world.y+=2;const view=world.clone().applyMatrix4(camera.matrixWorldInverse),p=world.project(camera),m=marker(p.x*innerWidth/2,-p.y*innerHeight/2,view.z>0,innerWidth,innerHeight);arrow.style.left=m.x+'px';arrow.style.top=m.y+'px';arrow.firstElementChild.style.transform=`rotate(${m.angle}deg)`;arrow.lastElementChild.style.left=(Math.max(100,Math.min(innerWidth-100,m.x))-m.x+18)+'px';arrow.lastElementChild.textContent=`${s.target==='water'?'Cast here':s.title.replace(/^(Meet|Visit|Find) /,'')} · ${Math.round(player.position.distanceTo(t))}m`;}
     }

@@ -56,12 +56,6 @@ function cookingBurnChance() {
     return Math.max(0.05, 0.4 - lvl * 0.007);
 }
 
-// Sailing widens the "deep water" band you can reach and the bonus ocean haul.
-function sailingReach() {
-    const lvl = getSkillLevel('sailing');
-    return 24 + Math.min(lvl, 99) * 0.6; // extra units past the shore at 99
-}
-
 // --- WATER SURFACE QUERY ---
 // Returns the y of a water surface at (x, z), or null if the spot is dry land.
 // Used by the movement loop so boats ride the top and swimmers float, instead
@@ -255,6 +249,7 @@ function toggleMerchant() {
 }
 
 function updateMerchantUI(container) {
+    if (!container) return;
     let totalFishValue = 0;
     let totalFishCount = 0;
     const invSlotsFish = [];
@@ -456,27 +451,6 @@ window.sellOneFish = function (name) {
     showToast(`Sold 1 ${name} for $${price}!`);
     updateMerchantUI(document.getElementById('merchant-ui'));
     updateHotbarVisuals();
-};
-
-window.sellOneFlower = function (id) {
-    ensureInventorySlots();
-    const slot = saveState.invSlots.find(s => s && s.type === 'flower' && s.id === id);
-    if (!slot) { showToast("No such flower."); return; }
-    const ft = FLOWER_TYPES.find(f => f.id === id);
-    const price = ft ? ft.price : 1;
-    if ((slot.count || 1) > 1) slot.count--;
-    else {
-        const idx = saveState.invSlots.indexOf(slot);
-        if (idx !== -1) saveState.invSlots[idx] = null;
-    }
-    // decrement flowerInventory too
-    if (saveState.flowerInventory && saveState.flowerInventory[id] > 0) saveState.flowerInventory[id]--;
-    autoSortInventory();
-    saveState.money += price;
-    saveGame();
-    Sound.sell();
-    showToast(`Sold 1 ${ft ? ft.name : id} for $${price}!`);
-    updateMerchantUI(document.getElementById('merchant-ui'));
 };
 
 window.sellFishSpecies = function (name) {
@@ -736,7 +710,6 @@ window.pickFlower = function (i) {
     saveGame();
 
     // Feedback
-    Sound.flip();
     showToast(`Picked ${flowerType.name}: +${xp} XP`, 'success');
     updateUI();
 
@@ -744,42 +717,6 @@ window.pickFlower = function (i) {
     setTimeout(() => {
         respawnFlower(i);
     }, 60000);
-}
-
-function respawnFlower(i) {
-    const flower = pickableFlowers[i];
-    if (!flower) return;
-
-    // Determine new type based on CURRENT level
-    const floristryXP = (saveState.skills && saveState.skills.floristry) ? saveState.skills.floristry.xp : 0;
-    const floristryLevel = getLevelFromXP(floristryXP);
-    const newType = getResourceForLevel(floristryLevel, FLOWER_TYPES);
-
-    // Update Mesh Visuals
-    const head = flower.children[1]; // 0 is stem, 1 is head
-    if (head && head.material) {
-        head.material.color.set(newType.color);
-    }
-
-    // Update Data
-    flower.userData.typeId = newType.id;
-    flower.userData.isPicked = false;
-    flower.visible = true;
-
-    // Optional: Pop animation?
-    flower.scale.set(0, 0, 0);
-    const targetScale = flower.userData.originalScale || 1;
-
-    // Simple grow animation
-    let s = 0;
-    const anim = setInterval(() => {
-        s += 0.1;
-        if (s >= targetScale) {
-            s = targetScale;
-            clearInterval(anim);
-        }
-        flower.scale.set(s, s, s);
-    }, 50);
 }
 
 window.actionBuyTool = function (toolId) {
@@ -5634,7 +5571,6 @@ function setupThreeJS() {
             window.customOcean=around;
             const flowerStart=pickableFlowers.length;
             const built=window.Ocean.build(scene,{layout:around,name:'customOceanIslands',decorate:true});
-            window.customOceanTrees=built.trees;
             window.oceanWorld={trees:built.trees,colliders:built.colliders,flowers:pickableFlowers.slice(flowerStart),custom:true};
             treeMeshes.push(...built.trees);treeColliders.push(...built.colliders);
         }
@@ -5881,12 +5817,6 @@ function setupThreeJS() {
             cssRenderer.setSize(window.innerWidth, window.innerHeight);
         }
     });
-}
-
-function disposeTexture(texture) {
-    if (texture && texture.dispose) {
-        texture.dispose();
-    }
 }
 
 function createSpeakerTexture() {
@@ -6556,66 +6486,6 @@ function drawHat(ctx, hatId, isBack) {
 }
 
 
-function createToolTexture(type) {
-    const c = document.createElement('canvas');
-    c.width = 64; c.height = 64;
-    const ctx = c.getContext('2d');
-
-    if (type === 'axe') {
-        // Handle
-        ctx.fillStyle = '#8B4513';
-        ctx.fillRect(28, 10, 8, 44);
-        // Head
-        ctx.fillStyle = '#888888';
-        ctx.beginPath();
-        // Single bit axe shape
-        ctx.moveTo(32, 10);
-        ctx.lineTo(52, 10);
-        ctx.lineTo(52, 26);
-        ctx.lineTo(36, 26);
-        ctx.lineTo(32, 22); // Curve in
-        ctx.lineTo(20, 26); // Back bit (small)
-        ctx.lineTo(20, 10);
-        ctx.fill();
-        // Edge
-        ctx.fillStyle = '#CCCCCC';
-        ctx.fillRect(48, 10, 4, 16);
-    } else if (type === 'pickaxe') {
-        // Handle
-        ctx.fillStyle = '#8B4513';
-        ctx.fillRect(28, 10, 8, 44);
-        // Head
-        ctx.fillStyle = '#888888';
-        ctx.beginPath();
-        // Arch shape
-        ctx.moveTo(10, 16);
-        ctx.quadraticCurveTo(32, 5, 54, 16);
-        ctx.lineTo(50, 22);
-        ctx.quadraticCurveTo(32, 12, 14, 22);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    const t = new THREE.CanvasTexture(c);
-    t.magFilter = THREE.NearestFilter;
-    t.minFilter = THREE.NearestFilter;
-    return t;
-}
-
-window.toggleMidiMute = function () {
-    saveState.midiMuted = !saveState.midiMuted;
-    saveGame();
-    updateMidiUI();
-}
-
-function updateMidiUI() {
-    const btn = document.getElementById('btn-midi-toggle');
-    if (btn) {
-        btn.innerText = saveState.midiMuted ? "MIDI: OFF" : "MIDI: ON";
-        btn.style.color = saveState.midiMuted ? 'var(--p-bad)' : 'var(--p-good)';
-    }
-}
-
 window.toggleDebugMode = function () {
     saveState.debugMode = !saveState.debugMode;
     saveGame();
@@ -6629,84 +6499,6 @@ function updateDebugUI() {
         btn.innerText = saveState.debugMode ? "Debug: ON" : "Debug: OFF";
         btn.style.color = saveState.debugMode ? 'var(--p-good)' : 'var(--p-bad)';
     }
-}
-
-// --- MODULAR CHARACTER DRAWING FUNCTIONS ---
-
-// Draw the base body and head (shared by all characters)
-function drawBody(ctx, col, bellyCol, back) {
-    // Body (Flat Color) - Taller
-    ctx.fillStyle = col;
-    ctx.fillRect(20, 28, 24, 40); // Taller body
-
-    if (!back) {
-        ctx.fillStyle = bellyCol;
-        // Rounded belly patch (adjusted)
-        ctx.beginPath();
-        ctx.ellipse(32, 48, 8, 12, 0, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // Head (Flat Color) - Taller
-    ctx.fillStyle = col;
-    ctx.fillRect(14, 8, 36, 28); // Taller head
-
-    // Chin Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.1)';
-    ctx.fillRect(14, 34, 36, 2);
-}
-
-// Helper for shading
-function shadeColor(color, percent) {
-    // Simple hex darken/lighten (assumes hex input)
-    let f = parseInt(color.slice(1), 16), t = percent < 0 ? 0 : 255, p = percent < 0 ? percent * -1 : percent, R = f >> 16, G = f >> 8 & 0x00FF, B = f & 0x0000FF;
-    return "#" + (0x1000000 + (Math.round((t - R) * p) + R) * 0x10000 + (Math.round((t - G) * p) + G) * 0x100 + (Math.round((t - B) * p) + B)).toString(16).slice(1);
-}
-
-function createToolTexture(type) {
-    const c = document.createElement('canvas');
-    c.width = 64; c.height = 64;
-    const ctx = c.getContext('2d');
-
-    if (type === 'axe') {
-        // Handle
-        ctx.fillStyle = '#8B4513';
-        ctx.fillRect(28, 10, 8, 44);
-        // Head
-        ctx.fillStyle = '#888888';
-        ctx.beginPath();
-        // Single bit axe shape
-        ctx.moveTo(32, 10);
-        ctx.lineTo(52, 10);
-        ctx.lineTo(52, 26);
-        ctx.lineTo(36, 26);
-        ctx.lineTo(32, 22); // Curve in
-        ctx.lineTo(20, 26); // Back bit (small)
-        ctx.lineTo(20, 10);
-        ctx.fill();
-        // Edge
-        ctx.fillStyle = '#CCCCCC';
-        ctx.fillRect(48, 10, 4, 16);
-    } else if (type === 'pickaxe') {
-        // Handle
-        ctx.fillStyle = '#8B4513';
-        ctx.fillRect(28, 10, 8, 44);
-        // Head
-        ctx.fillStyle = '#888888';
-        ctx.beginPath();
-        // Arch shape
-        ctx.moveTo(10, 16);
-        ctx.quadraticCurveTo(32, 5, 54, 16);
-        ctx.lineTo(50, 22);
-        ctx.quadraticCurveTo(32, 12, 14, 22);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    const t = new THREE.CanvasTexture(c);
-    t.magFilter = THREE.NearestFilter;
-    t.minFilter = THREE.NearestFilter;
-    return t;
 }
 
 window.toggleMidiMute = function () {
@@ -8558,12 +8350,6 @@ function drawSpecies(ctx, speciesOrParts, col, bellyCol, eyeCol, back, partColor
     }
 }
 
-// Helper to keep face sizes consistent across all species
-function drawStandardFace(ctx, eyeCol) {
-    ctx.fillStyle = 'white'; ctx.fillRect(20, 18, 8, 8); ctx.fillRect(36, 18, 8, 8);
-    ctx.fillStyle = eyeCol; ctx.fillRect(24, 20, 4, 4); ctx.fillRect(40, 20, 4, 4);
-}
-
 function restorePants(saved){
     const valid=new Set(PANTS_TYPES.map(item=>item.id));
     saveState.unlockedPants=[...new Set(['none',...(Array.isArray(saved.unlockedPants)?saved.unlockedPants:[]).filter(id=>valid.has(id))])];
@@ -8600,15 +8386,6 @@ function createPantsTexture(item){
     const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;
     paintPants(canvas.getContext('2d'),item);const texture=new THREE.CanvasTexture(canvas);
     texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;return texture;
-}
-function drawPantsIcon(ctx,item,width=96,height=112){
-    ctx.save();ctx.scale(width/96,height/112);
-    if(item.id==='none'){ctx.strokeStyle='#9aa3c0';ctx.lineWidth=3;ctx.strokeRect(25,30,46,45);ctx.beginPath();ctx.moveTo(25,75);ctx.lineTo(71,30);ctx.stroke();}
-    else{const texture=createPantsTexture(item);ctx.imageSmoothingEnabled=false;
-        ctx.fillStyle=item.color;ctx.fillRect(18,13,60,16);
-        ctx.drawImage(texture.image,0,0,64,64,18,27,26,69);ctx.drawImage(texture.image,0,0,64,64,52,27,26,69);
-        ctx.fillStyle=item.secondary||'#c4baa0';ctx.fillRect(45,16,6,6);texture.dispose();}
-    ctx.restore();
 }
 function drawPants(ctx,id,isBack){
     const item=PANTS_TYPES.find(p=>p.id===id);if(!item||id==='none')return;
@@ -15031,7 +14808,6 @@ let cookingMini = {
     items: [],
     results: [],
     currentIdx: 0,
-    onComplete: null,
     loopId: null
 };
 
@@ -15276,11 +15052,6 @@ function updateHotbarVisuals() {
     }
 }
 
-function selectTool(index) {
-    // Legacy wrapper.
-    if (typeof selectHotbarSlot === 'function') selectHotbarSlot(index);
-}
-
 function selectHotbarSlot(index) {
     if (!saveState.hotbar) saveState.hotbar = defaultHotbar();
     if (index < 0 || index >= 10) return;
@@ -15328,80 +15099,6 @@ function selectHotbarSlot(index) {
     }
 
     saveState.activeToolIndex = (entry && entry.type === 'tool') ? index : saveState.activeToolIndex;
-
-    updateHotbarVisuals();
-    saveGame();
-}
-
-function selectTool(index) {
-    // Slot order: Rod, Hands, Axe, Guitar, Glove, Pickaxe
-    const toolMap = ['rod', 'hands', 'axe', 'guitar', 'glove', 'pickaxe'];
-    const toolId = toolMap[index];
-    if (!toolId) return;
-
-    if (!saveState.unlockedTools) saveState.unlockedTools = ['hands', 'rod'];
-    if (!saveState.unlockedTools.includes(toolId)) {
-        showToast("Tool locked!");
-        return;
-    }
-
-    // NOTE: we deliberately do NOT bail out when the tool is already active.
-    // Re-selecting a slot is what repairs the visuals after "empty hands",
-    // a held fish, or a swing that was interrupted mid-click.
-    const alreadyActive = saveState.activeToolIndex === index;
-    saveState.activeToolIndex = index;
-
-    // --- RESET ALL TOOLS ---
-    // 1. Stop any swing that is still running so a tool can't keep chopping or
-    //    mining in the background after it has been put away.
-    if (chopInterval) {
-        clearInterval(chopInterval);
-        chopInterval = null;
-    }
-
-    // 2. Clear held fish
-    if (localHeldFish) {
-        localHeldFish = null;
-        if (fishHoldTimer) clearTimeout(fishHoldTimer);
-        fishHoldTimer = null;
-    }
-
-    // 3. Disable guitar if not selected
-    if (toolId !== 'guitar' && isGuitarActive) toggleGuitar();
-
-    // 4. Disable glove if not selected
-    if (toolId !== 'glove' && isGloveActive) toggleGlove();
-
-    // 5. Hide rod if not selected
-    const rod = player.getObjectByName("rod");
-    if (rod) rod.visible = (toolId === 'rod');
-
-    // 6. Hide axe if not selected
-    const axe = player.getObjectByName("axe");
-    if (axe) axe.visible = (toolId === 'axe');
-
-    // 6b. Hide pickaxe if not selected
-    const pick = player.getObjectByName("pickaxe");
-    if (pick) pick.visible = (toolId === 'pickaxe');
-
-    // 6. Set isHandsHidden based on tool (hands = hidden means empty hands mode)
-    isHandsHidden = (toolId === 'hands');
-
-    // --- EQUIP SELECTED TOOL ---
-    if (toolId === 'guitar') {
-        if (!isGuitarActive) toggleGuitar();
-    } else if (toolId === 'glove') {
-        if (!isGloveActive) toggleGlove();
-    } else if (toolId === 'axe') {
-        equipAxe();                       // ensures the axe mesh exists + is visible
-        if (!alreadyActive) showToast("Axe Equipped! Hold Click to chop.");
-    } else if (toolId === 'pickaxe') {
-        equipPickaxe();
-        // NOTE: do NOT hide the pickaxe here — it has to stay in hand while
-        // mining. (It used to be hidden right after being equipped, so the
-        // pickaxe only ever appeared the first time it was selected.)
-        if (!alreadyActive) showToast("Pickaxe Equipped! Hold Click to mine.");
-    }
 
     updateHotbarVisuals();
     saveGame();
@@ -16626,28 +16323,6 @@ function updateJournal(fish, tierId) {
     if (!saveState.journal[fish.name].includes(tierId)) saveState.journal[fish.name].push(tierId);
 }
 
-let isMobileInventoryOpen = false; // Initialize inventory state as closed for both mobile and desktop
-
-window.toggleMobileInventory = function () {
-    const ui = document.getElementById('fish-log');
-
-    isMobileInventoryOpen = !isMobileInventoryOpen;
-
-    // Toggle the display property
-    ui.style.display = isMobileInventoryOpen ? 'block' : 'none';
-
-    // Ensure content is fresh when opening
-    if (isMobileInventoryOpen) {
-        updateUI();
-        showToast("Inventory opened.");
-    } else {
-        showToast("Inventory closed.");
-    }
-
-    // This is the correct logic now, regardless of screen width.
-    // The logic for displaying the button only on mobile must be handled in CSS (see below).
-}
-
 // Ensure this stays as the Journal toggle, separate from the Inventory toggle.
 window.toggleJournal = function () {
     const ui = document.getElementById('journal-overlay');
@@ -17050,44 +16725,7 @@ function hideItemTooltip() {
         }
     }
 
-let invSortMode = 'none';
 let invFilterMode = 'all';
-
-window.sortInventory = function (mode) {
-    ensureInventorySlots();
-    invSortMode = mode;
-    const items = saveState.invSlots.filter(s => s !== null);
-    const priceOf = (s) => {
-        if (s.type === 'fish') {
-            if (typeof getFishSellPrice === 'function') return getFishSellPrice(s.name);
-            const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
-            return f ? f.price : 10;
-        }
-        if (s.type === 'flower') {
-            const ft = (typeof FLOWER_TYPES !== 'undefined') ? FLOWER_TYPES.find(f => f.id === s.id) : null;
-            return ft ? ft.price : 1;
-        }
-        return 0;
-    };
-    const rarityRank = (s) => {
-        const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
-        const order = { Common: 1, Uncommon: 2, Rare: 3, Epic: 4, Legendary: 5 };
-        return f ? (order[f.rarity] || 0) : 0;
-    };
-    items.sort((a, b) => {
-        if (mode === 'price') return priceOf(b) - priceOf(a);
-        if (mode === 'rarity') return rarityRank(b) - rarityRank(a);
-        if (mode === 'name') return String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''));
-        return 0;
-    });
-    for (let i = 0; i < saveState.invSlots.length; i++) saveState.invSlots[i] = i < items.length ? items[i] : null;
-    renderInventoryGrid();
-};
-
-window.filterInventory = function (mode) {
-    invFilterMode = mode;
-    renderInventoryGrid();
-};
 
 function ensureInventorySlots() {
     if (!Array.isArray(saveState.invSlots) || saveState.invSlots.length !== 50) {
@@ -17350,8 +16988,6 @@ window.toggleTutorial = function () {
 
 // Guided walkthrough lives in guided-tutorial.js; keep existing menu entry points.
 function startGuidedTour() { window.GuidedTutorial?.resume(); }
-function guidedTourNext() { window.GuidedTutorial?.next(); }
-function guidedTourSkip() { window.GuidedTutorial?.pause(); }
 
 // --- OLD FISHER DIALOGUE ---
 // A rotating set of tips so the lakeside NPC is more than decoration.
@@ -17588,14 +17224,6 @@ function populatePartSelectors() {
     if (noseColorPicker) noseColorPicker.value = saveState.noseColor || furCol;
     if (miscColorPicker) miscColorPicker.value = saveState.miscColor || furCol;
     if (tailColorPicker) tailColorPicker.value = saveState.tailColor || furCol;
-}
-
-// Legacy: Keep for NPC/backwards compatibility
-window.changeSpecies = function (species) {
-    saveState.species = species;
-    if (player) updateLocalVisuals();
-    if (document.getElementById('shop-overlay').style.display === 'flex') renderShop();
-    saveGame();
 }
 
 window.toggleMusic = function () {
@@ -19105,18 +18733,6 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         });
     }
 
-    // --- HUD VISIBILITY TOGGLE ---
-    let isHudHidden = false;
-
-    function toggleHud() {
-        isHudHidden = !isHudHidden;
-        const uiLayer = document.getElementById('ui-layer');
-        if (uiLayer) {
-            uiLayer.style.display = isHudHidden ? 'none' : 'block';
-        }
-        if (!isHudHidden) showToast("HUD Visible");
-    }
-
     window.toggleEmptyHands = function () {
         // 1. Reset all other modes
         if (isGuitarActive) toggleGuitar();
@@ -19430,14 +19046,6 @@ window.renderJournal = function renderJournal(zoneFilter = 'all') {
         saveGame();
         renderShop();
         updateLocalVisuals();
-    }
-
-    // Handles input from the mobile zoom slider.
-    window.handleMobileZoom = function (value) {
-        // The slider value is 0 to 1. We need to map it to MAX_ZOOM to MIN_ZOOM.
-        // Since a lower slider value should mean more zoomed in (smaller cameraDistance), we reverse the mapping.
-        const newDist = MAX_ZOOM - (value * (MAX_ZOOM - MIN_ZOOM));
-        cameraDistance = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newDist));
     }
 
 function updateBaitSelector() {
@@ -20082,105 +19690,6 @@ function toggleGlobalMute(pid, type) {
     showToast(`${type.toUpperCase()} Mute toggled.`);
 }
 
-function sellFish() {
-    // This is the "quick sell" action when pressing Interact near the merchant.
-    // It should sell: fish + all wood types + all ore/rock types.
-
-    let totalValue = 0;
-    let totalCount = 0;
-
-    // --- Fish ---
-    ensureInventorySlots();
-    if (Array.isArray(saveState.invSlots)) {
-        for (const s of saveState.invSlots) {
-            if (s && s.type === 'fish') {
-                const f = (typeof getFishByName === 'function') ? getFishByName(s.name) : null;
-                const price = f ? f.price : (s.price || 10);
-                const c = s.count || 1;
-                totalValue += price * c;
-                totalCount += c;
-            }
-        }
-    }
-    // Clear fish slots
-    if (Array.isArray(saveState.invSlots)) {
-        for (let i = 0; i < saveState.invSlots.length; i++) {
-            if (saveState.invSlots[i] && saveState.invSlots[i].type === 'fish') saveState.invSlots[i] = null;
-        }
-    }
-    saveState.inventory = [];
-
-    // --- Wood (Typed) ---
-    if (!saveState.woodInventory) saveState.woodInventory = {};
-    Object.keys(saveState.woodInventory).forEach(woodId => {
-        const amt = saveState.woodInventory[woodId] || 0;
-        if (amt <= 0) return;
-        const woodType = WOOD_TYPES.find(w => w.id === woodId);
-        const price = woodType ? woodType.price : 20;
-        totalValue += amt * price;
-        totalCount += amt;
-    });
-
-    // --- Wood (Legacy) ---
-    if (saveState.wood && saveState.wood > 0) {
-        totalValue += saveState.wood * 20;
-        totalCount += saveState.wood;
-    }
-
-    // --- Ore/Rock (Typed) ---
-    if (!saveState.oreInventory) saveState.oreInventory = {};
-    Object.keys(saveState.oreInventory).forEach(oreId => {
-        const amt = saveState.oreInventory[oreId] || 0;
-        if (amt <= 0) return;
-        const oreType = ORE_TYPES.find(o => o.id === oreId);
-        const price = oreType ? oreType.price : 30;
-        totalValue += amt * price;
-        totalCount += amt;
-    });
-
-    // --- Stone (Legacy) ---
-    if (saveState.stone && saveState.stone > 0) {
-        totalValue += saveState.stone * 30;
-        totalCount += saveState.stone;
-    }
-
-    if (totalValue <= 0 || totalCount <= 0) {
-        showToast("Nothing to sell!");
-        return;
-    }
-
-    // Trading skill: better prices with every level.
-    const baseValue = totalValue;
-    const mult = tradingSellMultiplier();
-    totalValue = Math.round(totalValue * mult);
-
-    // Clear inventories now that we've computed totals
-    saveState.inventory = [];
-    saveState.woodInventory = {};
-    saveState.wood = 0;
-    saveState.oreInventory = {};
-    saveState.stone = 0;
-
-    saveState.money += totalValue;
-    Sound.sell();
-    saveGame();
-    updateUI();
-
-    // Trading XP scales with the size of the sale; the bonus is called out.
-    const tradeXP = Math.max(1, Math.round(baseValue / 40));
-    addSkillXP('trading', tradeXP);
-    if (typeof notifyGoldEarned === 'function') notifyGoldEarned(totalValue);
-
-    // If merchant UI is open, refresh it
-    const merchantUI = document.getElementById('merchant-ui');
-    if (merchantUI && merchantUI.style.display === 'flex') {
-        updateMerchantUI(merchantUI);
-    }
-
-    const bonusText = mult > 1 ? ` (+${Math.round((mult - 1) * 100)}% trading)` : '';
-    showToast(`Sold ${totalCount} items for $${totalValue}${bonusText}!`);
-}
-
 
 function respawnTree(index) {
     if (index < 0 || index >= treeMeshes.length) return;
@@ -20199,56 +19708,6 @@ function respawnTree(index) {
     }
 
     mesh.userData.isStump = false;
-}
-
-// --- FLOWER PICKING ---
-function pickFlower(index, fromNetwork = false) {
-    if (index < 0 || index >= pickableFlowers.length) return;
-    const flower = pickableFlowers[index];
-    if (!flower || flower.userData.isPicked) return;
-
-    // Hide the flower
-    flower.visible = false;
-    flower.userData.isPicked = true;
-
-    // Respawn after 3 minutes
-    setTimeout(() => {
-        respawnFlower(index);
-    }, 180000);
-
-    // Grant flower (Only if local action)
-    if (!fromNetwork) {
-        // Get floristry level and determine flower type
-        if (!saveState.skills) saveState.skills = { mining: { xp: 0 }, lumberjack: { xp: 0 }, fishing: { xp: 0 }, floristry: { xp: 0 } };
-        if (!saveState.skills.floristry) saveState.skills.floristry = { xp: 0 };
-        const floristryXP = saveState.skills.floristry?.xp || 0;
-        const floristryLevel = getLevelFromXP(floristryXP);
-
-        const flowerType = getResourceForLevel(floristryLevel, FLOWER_TYPES);
-
-        // Add to inventory
-        if (!saveState.flowerInventory) saveState.flowerInventory = {};
-        saveState.flowerInventory[flowerType.id] = (saveState.flowerInventory[flowerType.id] || 0) + 1;
-
-        // Award XP
-        addSkillXP('floristry', flowerType.xp);
-
-        saveGame();
-        if (typeof notifyResourceGathered === 'function') notifyResourceGathered('flower', 1);
-        showToast(`+1 ${flowerType.name} (+${flowerType.xp} XP)`);
-
-        // Broadcast to others
-        const msg = { type: 'pick_flower', index: index };
-
-        // Host Broadcast
-        if (isHost) {
-            broadcastToClients(msg);
-        }
-        // Client Send to Host
-        else if (hostConn && hostConn.open) {
-            hostConn.send(msg);
-        }
-    }
 }
 
 function respawnFlower(index) {

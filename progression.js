@@ -11,9 +11,6 @@
 // Loaded after core.js and before ui.js. ui.js calls the notify* hooks below
 // whenever the player does something interesting.
 
-// Bump when the meaning of tracked counters changes, to re-evaluate silently.
-const PROGRESSION_VERSION = 1;
-
 const RESOURCE_COUNTS = {
     mining: 10, lumberjack: 10, floristry: 10
 };

@@ -42,13 +42,13 @@ test('real fishing events survive fast catches, chapter changes and reload; abse
  api.pause();api.resume();assert.equal(ctx.saveState.tutorialProgress.events.catch,true);
  api.resume(true);assert.deepEqual(Object.keys(ctx.saveState.tutorialProgress.events),[]);
 });
-test('walkthrough is a right-side quest list with automatic progression',()=>{
+test('walkthrough is a single-objective quest tracker with automatic progression',()=>{
  assert(source.includes('class="tour-head"'));
  assert(source.includes('id="tour-progress-bar"'));
- assert(source.includes('id="tour-steps"'));
- assert(source.includes('tour-step-current'));
+ assert.equal(source.includes('id="tour-steps"'),false);
+ assert.equal(source.includes('id="tour-objective"'),false);
  assert(source.includes('function shortText('));
- assert(source.includes("$('guided-tour-text').textContent=shortText(s.text)"));
+ assert(source.includes('text.textContent=read?s.text:shortText(s.text)'));
  assert(source.includes("$('tour-details-toggle').onclick"));
  assert(source.includes("box.dataset.ready='true'"));
  assert.equal(source.includes('id="tour-next"'),false);
@@ -57,9 +57,16 @@ test('walkthrough is a right-side quest list with automatic progression',()=>{
  assert(css.includes('right:14px'));
  assert(css.includes('.tour-head'));
  assert(css.includes('#tour-progress-bar'));
- assert(css.includes('.tour-steps'));
- assert(css.includes('.tour-step-current'));
+ assert.equal(css.includes('.tour-steps'),false);
  assert(css.includes('@keyframes tour-in'));
+});
+test('the tracker shows one objective plus its chapter position',()=>{
+ const {ctx,el,api}=fixture();el('lobby-screen').style.display='none';api.tick();
+ assert.equal(el('tour-title').textContent,'Your lakeside adventure');
+ assert(el('tour-counter').textContent.includes('1 of 6'));
+ assert.equal(ctx.document.getElementById('tour-steps'),null);
+ assert(el('guided-tour-text').textContent.includes('Follow the blue arrow'));
+ assert(el('guided-tour-text').textContent.length>80);
 });
 test('tracker expands details and collapses back to a small header',()=>{
  const {el,api}=fixture();el('lobby-screen').style.display='none';api.tick();
@@ -71,17 +78,16 @@ test('tracker expands details and collapses back to a small header',()=>{
 test('read and completed objectives advance without pressing a button',()=>{
  const {ctx,el,api}=fixture();el('lobby-screen').style.display='none';api.tick();
  assert.equal(ctx.saveState.tutorialProgress.index,0);
- for(let i=0;i<40&&ctx.saveState.tutorialProgress.index===0;i++)api.tick();
+ for(let i=0;i<80&&ctx.saveState.tutorialProgress.index===0;i++)api.tick();
  assert.ok(ctx.saveState.tutorialProgress.index>0,'the intro should auto-advance');
 });
-test('text-only steps get a centered automatic notice',()=>{
- assert(source.includes("id='tutorial-brief'"));
- assert(source.includes("const show=!!s&&s.goal==='read'"));
- assert(source.includes("$('tutorial-brief-text').textContent=s.text"));
+test('text-only steps read inside the quest card instead of a centered modal',()=>{
+ assert.equal(source.includes('tutorial-brief'),false);
+ assert(source.includes("const read=s.goal==='read'"));
+ assert(source.includes("text.classList.toggle('tour-read',read)"));
  const css=fs.readFileSync(require.resolve('../guided-tutorial.css'),'utf8');
- assert(css.includes('#tutorial-brief{'));
- assert(css.includes('#tutorial-brief[hidden]'));
- assert(css.includes('@keyframes tutorial-brief-in'));
+ assert.equal(css.includes('tutorial-brief'),false);
+ assert(css.includes('#guided-tour-text.tour-read'));
  assert.equal(source.includes('Hollowtide'),false);
 });
 test('tutorial actions are recorded before first tick and while paused',()=>{
@@ -92,11 +98,11 @@ test('tutorial actions are recorded before first tick and while paused',()=>{
  api.event('cast');
  assert.equal(ctx.saveState.tutorialProgress.events.cast,true);
 });
-test('hiding the HUD also hides the quest tracker and tutorial callouts',()=>{
+test('hiding the HUD also hides the quest tracker and its direction arrow',()=>{
  const css=fs.readFileSync(require.resolve('../guided-tutorial.css'),'utf8');
  assert(css.includes('body.hud-hidden #guided-tour'));
- assert(css.includes('body.hud-hidden #tutorial-brief'));
  assert(css.includes('body.hud-hidden #tutorial-arrow'));
+ assert.equal(css.includes('tutorial-brief'),false);
 });
 test('quest card measures the tournament HUD so anchor ads cannot overlap it',()=>{
  assert(source.includes('function positionTour()'));

@@ -19,7 +19,7 @@ test('ear interiors move with the outer ear while cropped styles and head shape 
 
 test('retained 2D ear overlay draws only ears without clearing hair or repainting the face',()=>{
  const source=fs.readFileSync(path.join(root,'ui.js'),'utf8'),calls=[],ctx={clearRect(){calls.push('clear');}},context=vm.createContext({drawEars:(ctx,id)=>calls.push(id)});
- const a=source.indexOf('function drawSpecies('),b=source.indexOf('// Helper to keep face sizes consistent',a);vm.runInContext(source.slice(a,b),context);
+ const a=source.indexOf('function drawSpecies('),b=source.indexOf('function restorePants(',a);vm.runInContext(source.slice(a,b),context);
  context.drawSpecies(ctx,'fox','#abc','#fff','#000',false,{},false,true);assert.deepEqual(calls,['fox']);
 });
 

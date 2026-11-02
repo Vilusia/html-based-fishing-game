@@ -3014,7 +3014,7 @@ body.hud-hidden #emote-overlay:not([hidden]) {display:flex!important;visibility:
         }
     </style>
     <link rel="stylesheet" href="mobile-ui.css?v=12.454">
-    <link rel="stylesheet" href="guided-tutorial.css?v=12.485">
+    <link rel="stylesheet" href="guided-tutorial.css?v=12.522">
     <link rel="stylesheet" href="protogen-logo.css?v=12.484">
     <link rel="stylesheet" href="character-studio.css?v=12.513">
     <!-- AdSense Auto Ads: force the anchor to the bottom edge. Gameplay reserves
@@ -3221,9 +3221,19 @@ body.hud-hidden #emote-overlay:not([hidden]) {display:flex!important;visibility:
         <p>New features, improvements, and fixes for HTML Fishing.</p>
         <div id="patch-notes-content">
             <!-- Add future dated update entries here, newest first. -->
+            <article data-update-date="2026-11-02" aria-labelledby="patch-2026-11-02">
+                <h3 id="patch-2026-11-02"><time datetime="2026-11-02">November 2, 2026</time> — Cleanup &amp; Fixes</h3>
+                <p><strong>Latest update · v12.522</strong></p>
+                <ul>
+                    <li><strong>Streamlined quest tracker:</strong> the tutorial now shows one objective at a time, with its chapter, a short hint and a thin progress bar. The long step list and centered reading card are gone, and read-only tips appear inside the same small card. Open ? for the full explanation and chapter jumping; the footer's Skip becomes Continue when a goal is ready.</li>
+                    <li><strong>Flower picking fixed:</strong> picking a flower now reliably grants it, shows its pickup message and brings it back after its cooldown instead of stopping partway through.</li>
+                    <li><strong>Music on every host:</strong> tracks also load when the server stores the music folder with a capitalised name.</li>
+                    <li><strong>More reliable selling:</strong> selling fish, wood, ore or flowers no longer stops with an error when the merchant panel is not open.</li>
+                </ul>
+            </article>
             <article data-update-date="2026-10-30" aria-labelledby="patch-2026-10-30">
                 <h3 id="patch-2026-10-30"><time datetime="2026-10-30">October 30, 2026</time> — Chat Image Protection</h3>
-                <p><strong>Latest update · v12.520</strong></p>
+                <p><strong>Update · v12.520</strong></p>
                 <ul><li><strong>3D body paint:</strong> paint directly on your 3D character in the Body tab, including the head, torso front/back/sides, both arms and both legs, and pick any custom brush color. A whole-body Mirror toggle keeps matching marks on both halves, arms, legs and head sides. Outfits and hair are removed while Paint mode is active and restored when it is turned off or the studio closes. Paint is saved with outfits and included in saved characters and multiplayer sync.</li><li><strong>Shareable outfits:</strong> copy a saved outfit code from the wardrobe or the Looks tab and import it on another character. Imported looks are validated, save with your wardrobe, and only equip clothing you own.</li><li><strong>High-ping recovery:</strong> after a connection stall, queued movement, boat controls and other normal packets can arrive in a burst without triggering the packet-flood kick. Sustained spam, oversized messages and invalid traffic are still blocked.</li><li><strong>Background-tab voice:</strong> voice proximity now follows incoming network positions even while the game tab is inactive, so players who walk into range are audible again. Returning to the tab also resumes any suspended audio. Mute and house isolation still apply.</li><li><strong>Quest-style tutorial:</strong> the walkthrough is a right-side quest list showing the current chapter's steps and a clear Do this instruction. It measures the tournament HUD every tick, so anchor ads or an expanded tournament can no longer make the card overlap it. Text-only steps appear in a centered card, then dismiss and continue automatically. Objectives check off and advance without a Next button; action progress is recorded before the tracker initializes or while paused. Full instructions and chapter jumping remain under the ? button. Hiding the HUD now also hides the quest tracker, tutorial callout and direction arrow until the HUD returns.</li><li><strong>Paint mode guidance:</strong> the Character studio now explains body painting with numbered steps, a clear active/paused status, Fine/Medium/Wide brushes, one-click Undo stroke and a confirmation before Clear all.</li><li><strong>Enhanced lighting:</strong> the world now uses filmic tone mapping with a warmer sky bounce, a cool side fill, cleaner shadow edges and a stronger moon. Sunrises and sunsets blend through warm sunlight, while rain, lava and Void areas keep their own balanced lighting. This applies whether the retro shader is on or off.</li><li><strong>Real rain:</strong> falling drops are now thin, wind-slanted streaks that follow you instead of square sprites. The procedural rain sound layers a soft filtered body with fine high-frequency hiss for fuller rainfall.</li><li><strong>Cleaner menus:</strong> Lucky Lou's scratch shop now has a Close button inside the panel instead of the floating red X. Escape now closes the top open menu, including scratch cards, shops, inventory, options, dialogs, trades, the screen queue and other overlays.</li><li><strong>Retro shader:</strong> Display now renders the world through a chunky pixel shader with richer color, a soft vignette and light grain. It is on by default for new and existing saves, and an explicit OFF choice is remembered. Pick 2×, 3× or 4× pixels and toggle it at any time. The lower internal resolution can also improve performance.</li><li><strong>Live server analytics:</strong> the master server now serves a live connections dashboard at <code>/analytics</code>, showing current players, active lobbies, host types and live sessions, plus weekly, monthly and yearly concurrent-player graphs. History starts with the first sample after the updated server starts.</li><li><strong>Bigger scenery catalog:</strong> the level editor gained 17 new buildings and 37 new props, including cottages, taverns, chapels, barns, a forge, bakery, greenhouse, farmhouse, gazebo, ruins, treehouse, fishing shack, boathouse and pier, plus pine/palm/dead trees, boulders, lily pads, cattails, picnics, swings, wells, fountains, statues, wagons, canoes, buoys, fishing racks, crab traps, anvils, firewood and market goods.</li><li><strong>Editor rotation and ear fix:</strong> R / Shift+R now rotates buildings, props, NPCs, trees, rocks and caves by 45°. Inner ears now use one clean inset surface instead of separate shrunken facet triangles, removing the pink cross/seam patterns on pointed and round ears.</li><li><strong>Default island refresh:</strong> rebuilt the home island's look with one central lake, a glowing light pond, a dark pond, the cave fishing grotto, village paths and lanterns, a Void rift, a lava shrine, and the shared generated archipelago offshore. All NPCs, the boat dock, and the player house sit along the new routes, with clearer shores, reeds, lilies, rocks, and garden details. Benches now sit off the walking paths and face the ponds, house and dock. Clearing a custom island now reloads this refreshed default map with fresh scripts instead of an older cached island.</li><li><strong>Pattern shop retired:</strong> the old fur-pattern category and its purchases are gone; free body paint replaces them.</li><li><strong>Clearer sitting motion:</strong> increased seated breathing and hand movements so they are easier to see at the normal camera distance, with hand adjustments occurring more often.</li><li><strong>Relaxed sitting animation:</strong> seated players now breathe gently and occasionally shift their hands, including boat passengers. Legs stay planted and held items keep their grip.</li><li><strong>Complete NPC HUD hiding:</strong> Hide HUD now hides every NPC name and overhead icon, including Captain Finn, Morrow, the Inferno Guard and custom-map NPCs. Labels created while the HUD is hidden stay hidden, and return when the HUD is shown.</li><li><strong>Shop hover try-on:</strong> hover or keyboard-focus hats, tops, pants, collars and titles to see a temporary preview on your character. Moving away restores your equipped look; previewing never purchases or equips an item.</li><li><strong>3D shop previews:</strong> hats, shirts, pants and collars now show the actual 3D character in shop cards, using one shared cached thumbnail renderer for fast category switching. The old 2D player previews, their fallbacks and the obsolete 2D Models toggle are gone, so character previews are 3D only.</li><li><strong>True 3D studio thumbnails:</strong> style cards now render the actual character models, including current colors, clothes, hair, extras and protogen signs. Head features use a closer view and tails use a rear view. Shared rendering, caching and incremental loading keep large categories responsive.</li><li><strong>New character studio:</strong> create your look with a large rotatable preview, icon-led categories, visual style cards, species starting points, color palettes, search, undo/redo and quick camera views. Browse owned clothing and save or load favorite looks. The layout adapts to phones, and protogen sign drawing stays available beside Extras.</li><li><strong>Custom protogen signs:</strong> selecting Side Circles &amp; Fins in Extras reveals a neatly placed Draw sign button. Draw, erase, undo or clear a sign with mouse or touch, then save it to both side circles in your eye color. Signs are saved with your character/outfits and visible to other players.</li><li><strong>Restart Twitch at live:</strong> added Restart at live (this device) to open a fresh live-channel player instead of resuming your paused or rewound position. Only your player restarts; the room queue and other viewers stay unchanged. Playback starts automatically where permitted, with one muted retry if Twitch blocks sound.</li><li><strong>Twitch playback recovery:</strong> removed pause and channel-reset commands from same-channel live requests, leaving playing viewers uninterrupted. Renamed the control to Resume live for room and added a larger Play here button for devices that require a local click. The menu now clarifies that Twitch live delays cannot be precisely synchronized.</li><li><strong>Approved chat image hosts:</strong> inline images now require direct HTTPS links from Imgur, Reddit image CDNs or the supported GIPHY media hosts. Other URLs remain plain text without an automatic image request. Added image-source browser restrictions to block redirects to other hosts and disabled referrer sharing on chat/GIF images.</li></ul>
             </article>
             <article data-update-date="2026-10-29" aria-labelledby="patch-2026-10-29">
@@ -4245,23 +4255,23 @@ body.hud-hidden #emote-overlay:not([hidden]) {display:flex!important;visibility:
         })();
     </script>
 
-    <script src="icons.js?v=109"></script>
+    <script src="icons.js?v=112"></script>
     <script src="worldgen.js?v=12.517"></script>
     <script src="ocean.js?v=12.481"></script>
-    <script src="core.js?v=12.533"></script>
-    <script src="fish.js?v=12.515"></script>
+    <script src="core.js?v=12.536"></script>
+    <script src="fish.js?v=12.518"></script>
     <script src="protogen-logo.js?v=12.496"></script>
-    <script src="character3d.js?v=12.519"></script>
+    <script src="character3d.js?v=12.522"></script>
     <script src="bobbers3d.js?v=12.437"></script>
-    <script src="networking.js?v=12.449"></script>
-    <script src="audio.js?v=12.484"></script>
+    <script src="networking.js?v=12.452"></script>
+    <script src="audio.js?v=12.487"></script>
     <script src="reel-audio.js?v=12.441"></script>
-    <script src="progression.js?v=107"></script>
+    <script src="progression.js?v=110"></script>
     <script src="performance.js?v=51"></script>
     <script src="outdoor-props.js?v=12.488"></script>
     <script src="rowboat.js?v=12.480"></script>
     <script src="network-guard.js?v=12.516"></script>
-    <script src="ui.js?v=12.525"></script>
+    <script src="ui.js?v=12.528"></script>
     <script src="shop-preview.js?v=12.513"></script>
     <script src="shop-try-on.js?v=12.498"></script>
     <script src="character-thumbnails.js?v=12.510"></script>
@@ -4270,14 +4280,14 @@ body.hud-hidden #emote-overlay:not([hidden]) {display:flex!important;visibility:
     <script src="tournaments.js?v=12.478"></script>
     <script src="furniture.js?v=12.459"></script>
     <script src="housing.js?v=12.490"></script>
-    <script src="props.js?v=12.494"></script>
+    <script src="props.js?v=12.497"></script>
     <script src="exploration.js?v=12.486"></script>
-    <script src="level-loader.js?v=104"></script>
+    <script src="level-loader.js?v=107"></script>
     <script src="scratch.js?v=101"></script>
-    <script src="boats.js?v=12.486"></script>
+    <script src="boats.js?v=12.489"></script>
     <script src="halloween.js?v=12.510"></script>
     <script src="mobile-ui.js?v=12.486"></script>
-    <script src="guided-tutorial.js?v=12.493"></script>
+    <script src="guided-tutorial.js?v=12.495"></script>
 
     <!-- Start Open Web Analytics Tracker -->
     <script type="text/javascript">

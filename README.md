@@ -84,31 +84,48 @@ type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh administrator@gpu-jkey "mkdir -p
 | `ui.js` | The bulk of gameplay and UI: fishing minigame, inventory, shop, skills, journal, server browser, master-server client |
 | `fish.js` | Fish catalogue (regular, lava, rain, void) |
 | `worldgen.js` | Island/world generation: terrain, zones, trees, rocks, flowers |
+| `ocean.js` | Deterministic offshore archipelago and open-ocean height queries |
 | `props.js` | Placeable props and prop networking |
 | `character3d.js` | Character mesh generation |
+| `bobbers3d.js` / `rowboat.js` / `boats.js` | 3D bobber models, the personal rowboat, and shared boat seats |
 | `housing.js` | Saved personal interiors, house entrances, and owner-approved multiplayer visits |
 | `furniture.js` | Furniture catalog/prices, owned storage, grid layouts, stacking rules, and low-poly models |
+| `outdoor-props.js` | Outdoor decoration models and batching |
 | `level-loader.js` | Loading custom levels exported from the editor |
 | `icons.js` | Pixel icon helpers |
 | `audio.js` | Sound effects and music |
+| `reel-audio.js` | Fishing-reel audio graph |
 | `networking.js` | PeerJS globals for P2P play |
+| `network-guard.js` | Per-message-type rate/size limits and packet validation |
 | `progression.js` | Achievements, daily bounties, and quests |
+| `tournaments.js` | Hourly fishing tournament authority, scoring and payouts |
+| `exploration.js` | Shared exploration finds |
+| `emotes.js` | Emote wheel |
+| `character-studio.js` / `character-thumbnails.js` / `shop-preview.js` / `shop-try-on.js` / `protogen-logo.js` | Character studio, 3D card thumbnails, shop previews and protogen sign drawing |
+| `guided-tutorial.js` / `halloween.js` / `scratch.js` / `mobile-ui.js` / `performance.js` | Tutorial tracker, seasonal event, scratch cards, touch HUD, FPS/render settings |
 | `editor.html` / `editor.js` | Standalone level editor |
 
 ### Script load order
 
-`index.html` loads scripts in dependency order:
+`index.html` loads the vendor libraries first, then the game in dependency
+order (all 33 local scripts are listed in one place, `index.html`):
 
 ```
-icons.js → worldgen.js → core.js → fish.js → character3d.js →
-networking.js → audio.js → progression.js → ui.js →
-props.js → level-loader.js
+vendor/Midi.js → vendor/three.min.js → vendor/CSS3DRenderer.js → vendor/peerjs.min.js →
+icons.js → worldgen.js → ocean.js → core.js → fish.js → protogen-logo.js →
+character3d.js → bobbers3d.js → networking.js → audio.js → reel-audio.js →
+progression.js → performance.js → outdoor-props.js → rowboat.js → network-guard.js →
+ui.js → shop-preview.js → shop-try-on.js → character-thumbnails.js →
+character-studio.js → emotes.js → tournaments.js → furniture.js → housing.js →
+props.js → exploration.js → level-loader.js → scratch.js → boats.js →
+halloween.js → mobile-ui.js → guided-tutorial.js
 ```
 
 `progression.js` must come **after `core.js`** (it reads save state) and
-**before `ui.js`** (ui.js calls its `notify*` hooks). Several globals are
-referenced across files without modules — that is deliberate, to keep the game
-loadable straight from a file server.
+**before `ui.js`** (ui.js calls its `notify*` hooks). `build.ps1` reads this
+list straight from `index.html`, so new scripts never need to be added twice.
+Several globals are referenced across files without modules — that is
+deliberate, to keep the game loadable straight from a file server.
 
 ### Entry point
 
@@ -502,9 +519,19 @@ rarity, so the journal doesn't spoil which unknown fish are the rare ones.
 
 - Syntax-check before committing: `node --check <file>.js` and
   `python -m py_compile "Master Server Code/master_server.py"`.
-- The game has no build step and no bundler. Edit a file, reload the page.
+- Run the whole regression suite with
+  `node --test "tests/*.test.cjs"` (Node 20+; the tests load one script at a
+  time in a `vm` sandbox, so no browser or server is needed).
+- The game runs unbundled: edit a file, reload the page. `build.ps1` is the
+  optional production build — it derives the file list from `index.html`,
+  concatenates the scripts into `vendor.bundle.js` + `game.bundle.js`, and
+  writes a copy of the site to `dist/`. The repo-root bundles are not used by
+  the game and are not checked in.
 - Bump the `?v=` query on `index.html` script tags when changing a file, so
   browsers fetch the new copy.
+- Music lives in `Music/` but is requested as `music/`. A missing folder is
+  harmless (the page retries once with the capitalised name), and `deploy.ps1
+  -Scp` uploads it as `music/` for case-sensitive hosts.
 
 ## Hourly fishing tournaments
 
@@ -639,7 +666,7 @@ The Escape menu is organized into Audio, Display, Controls, Save data and Sessio
 
 Escape closes the top-most open menu or dialog (shops, scratch cards, inventory, options, trades, screen queue, and similar overlays). Lucky Lou's scratch card panel uses its own in-panel Close button instead of the floating red X.
 
-The guided tutorial is a right-side quest list that measures the live tournament HUD rectangle and sits above it. Anchor ads changing `--game-anchor-space`, or an expanded tournament, therefore move the tutorial card up instead of letting it overlap. It shows the current chapter and step count, a prominent Do this instruction, progress bar and the current chapter's steps with completed, current and upcoming states. Objectives complete automatically: read-only steps show their full explanation in a centered, non-blocking card for a short reading pause, action steps check off and advance after a short delay, and unavailable targets move on automatically. There is no Next button. Action events are recorded even before the tracker initializes or while paused, which keeps progress reliable for remote players. The ? button reveals full instructions and chapter jumping, the pause icon stops the run, and the minimize icon collapses the tracker to its header. The tracker remains hidden while menus or the written guide are open and the direction arrow continues to point at nearby targets.
+The guided tutorial is a single-objective quest tracker in the style of a quest log: it shows the chapter name with its position (for example `Fishing · 3 of 10`), the current objective, and one short hint line. There is no visible step list, so the card never becomes a wall of tasks. A thin bar tracks overall progress. Objectives complete automatically: read-only steps display their explanation in the same card with a short reading pause, action steps show `Objective complete` and advance after a moment, and unavailable targets move on automatically. The footer's Skip link becomes Continue once an objective is ready, so there is no separate Next button. The card measures the live tournament HUD rectangle and sits above it, so anchor ads changing `--game-anchor-space` or an expanded tournament move it up instead of overlapping. The ? button opens the full explanation and chapter jumping, the pause icon stops the run, and the minimize icon collapses the card to its header. Action events are recorded even before the tracker initializes or while paused, which keeps progress reliable for remote players. The tracker remains hidden while menus or the written guide are open, and the direction arrow continues to point at nearby targets.
 
 Retro shader (v12.510): Display & performance offers a pixel shader with 2×, 3× or 4× internal pixels, a gentle color grade, soft vignette and light grain. It is enabled by default for new and existing saves; an explicit OFF choice is remembered from then on. It renders into a nearest-neighbour target before an alpha-preserving upscale, so CSS3D video screens and the existing depth punch continue to work.
 
