@@ -14760,7 +14760,9 @@ function renderCookingUI() {
     const lvl = getSkillLevel('cooking');
     const head = document.createElement('div');
     head.style.cssText = 'font-size:14px;color:var(--p-text-mute);';
-    head.textContent = `Cooking level ${lvl} · burn chance ${Math.round(cookingBurnChance() * 100)}%`;
+    // Show the size of the hit zone (sweet spot) instead of burn chance
+    const sweetSpot = Math.min(65, 20 + lvl * 0.5);
+    head.textContent = `Cooking level ${lvl} · sweet spot ${Math.round(sweetSpot)}%`;
     list.appendChild(head);
 
     const idxs = cookableIndexes();
