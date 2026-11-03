@@ -213,8 +213,7 @@ const ACHIEVEMENTS = [
     {
         id: 'all_tools', name: 'Fully Equipped', desc: 'Own every tool',
         check: c => pct(['axe', 'pickaxe', 'guitar', 'glove'].filter(t => c.unlockedTools.indexOf(t) !== -1).length, 4)
-    }
-    ,
+    },
     {
         id: 'master_chef', name: 'Master Chef', desc: 'Cook 25 fish',
         check: c => pct(c.cookedFish, 25)
@@ -657,6 +656,13 @@ function notifyResourceGathered(kind, amount) {
     if (event) notifyBountyEvent(event, amount);
     checkAchievements(false);
     checkQuests(false);
+    if (typeof refreshProgressionUI === 'function') refreshProgressionUI();
+}
+
+// A batch of fish finished cooking (the count includes burnt results).
+function notifyCooked(amount) {
+    notifyBountyEvent('cook', amount);
+    checkAchievements(false);
     if (typeof refreshProgressionUI === 'function') refreshProgressionUI();
 }
 

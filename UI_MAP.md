@@ -133,44 +133,44 @@ lineIntersectsCircle:14563, lineIntersectsBox:14586, checkLineOfSight:14619
 renderSkillsUI:14674
 
 ### COOKING SYSTEM (line 14715)
-COOK_VALUE_MULT:14718, COOK_BURN_VALUE_MULT:14719, isCookableFish:14721, makeCookedFish:14726, cookableIndexes:14753, renderCookingUI:14755, cookingMini:14801, updateCookingMinigameUI:14814
-startCookingMinigame:14831, cookFishByName:14963, defaultHotbar:14969, setupHotbar:14980, updateHotbarVisuals:15020, selectHotbarSlot:15055
+COOK_VALUE_MULT:14718, COOK_BURN_VALUE_MULT:14719, isCookableFish:14721, makeCookedFish:14726, cookableIndexes:14753, renderCookingUI:14755, cookingMini:14803, updateCookingMinigameUI:14816
+startCookingMinigame:14833, cookFishByName:14967, defaultHotbar:14973, setupHotbar:14984, updateHotbarVisuals:15024, selectHotbarSlot:15059
 
-### PIXEL-ART TOOL SPRITE HELPER (line 15107)
-makeToolTexture:15112
+### PIXEL-ART TOOL SPRITE HELPER (line 15111)
+makeToolTexture:15116
 
-### HELPER: AXE TEXTURE (line 15133)
-createAxeTexture:15134, equipAxe:15160, createPickaxeTexture:15162, equipPickaxe:15190
+### HELPER: AXE TEXTURE (line 15137)
+createAxeTexture:15138, equipAxe:15164, createPickaxeTexture:15166, equipPickaxe:15194
 
-### HELPER: GUITAR TEXTURE (line 15192)
-createGuitarTexture:15193
+### HELPER: GUITAR TEXTURE (line 15196)
+createGuitarTexture:15197
 
-### HELPER: BOXING GLOVE TEXTURE (line 15226)
-createGloveTexture:15227, performChop:15257, chopTree:15288, performMine:15373, mineRock:15404, respawnRock:15482, mulberry32:15501, xmur3:15502
-migrateSave:15508, loadSave:15522, saveGame:15839, updateWeatherVisuals:15924
+### HELPER: BOXING GLOVE TEXTURE (line 15230)
+createGloveTexture:15231, performChop:15261, chopTree:15292, performMine:15377, mineRock:15408, respawnRock:15486, mulberry32:15505, xmur3:15506
+migrateSave:15512, loadSave:15526, saveGame:15846, updateWeatherVisuals:15931
 
-### UI TOGGLE & UPDATE FUNCTIONS (line 15961)
-updateTitleUI:15969, refreshAllTitles:15977, chatFadeTimer:15996, refreshChatFade:15998, toggleFullScreen:16019, toggleShowFish:16031, isFishCatchable:16066, selectFish:16124
-updateJournal:16321
+### UI TOGGLE & UPDATE FUNCTIONS (line 15968)
+updateTitleUI:15976, refreshAllTitles:15984, chatFadeTimer:16003, refreshChatFade:16005, toggleFullScreen:16026, toggleShowFish:16038, isFishCatchable:16073, selectFish:16131
+updateJournal:16328
 
-### PLAYER TRADING (line 16333)
-tradePartnerId:16334, tradePendingFrom:16335, tradePendingFromName:16336, tradeMyOffer:16337, tradeTheirOffer:16338, tradeIAccepted:16339, tradeTheyAccepted:16340, relayTrade:16342
-checkTradeComplete:16382, renderTradeUI:16406, handleTradeMessage:16435, setupPanelTabBar:16489, PANEL_OVERLAY_IDS:16509, closeAllPanels:16519, closeTopOverlay:16530, switchPanel:16586
-nextPanelTabBarUpdate:16613, updatePanelTabBar:16614, getFishSellPrice:16624, addFishToInventory:16639, getItemTooltipText:16647, showItemTooltip:16680, hideItemTooltip:16694, invFilterMode:16728
-ensureInventorySlots:16730, renderInventoryGrid:16762, setupHotbarDrag:16883, OPTIONS_TABS:16907, optionsActiveTab:16908
+### PLAYER TRADING (line 16340)
+tradePartnerId:16341, tradePendingFrom:16342, tradePendingFromName:16343, tradeMyOffer:16344, tradeTheirOffer:16345, tradeIAccepted:16346, tradeTheyAccepted:16347, relayTrade:16349
+checkTradeComplete:16389, renderTradeUI:16413, handleTradeMessage:16442, setupPanelTabBar:16496, PANEL_OVERLAY_IDS:16516, closeAllPanels:16526, closeTopOverlay:16537, switchPanel:16593
+nextPanelTabBarUpdate:16620, updatePanelTabBar:16621, getFishSellPrice:16631, addFishToInventory:16646, getItemTooltipText:16654, showItemTooltip:16687, hideItemTooltip:16701, invFilterMode:16735
+ensureInventorySlots:16737, renderInventoryGrid:16769, setupHotbarDrag:16890, OPTIONS_TABS:16914, optionsActiveTab:16915
 
-### TUTORIAL NPC GUIDE (line 16974)
-npcTutorial:16975, npcFisher:16976, startGuidedTour:16990
+### TUTORIAL NPC GUIDE (line 16981)
+npcTutorial:16982, npcFisher:16983, startGuidedTour:16997
 
-### OLD FISHER DIALOGUE (line 16992)
-fisherTipIndex:16994, FISHER_TIPS:16995, maybeShowFisherHint:17026
+### OLD FISHER DIALOGUE (line 16999)
+fisherTipIndex:17001, FISHER_TIPS:17002, maybeShowFisherHint:17033
 
-### MODULAR PART CHANGE FUNCTIONS (line 17100)
+### MODULAR PART CHANGE FUNCTIONS (line 17107)
 
-### PART COLOR CHANGE FUNCTIONS (line 17154)
-populatePartSelectors:17191, updateMusicUI:17289, updateLocalVisuals:17297, updateBaitSelector:19051, createPortalTexture:19082, spawnPortal:19110, createVoidWorld:19138, findCustomPortalLocation:19159
-enterLavaWorld:19173, exitLavaWorld:19194, enterVoid:19209, nearLaunchableWater:19291, setSailBoatVisible:19309, togglePlayerList:19354, renderPlayerList:19360, toggleLocalMute:19443
-updateHostPanel:19461, kickPeer:19635, banPeer:19649, toggleGlobalMute:19675, respawnTree:19694, respawnFlower:19713
+### PART COLOR CHANGE FUNCTIONS (line 17161)
+populatePartSelectors:17198, updateMusicUI:17296, updateLocalVisuals:17304, updateBaitSelector:19058, createPortalTexture:19089, spawnPortal:19117, createVoidWorld:19145, findCustomPortalLocation:19166
+enterLavaWorld:19180, exitLavaWorld:19201, enterVoid:19216, nearLaunchableWater:19298, setSailBoatVisible:19316, togglePlayerList:19361, renderPlayerList:19367, toggleLocalMute:19450
+updateHostPanel:19468, kickPeer:19642, banPeer:19656, toggleGlobalMute:19682, respawnTree:19701, respawnFlower:19720
 
-### HUD TOGGLE (line 19722)
-hudVisible:19723, toggleHud:19724, update3DColorControls:19780, updateCharacterModelUI:19805, updatePerformanceUI:19824
+### HUD TOGGLE (line 19729)
+hudVisible:19730, toggleHud:19731, update3DColorControls:19787, updateCharacterModelUI:19812, updatePerformanceUI:19831

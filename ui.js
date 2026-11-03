@@ -315,6 +315,13 @@ function updateMerchantUI(container) {
         }
     });
 
+    // Trading raises what the Merchant pays for wood, ore and flowers. Fish
+    // already include it through getFishSellPrice().
+    const tradeMult = (typeof tradingSellMultiplier === 'function') ? tradingSellMultiplier() : 1;
+    totalWoodValue = Math.round(totalWoodValue * tradeMult);
+    totalOreValue = Math.round(totalOreValue * tradeMult);
+    totalFlowerValue = Math.round(totalFlowerValue * tradeMult);
+
     // AXE LOGIC
     const axeTool = TOOLS.find(t => t.id === 'axe');
     let axeBtn = '';
@@ -369,6 +376,7 @@ function updateMerchantUI(container) {
             <div style="font-family:var(--font-display); font-size:16px; color:var(--p-gold); margin-bottom:20px;">$${Number(saveState.money) || 0}</div>
 
             <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell</h3>
+            ${tradeMult > 1 ? `<div style="font-size:10px; color:var(--p-good); margin:-2px 0 8px;">Trading bonus: +${Math.round((tradeMult - 1) * 100)}%</div>` : ''}
 
             <h3 style="color:var(--p-sand); border-bottom:2px solid var(--p-line); padding-bottom:5px; margin-top:0;">Sell Fish (click to sell one)</h3>
             <div id="merchant-fish-grid" style="display:grid; grid-template-columns: repeat(6, 1fr); gap:6px; margin-bottom:20px; margin-top:10px; max-height:220px; overflow-y:auto; padding:8px; background:var(--p-sunken); border:2px solid var(--p-line);">
@@ -575,6 +583,7 @@ window.actionSellWood = function () {
     }
 
     if (count <= 0) { showToast("No wood!"); return; }
+    total = Math.round(total * (typeof tradingSellMultiplier === 'function' ? tradingSellMultiplier() : 1));
 
     // Server Authority Check
 
@@ -608,6 +617,7 @@ window.actionSellOre = function () {
     }
 
     if (count <= 0) { showToast("No ore!"); return; }
+    total = Math.round(total * (typeof tradingSellMultiplier === 'function' ? tradingSellMultiplier() : 1));
 
     // Server Authority Check
 
@@ -637,6 +647,7 @@ window.actionSellFlowers = function () {
     });
 
     if (count <= 0) { showToast("No flowers!"); return; }
+    total = Math.round(total * (typeof tradingSellMultiplier === 'function' ? tradingSellMultiplier() : 1));
 
     // Server Authority Check
 
@@ -674,13 +685,22 @@ function tryPickNearbyFlower() {
     return false;
 }
 
-window.pickFlower = function (i) {
+// `fromNetwork` marks a pick another player already made: hide the flower and
+// start its local respawn timer, but never grant rewards or rebroadcast it.
+window.pickFlower = function (i, fromNetwork = false) {
     const flower = pickableFlowers[i];
     if (!flower || flower.userData.isPicked) return;
 
     // Mark as picked
     flower.userData.isPicked = true;
     flower.visible = false;
+
+    // Respawn Logic (1 minute cooldown)
+    setTimeout(() => {
+        respawnFlower(i);
+    }, 60000);
+
+    if (fromNetwork) return;
 
     // Get Data
     const typeId = flower.userData.typeId || 'daisy'; // Default fallback
@@ -713,10 +733,13 @@ window.pickFlower = function (i) {
     showToast(`Picked ${flowerType.name}: +${xp} XP`, 'success');
     updateUI();
 
-    // Respawn Logic (1 minute cooldown)
-    setTimeout(() => {
-        respawnFlower(i);
-    }, 60000);
+    // Tell the room. The host relays a guest's pick to everyone else.
+    const msg = { type: 'pick_flower', index: i };
+    if (isHost) {
+        broadcastToClients(msg);
+    } else if (hostConn && hostConn.open) {
+        hostConn.send(msg);
+    }
 }
 
 window.actionBuyTool = function (toolId) {
@@ -14931,7 +14954,7 @@ window.doCookingHit = function() {
         if (count > 0) {
             addSkillXP('cooking', rawXP);
             saveState.cookedFishCount = (saveState.cookedFishCount || 0) + count;
-            notifyBountyEvent('cook', count);
+            if (typeof notifyCooked === 'function') notifyCooked(count);
             Sound.sell();
             saveGame();
             updateUI();
@@ -15769,6 +15792,9 @@ function loadSave() {
             if (d.quests && typeof d.quests === 'object') saveState.quests = d.quests;
             if (typeof d.saveVersion === 'number') saveState.saveVersion = d.saveVersion;
             if (typeof d.propsPlaced === 'number') saveState.propsPlaced = d.propsPlaced;
+            if (typeof d.cookedFishCount === 'number' && Number.isFinite(d.cookedFishCount)) {
+                saveState.cookedFishCount = Math.max(0, Math.floor(d.cookedFishCount));
+            }
             if (typeof d.tutorialDone === 'boolean') saveState.tutorialDone = d.tutorialDone;
             if (d.tutorialProgress) saveState.tutorialProgress = window.GuidedTutorialRules?.normalize(d.tutorialProgress) || null;
 
@@ -16625,20 +16651,22 @@ function updatePanelTabBar() {
     if (bar) {const display=anyOpen?'flex':'none';if(bar.style.display!==display)bar.style.display=display;}
 }
 
+// What the Merchant pays for one fish, including the Trading skill bonus.
 function getFishSellPrice(name) {
-    if (!name) return 10;
-    if (name.startsWith('Cooked ')) {
+    let price;
+    if (!name) price = 10;
+    else if (name.startsWith('Cooked ')) {
         const base = (typeof getFishByName === 'function') ? getFishByName(name.slice(7)) : null;
-        const basePrice = base ? base.price : 10;
-        return Math.max(1, Math.round(basePrice * COOK_VALUE_MULT));
-    }
-    if (name.startsWith('Burnt ')) {
+        price = Math.max(1, Math.round((base ? base.price : 10) * COOK_VALUE_MULT));
+    } else if (name.startsWith('Burnt ')) {
         const base = (typeof getFishByName === 'function') ? getFishByName(name.slice(6)) : null;
-        const basePrice = base ? base.price : 10;
-        return Math.max(1, Math.round(basePrice * COOK_BURN_VALUE_MULT));
+        price = Math.max(1, Math.round((base ? base.price : 10) * COOK_BURN_VALUE_MULT));
+    } else {
+        const f = (typeof getFishByName === 'function') ? getFishByName(name) : null;
+        price = f ? f.price : 10;
     }
-    const f = (typeof getFishByName === 'function') ? getFishByName(name) : null;
-    return f ? f.price : 10;
+    const mult = (typeof tradingSellMultiplier === 'function') ? tradingSellMultiplier() : 1;
+    return Math.max(1, Math.round(price * mult));
 }
 function addFishToInventory(fish) {
     ensureInventorySlots();
@@ -19721,6 +19749,17 @@ function respawnFlower(index) {
 
     flower.visible = true;
     flower.userData.isPicked = false;
+
+    // Grow back in place. The flower keeps its assigned type so every player
+    // still sees the same species at that spot in multiplayer.
+    const target = Math.max(0.01, flower.userData.originalScale || 1);
+    let s = 0;
+    flower.scale.set(0, 0, 0);
+    const grow = setInterval(() => {
+        s = Math.min(target, s + target / 6);
+        flower.scale.set(s, s, s);
+        if (s >= target) clearInterval(grow);
+    }, 50);
 }
 
 // --- HUD TOGGLE ---

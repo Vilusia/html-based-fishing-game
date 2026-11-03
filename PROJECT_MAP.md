@@ -39,9 +39,9 @@ Defines: cache(4), renderer(5), cancel(6), dispose(10), copy(11), fallback(12), 
 Purpose: (fill in)
 Defines: parseColor(13), shade(28), mat(39), box(54), geo(61), cone(68), cyl(71), sphere(74), torus(79), buildFish(88), buildRod(668), buildTool(698), proportions(737), tailAccentTypes(738), buildCharacter(739), animateWalk(1469), _standPoint(1493), _standTarget(1494), _standDirection(1495), _standIdlePoint(1496), _standPawRest(1497), _standUp(1498), animateStanding(1499), animateJump(1549), animateEmote(1584), _reelTarget(1626), _reelDirection(1627), _reelPoint(1628), _reelPawRest(1629), _reelRotation(1630), animateReel(1631), setBlink(1656), Character3D(1660)
 
-## core.js (27.7 KB, 655 lines)
+## core.js (28.4 KB, 656 lines)
 Purpose: (fill in)
-Defines: GAME_VERSION(21), TWO_D_MODE_AVAILABLE(23), SAVE_VERSION(28), MAX_VOICE_DISTANCE(29), HAIR_TYPES(34), EAR_TYPES(63), EYE_TYPES(106), NOSE_TYPES(147), MISC_TYPES(189), TAIL_TYPES(225), BOBBER_TYPES(273), TOOLS(312), SCRATCH_TIERS(333), SKILL_XP_TABLE(362), MAX_SKILL_XP(375), SKILLS(381), SKILL_IDS(391), ensureSkills(395), ORE_TYPES(406), WOOD_TYPES(420), FLOWER_TYPES(434), getLevelFromXP(448), getXPForLevel(456), DEFAULT_KEYBINDS(463), BODY_PAINT_WIDTH(486), BODY_PAINT_HEIGHT(487), BODY_PAINT_SIZE(488), BODY_PAINT_PALETTE(489), normalizeBodyPaint(495), normalizeBodyPaintColor(502), DEFAULT_SAVE_STATE(507), activeBaitId(645), myDeviceID(647), saveState(654)
+Defines: GAME_VERSION(21), TWO_D_MODE_AVAILABLE(23), SAVE_VERSION(28), MAX_VOICE_DISTANCE(29), HAIR_TYPES(34), EAR_TYPES(63), EYE_TYPES(106), NOSE_TYPES(147), MISC_TYPES(189), TAIL_TYPES(225), BOBBER_TYPES(273), TOOLS(312), SCRATCH_TIERS(333), SKILL_XP_TABLE(362), MAX_SKILL_XP(375), SKILLS(381), SKILL_IDS(391), ensureSkills(395), ORE_TYPES(406), WOOD_TYPES(420), FLOWER_TYPES(434), getLevelFromXP(448), getXPForLevel(456), DEFAULT_KEYBINDS(463), BODY_PAINT_WIDTH(486), BODY_PAINT_HEIGHT(487), BODY_PAINT_SIZE(488), BODY_PAINT_PALETTE(489), normalizeBodyPaint(495), normalizeBodyPaintColor(502), DEFAULT_SAVE_STATE(507), activeBaitId(646), myDeviceID(648), saveState(655)
 
 ## deploy.ps1 (4.6 KB, 97 lines)
 Purpose: (fill in)
@@ -64,7 +64,7 @@ Defines: catalog(3), active(6), actors(7), find(8), restoreSave(9), owned(10), b
 Purpose: (fill in)
 Defines: REFRESH(4), TYPES(5), random(6), generate(7), Finds(21), ExplorationRules(33), authority(35), meshes(36), me(37), peers(38), active(39), dispose(40), clear(41), position(42), anchors(48), accessible(62), ensure(68), model(78), accept(93), publish(116), publishAll(117), client(118), interact(127), prompt(134), tick(140), Exploration(148)
 
-## fish.js (49.3 KB, 937 lines)
+## fish.js (50.2 KB, 937 lines)
 Purpose: (fill in)
 Defines: FISH_TYPES(11), TIME_PREFS(140), RAIN_LOVERS(150), WORLD_BOSS_FISH(156), RAIN_FISH(162), VOID_FISH(170), LAVA_FISH(179), TITLE_TYPES(192), TITLE_MAP(301), GOLDEN_FISH(305), GOLDEN_FISH_CHANCE(311), rollGoldenFish(312), FISH_NAME_MAP(317), getFishByName(328), countDiscoveredSpecies(334), getFishZone(347), getFishForZone(367), TIERS(382), HAT_TYPES(391), PANTS_TYPES(433), SHIRT_TYPES(616), COLLAR_TYPES(679), BAIT_TYPES(691), ROD_TYPES(712), ISLAND_RADIUS(762), LAKE_RADIUS(763), PLAYER_SPEED(764), GRAVITY(765), JUMP_FORCE(766), lastCatchTime(767), WORLD_RADIUS(774), OCEAN_LEVEL(775), OCEAN_FLOOR(776), SHALLOW_DEPTH(777), SWIM_SPEED_MULT(778), OCEAN_ISLAND_MIN_GAP(780), OCEAN_ISLAND_MARGIN(781), _optVec1(785), _optVec2(786), _optVec3(787), ...and 82 more
 
@@ -105,6 +105,10 @@ Defines: KEY(10), SESSION_KEY(13), readStored(15), active(26), CUSTOM_LEVEL(30),
 Purpose: (fill in)
 Defines: fs(1), SKIP(2), EXT(3), files(4), NAME(12), strict(13), loose(15), scan(17), out(27)
 
+## make-ui-map.js (1.0 KB, 25 lines)
+Purpose: (fill in)
+Defines: fs(1), lines(2), NAME(3), decl(4), banner(6), out(8), row(10), flush(11)
+
 ## mobile-ui.css (24.2 KB, 212 lines)
 Purpose: (fill in)
 
@@ -132,9 +136,9 @@ Defines: OUTDOOR_PROPS(2), outdoorPropDefinition(19), normalizePropUnlocks(20), 
 Purpose: (fill in)
 Defines: started(3), mainRender(4), state(5), beginFrame(6), finishFrame(7), captureRender(28), recordModelBuild(29), GamePerformance(30)
 
-## progression.js (36.8 KB, 916 lines)
+## progression.js (38.2 KB, 929 lines)
 Purpose: (fill in)
-Defines: RESOURCE_COUNTS(14), pct(25), ACHIEVEMENTS(31), BOUNTY_POOL(224), BOUNTY_COUNT(241), dayHash(244), utcDayString(253), buildBountiesForDay(261), bountyRewardFor(283), QUESTS(296), progressionSkillLevel(383), computeProgress(391), ensureProgression(483), checkAchievements(511), questCtx(540), checkQuests(546), ensureBounties(569), notifyBountyEvent(584), claimBounty(603), lastBountyDay(621), notifyFishCaught(624), notifyResourceGathered(647), notifyGoldEarned(656), lastKnownMoney(665), moneyWatcherReady(666), progressionTrackMoney(668), notifyPropPlaced(685), progressionLastRefresh(690), progressionTab(698), el(700), progressBar(707), renderBounties(714), renderAchievements(742), renderQuests(783), renderProgressionPanel(816), refreshProgressionUI(845), progressionHasNews(854), updateProgressBadge(877), setProgressTab(892), toggleProgress(897)
+Defines: RESOURCE_COUNTS(14), pct(25), ACHIEVEMENTS(31), BOUNTY_POOL(228), BOUNTY_COUNT(246), dayHash(249), utcDayString(258), buildBountiesForDay(266), bountyRewardFor(288), QUESTS(301), progressionSkillLevel(388), computeProgress(396), ensureProgression(489), checkAchievements(517), questCtx(546), checkQuests(552), ensureBounties(575), notifyBountyEvent(590), claimBounty(609), lastBountyDay(627), notifyFishCaught(630), notifyResourceGathered(653), notifyCooked(663), notifyGoldEarned(669), lastKnownMoney(678), moneyWatcherReady(679), progressionTrackMoney(681), notifyPropPlaced(698), progressionLastRefresh(703), progressionTab(711), el(713), progressBar(720), renderBounties(727), renderAchievements(755), renderQuests(796), renderProgressionPanel(829), refreshProgressionUI(858), progressionHasNews(867), updateProgressBadge(890), setProgressTab(905), ...and 1 more
 
 ## props.js (102.4 KB, 2143 lines)
 Purpose: (fill in)
@@ -171,7 +175,7 @@ Defines: FIELDS(3), state(4), active(7), labels(8), redraw(13), clear(14), bind(
 Purpose: (fill in)
 Defines: HOUR(4), rewardFor(5), Tournament(6), TournamentRules(58), authority(60), panel(61), summary(63), accept(65), announce(97), render(101), myId(119), roomKey(120), deliver(121), awardId(125), acknowledge(126), publish(127), connectedIds(132), send(133), active(134), ensureAuthority(135), requestSync(139), Tournaments(144)
 
-## ui.js (870.8 KB, 19853 lines)
+## ui.js (890.7 KB, 19860 lines)
 Purpose: (fill in)
 Defines: UICache(2), isHandsHidden(3), pickableFlowers(4), STAR_RADIUS(10), SKY_ORBIT_RADIUS(11), addSkillXP(14), getSkillLevel(41), tradingSellMultiplier(47), cookingBurnChance(54), waterSurfaceAt(64), getResourceForLevel(102), cacheUIElements(125), updateUI(131), toggleMerchant(229), updateMerchantUI(251), reconcileFishInventory(417), refreshCookingAfterSale(422), availableCookingFish(427), sellOneFish(433), sellFishSpecies(456), sellAllFish(482), autoSortInventory(511), actionSellFish(519), actionSellWood(558), actionSellOre(591), actionSellFlowers(624), tryPickNearbyFlower(663), pickFlower(677), actionBuyTool(722), playSnagSound(761), copyRoomId(775), copyFallback(792), checkMobile(817), checkOrientation(823), initAudio(828), applyNoiseFilters(884), populateAudioInputs(909), changeAudioInput(938), setupVoiceAnalysis(944), toggleMic(953), ...and 454 more
 
