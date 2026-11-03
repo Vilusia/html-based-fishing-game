@@ -228,6 +228,7 @@ const ACHIEVEMENTS = [
 
 const BOUNTY_POOL = [
     { id: 'catch', label: 'Catch {n} fish', goal: [10, 15, 20, 25], event: 'catch' },
+    { id: 'cook', label: 'Cook {n} fish', goal: [5, 8, 10, 15], event: 'cook' },
     { id: 'catch_rare', label: 'Catch {n} rare or better', goal: [3, 5, 8], event: 'catch_tier' },
     { id: 'catch_legendary', label: 'Catch {n} legendary fish', goal: [1, 2, 3], event: 'catch_legendary' },
     { id: 'mine', label: 'Mine {n} ore', goal: [15, 20, 30], event: 'mine' },

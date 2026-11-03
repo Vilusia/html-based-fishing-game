@@ -14931,6 +14931,7 @@ window.doCookingHit = function() {
         if (count > 0) {
             addSkillXP('cooking', rawXP);
             saveState.cookedFishCount = (saveState.cookedFishCount || 0) + count;
+            notifyBountyEvent('cook', count);
             Sound.sell();
             saveGame();
             updateUI();
