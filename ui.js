@@ -14930,6 +14930,7 @@ window.doCookingHit = function() {
         autoSortInventory();
         if (count > 0) {
             addSkillXP('cooking', rawXP);
+            saveState.cookedFishCount = (saveState.cookedFishCount || 0) + count;
             Sound.sell();
             saveGame();
             updateUI();

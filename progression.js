@@ -214,6 +214,11 @@ const ACHIEVEMENTS = [
         id: 'all_tools', name: 'Fully Equipped', desc: 'Own every tool',
         check: c => pct(['axe', 'pickaxe', 'guitar', 'glove'].filter(t => c.unlockedTools.indexOf(t) !== -1).length, 4)
     }
+    ,
+    {
+        id: 'master_chef', name: 'Master Chef', desc: 'Cook 25 fish',
+        check: c => pct(c.cookedFish, 25)
+    }
 ];
 
 // ---------------------------------------------------------------------------
@@ -461,6 +466,7 @@ function computeProgress() {
         oreInventory: oreInv,
         woodInventory: woodInv,
         flowerInventory: flowerInv,
+        cookedFish: saveState.cookedFishCount || 0,
         woodTypes: Object.keys(woodInv).filter(k => (woodInv[k] || 0) > 0).length,
         woodTypeTotal: Math.min((typeof WOOD_TYPES !== 'undefined' ? WOOD_TYPES.length : 10), RESOURCE_COUNTS.lumberjack),
         flowerTypes: Object.keys(flowerInv).filter(k => (flowerInv[k] || 0) > 0).length,

@@ -516,6 +516,7 @@ const DEFAULT_SAVE_STATE = {
     emoteWheel: [null,null,null,null,null],
     money: 0,
     inventory: [],
+    cookedFishCount: 0, // Total fish cooked (including burnt) for achievement tracking
     wood: 0, // Resource
     stone: 0,
     displayName: "Fisher",
