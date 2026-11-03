@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.git/
+*.log
+*.lock
+package-lock.json
+assets/
+*.png
+*.jpg
+*.mp3
+*.wav
+*.fbx
+*.zip

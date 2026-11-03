@@ -1,0 +1,38 @@
+# Project: browser fishing game (plain HTML + JavaScript, multiplayer with friends)
+
+## Reading files
+- Read PROJECT_MAP.md and UI_MAP.md before editing any file. PROJECT_MAP.md lists every file with its functions and line numbers. UI_MAP.md lists every top-level function in ui.js.
+- ui.js is about 19,800 lines. Never read it in full. Find the function in UI_MAP.md, then use search_files, then read only that section (about 100-200 lines around it).
+- index.html is about 4,300 lines. Never open it in full. Search for what you need and read only that part.
+- Other big files (character3d.js, furniture.js, props.js, housing.js, worldgen.js, fish.js, editor.js, progression.js) should also be read in sections, not whole.
+- Line numbers in the map files go stale after edits. Use them to get close, then confirm with search_files.
+
+## Making changes
+- Work on one file, or one small group of related files, per task.
+- Use small targeted replacements. Never rewrite a whole file, and never rewrite ui.js.
+- Do not change files that are not part of the task.
+- Do not reformat, rename, reorder, or "clean up" existing code unless asked.
+- If a task would need changes in more than 5 files, stop and ask first.
+
+## How this project works
+- This is NOT an ES module project. Scripts are plain <script> tags and share global functions and variables. Do not add import/export, and do not convert files to modules.
+- Load order matters. It is set by the script tags in index.html (listed in PROJECT_MAP.md). A file can only use globals from files loaded before it, or call them later at runtime.
+- Before adding a new function or global, search the whole project to make sure the name is not already used. Many files define short names like build, render, active, state.
+- Do not rename existing global functions or variables. Other files depend on them.
+- Multiplayer: the host and clients exchange messages (handleDataFromHost, handleDataFromClient, and similar in ui.js, plus networking.js and network-guard.js). If you change a message's format, update both the sending side and the receiving side.
+- The save format is versioned (SAVE_VERSION and migrateSave in core.js, loadSave and saveGame in ui.js). If you add a save field, give it a default and make old saves still load.
+
+## Files to leave alone
+- Do not edit or read: Master Server Code/, vendor/, Music/, tests/, .git/.
+- Do not run build.ps1, deploy.ps1, bump-pins.ps1, or bump-pins.js. I run those myself. Do not change the ?v= version numbers on script tags in index.html.
+- Do not edit .htaccess, .cpanel.yml, ads.txt, or AGENTS.md.
+
+## Keeping maps current
+- When you add a file, add a new function, or change a function signature, update PROJECT_MAP.md (and UI_MAP.md for ui.js) in the same task.
+- If you add a new script file, say where it must go in the index.html load order, and do not change the order of existing scripts.
+
+## Working style
+- Before editing, say in one or two sentences which files and functions you plan to change.
+- After editing, list exactly what changed, and name anything I should test in the browser.
+- If you are unsure how something works, search for it and read it. Do not guess or invent function names.
+- Never create placeholder or demo files.
